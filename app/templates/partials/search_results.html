@@ -6,19 +6,26 @@
 {% elif results %}
 <div class="space-y-2">
     {% for item in results %}
-    <div class="bg-gray-900 border border-gray-800 rounded-lg p-4" id="item-{{ item.identifier }}">
+    <div id="result-{{ loop.index }}" class="bg-gray-900 border border-gray-800 rounded-lg p-4">
         <div class="flex items-start justify-between gap-4">
-            <div class="min-w-0">
+            <div class="min-w-0 flex-1">
                 <p class="text-gray-200 text-sm font-medium truncate">{{ item.title or item.identifier }}</p>
-                <p class="text-gray-500 text-xs mt-0.5 font-mono">{{ item.identifier }}</p>
+                <div class="flex items-center gap-3 mt-0.5">
+                    <p class="text-gray-500 text-xs font-mono truncate">{{ item.identifier }}</p>
+                    <a href="https://archive.org/details/{{ item.identifier }}"
+                       target="_blank"
+                       class="text-blue-500 hover:text-blue-400 text-xs flex-shrink-0">
+                        archive.org ↗
+                    </a>
+                </div>
                 {% if item.description %}
-                <p class="text-gray-500 text-xs mt-1 line-clamp-2">{{ item.description | truncate(120) }}</p>
+                <p class="text-gray-600 text-xs mt-1 line-clamp-2">{{ item.description | truncate(120) }}</p>
                 {% endif %}
             </div>
             <button
                 class="flex-shrink-0 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 hover:text-white text-xs px-3 py-1.5 rounded-md transition-colors"
                 hx-get="/games/{{ item.identifier }}/files"
-                hx-target="#item-{{ item.identifier }}"
+                hx-target="#result-{{ loop.index }}"
                 hx-swap="outerHTML"
                 hx-indicator="this"
             >

@@ -6,13 +6,20 @@
 {% else %}
 <div class="bg-gray-900 border border-gray-800 rounded-lg mt-2 overflow-hidden">
     <div class="flex items-center justify-between px-4 py-2.5 border-b border-gray-800 bg-gray-800/50">
-        <span class="text-gray-400 text-xs font-medium font-mono">{{ identifier }}</span>
+        <div class="flex items-center gap-3 min-w-0">
+            <span class="text-gray-400 text-xs font-medium font-mono truncate">{{ identifier }}</span>
+            <a href="https://archive.org/details/{{ identifier }}"
+               target="_blank"
+               class="text-blue-500 hover:text-blue-400 text-xs flex-shrink-0">
+                archive.org ↗
+            </a>
+        </div>
         <input
             type="search"
             placeholder="Filter files..."
             class="bg-gray-900 border border-gray-700 text-gray-300 rounded px-2.5 py-1 text-xs focus:outline-none focus:border-blue-500 placeholder-gray-600 w-48"
             hx-get="/games/{{ identifier }}/files"
-            hx-target="closest div"
+            hx-target="closest div.overflow-hidden"
             hx-swap="outerHTML"
             hx-trigger="input changed delay:300ms"
             hx-vals='{"q": ""}'
@@ -54,7 +61,14 @@
         {% endfor %}
     </ul>
     {% else %}
-    <p class="text-gray-500 text-xs px-4 py-4">No ROM files found in this collection.</p>
+    <div class="px-4 py-4 flex items-center justify-between">
+        <p class="text-gray-500 text-xs">No downloadable ROM files found in this collection.</p>
+        <a href="https://archive.org/details/{{ identifier }}"
+           target="_blank"
+           class="text-blue-500 hover:text-blue-400 text-xs flex-shrink-0 ml-4">
+            Check on archive.org ↗
+        </a>
+    </div>
     {% endif %}
 </div>
 {% endif %}
