@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Search — ROM Finder{% endblock %}
+{% block content %}
+<div class="p-6 max-w-5xl mx-auto">
+    <h1 class="text-xl font-semibold text-white mb-1">Find ROMs</h1>
+    <p class="text-gray-500 text-sm mb-6">Search archive.org for No-Intro and Redump ROM sets.</p>
+
+    <!-- Search bar -->
+    <div class="flex gap-3 mb-6">
+        <select
+            id="system-select"
+            name="system"
+            class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 w-64"
+        >
+            <option value="">All Systems</option>
+            {% for id, name in systems.items() %}
+            <option value="{{ name }}">{{ name }}</option>
+            {% endfor %}
+        </select>
+
+        <input
+            type="search"
+            id="search-input"
+            name="q"
+            placeholder="Search by game or collection name..."
+            autocomplete="off"
+            class="flex-1 bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 placeholder-gray-600"
+            hx-get="/search"
+            hx-target="#results"
+            hx-trigger="input changed delay:500ms, search"
+            hx-include="#system-select"
+            hx-indicator="#search-spinner"
+        >
+
+        <div id="search-spinner" class="htmx-indicator flex items-center px-2">
+            <svg class="animate-spin h-4 w-4 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+            </svg>
+        </div>
+    </div>
+
+    <!-- Results area -->
+    <div id="results">
+        <p class="text-gray-600 text-sm">Start typing to search for ROM collections...</p>
+    </div>
+</div>
+{% endblock %}

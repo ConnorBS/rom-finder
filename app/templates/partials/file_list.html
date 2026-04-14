@@ -1,0 +1,58 @@
+{% if error %}
+<div class="bg-red-900/40 border border-red-700 text-red-300 px-4 py-3 rounded-lg text-sm mt-3">
+    Could not load files: {{ error }}
+</div>
+
+{% else %}
+<div class="bg-gray-900 border border-gray-800 rounded-lg mt-2 overflow-hidden">
+    <div class="flex items-center justify-between px-4 py-2.5 border-b border-gray-800 bg-gray-800/50">
+        <span class="text-gray-400 text-xs font-medium font-mono">{{ identifier }}</span>
+        <input
+            type="search"
+            placeholder="Filter files..."
+            class="bg-gray-900 border border-gray-700 text-gray-300 rounded px-2.5 py-1 text-xs focus:outline-none focus:border-blue-500 placeholder-gray-600 w-48"
+            hx-get="/games/{{ identifier }}/files"
+            hx-target="closest div"
+            hx-swap="outerHTML"
+            hx-trigger="input changed delay:300ms"
+            hx-vals='{"q": ""}'
+            name="q"
+            value="{{ query }}"
+        >
+    </div>
+
+    {% if files %}
+    <ul class="divide-y divide-gray-800 max-h-80 overflow-y-auto">
+        {% for file in files %}
+        <li class="flex items-center justify-between px-4 py-2.5 hover:bg-gray-800/40 gap-4">
+            <div class="min-w-0">
+                <p class="text-gray-300 text-xs font-mono truncate">{{ file.name }}</p>
+                {% if file.size %}
+                <p class="text-gray-600 text-xs mt-0.5">{{ (file.size | int / 1048576) | round(1) }} MB</p>
+                {% endif %}
+            </div>
+            <form
+                hx-post="/downloads/start"
+                hx-target="#download-list"
+                hx-swap="afterbegin"
+                class="flex-shrink-0"
+            >
+                <input type="hidden" name="game_title" value="{{ file.name | replace('.zip','') | replace('.7z','') }}">
+                <input type="hidden" name="system" value="">
+                <input type="hidden" name="file_name" value="{{ file.name }}">
+                <input type="hidden" name="archive_identifier" value="{{ identifier }}">
+                <button
+                    type="submit"
+                    class="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1.5 rounded-md transition-colors"
+                >
+                    Download
+                </button>
+            </form>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p class="text-gray-500 text-xs px-4 py-4">No ROM files found in this collection.</p>
+    {% endif %}
+</div>
+{% endif %}

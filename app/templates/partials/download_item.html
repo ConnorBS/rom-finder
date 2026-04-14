@@ -1,0 +1,59 @@
+<div
+    id="download-{{ download.id }}"
+    class="bg-gray-900 border border-gray-800 rounded-lg p-4"
+    {% if download.status.value in ['pending', 'downloading'] %}
+    hx-get="/downloads/{{ download.id }}/status"
+    hx-trigger="every 2s"
+    hx-swap="outerHTML"
+    {% endif %}
+>
+    <div class="flex items-start justify-between gap-4">
+        <div class="min-w-0 flex-1">
+            <p class="text-gray-200 text-sm font-medium truncate">{{ download.game_title }}</p>
+            <p class="text-gray-500 text-xs mt-0.5 font-mono truncate">{{ download.file_name }}</p>
+
+            <!-- Progress bar (visible while downloading) -->
+            {% if download.status.value == 'downloading' %}
+            <div class="mt-2 bg-gray-800 rounded-full h-1.5 w-full">
+                <div
+                    class="bg-blue-500 h-1.5 rounded-full transition-all"
+                    style="width: {{ (download.progress * 100) | int }}%"
+                ></div>
+            </div>
+            <p class="text-gray-600 text-xs mt-1">{{ (download.progress * 100) | int }}%</p>
+            {% endif %}
+
+            {% if download.error_message %}
+            <p class="text-red-400 text-xs mt-1">{{ download.error_message }}</p>
+            {% endif %}
+        </div>
+
+        <div class="flex items-center gap-3 flex-shrink-0">
+            <!-- Status badge -->
+            {% if download.status.value == 'pending' %}
+            <span class="text-yellow-500 text-xs">Pending</span>
+            {% elif download.status.value == 'downloading' %}
+            <span class="text-blue-400 text-xs">Downloading</span>
+            {% elif download.status.value == 'completed' %}
+            <span class="text-green-400 text-xs">Complete</span>
+            {% elif download.status.value == 'verified' %}
+            <span class="text-green-400 text-xs font-medium">Verified</span>
+            {% elif download.status.value == 'failed' %}
+            <span class="text-red-400 text-xs">Failed</span>
+            {% endif %}
+
+            <!-- Remove button -->
+            {% if download.status.value not in ['downloading'] %}
+            <button
+                hx-delete="/downloads/{{ download.id }}"
+                hx-target="#download-{{ download.id }}"
+                hx-swap="outerHTML"
+                class="text-gray-600 hover:text-gray-400 text-xs transition-colors"
+                title="Remove"
+            >
+                &times;
+            </button>
+            {% endif %}
+        </div>
+    </div>
+</div>

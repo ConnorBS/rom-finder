@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Library — ROM Finder{% endblock %}
+{% block content %}
+<div class="p-6 max-w-5xl mx-auto">
+    <h1 class="text-xl font-semibold text-white mb-1">Library</h1>
+    <p class="text-gray-500 text-sm mb-6">ROMs you have downloaded and verified.</p>
+
+    <!-- Filters -->
+    <div class="flex gap-3 mb-6">
+        <select
+            name="system"
+            hx-get="/library"
+            hx-target="body"
+            hx-push-url="true"
+            hx-include="[name='q']"
+            class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 w-56"
+        >
+            <option value="">All Systems</option>
+            {% for sys in systems %}
+            <option value="{{ sys }}" {% if sys == selected_system %}selected{% endif %}>{{ sys }}</option>
+            {% endfor %}
+        </select>
+
+        <input
+            type="search"
+            name="q"
+            value="{{ query }}"
+            placeholder="Filter by name..."
+            class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 flex-1 placeholder-gray-600"
+            hx-get="/library"
+            hx-target="body"
+            hx-push-url="true"
+            hx-trigger="input changed delay:400ms, search"
+            hx-include="[name='system']"
+        >
+    </div>
+
+    {% if entries %}
+    <div class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="border-b border-gray-800 text-gray-500 text-xs uppercase tracking-wide">
+                    <th class="text-left px-4 py-3 font-medium">Title</th>
+                    <th class="text-left px-4 py-3 font-medium">System</th>
+                    <th class="text-left px-4 py-3 font-medium">File</th>
+                    <th class="text-left px-4 py-3 font-medium">Hash</th>
+                    <th class="text-left px-4 py-3 font-medium">RA Match</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-800">
+                {% for entry in entries %}
+                <tr class="hover:bg-gray-800/50">
+                    <td class="px-4 py-3 text-gray-200">{{ entry.game_title }}</td>
+                    <td class="px-4 py-3 text-gray-400">{{ entry.system }}</td>
+                    <td class="px-4 py-3 text-gray-400 font-mono text-xs">{{ entry.file_name }}</td>
+                    <td class="px-4 py-3">
+                        {% if entry.file_hash %}
+                        <span class="font-mono text-xs text-gray-500">{{ entry.file_hash[:8] }}...</span>
+                        {% else %}
+                        <span class="text-gray-600 text-xs">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-3">
+                        {% if entry.ra_matched %}
+                        <span class="text-green-400 text-xs font-medium">Verified</span>
+                        {% elif entry.hash_verified %}
+                        <span class="text-yellow-400 text-xs font-medium">Hashed</span>
+                        {% else %}
+                        <span class="text-gray-600 text-xs">—</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <p class="text-gray-600 text-xs mt-3">{{ entries | length }} ROM{% if entries | length != 1 %}s{% endif %}</p>
+    {% else %}
+    <div class="bg-gray-900 border border-gray-800 rounded-lg p-8 text-center">
+        <p class="text-gray-500 text-sm">
+            {% if query or selected_system %}No ROMs match your filters.
+            {% else %}Your library is empty. Download some ROMs to get started.{% endif %}
+        </p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

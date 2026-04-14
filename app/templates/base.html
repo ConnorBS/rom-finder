@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}ROM Finder{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <script>
+        tailwind.config = { darkMode: 'class' }
+    </script>
+</head>
+<body class="dark bg-gray-950 text-gray-100 flex min-h-screen">
+
+    <!-- Sidebar -->
+    <aside class="w-52 flex-shrink-0 bg-gray-900 border-r border-gray-800 flex flex-col">
+        <div class="h-14 flex items-center px-5 border-b border-gray-800">
+            <span class="font-bold text-white tracking-wide">ROM Finder</span>
+        </div>
+        <nav class="flex-1 p-3 space-y-0.5 text-sm">
+            <a href="/"          class="nav-item block px-3 py-2 rounded-md text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">Search</a>
+            <a href="/downloads" class="nav-item block px-3 py-2 rounded-md text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">Downloads</a>
+            <a href="/library"   class="nav-item block px-3 py-2 rounded-md text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">Library</a>
+            <a href="/settings"  class="nav-item block px-3 py-2 rounded-md text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">Settings</a>
+        </nav>
+    </aside>
+
+    <!-- Main content -->
+    <main class="flex-1 overflow-y-auto">
+        {% block content %}{% endblock %}
+    </main>
+
+    <script>
+        // Highlight the active nav link
+        document.querySelectorAll('.nav-item').forEach(function(link) {
+            var href = link.getAttribute('href');
+            var path = window.location.pathname;
+            if (href === '/' ? path === '/' : path.startsWith(href)) {
+                link.classList.add('bg-gray-800', 'text-white');
+                link.classList.remove('text-gray-400');
+            }
+        });
+    </script>
+</body>
+</html>

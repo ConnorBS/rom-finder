@@ -1,0 +1,138 @@
+from fastapi import APIRouter, Request, Form, Depends, BackgroundTasks
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+from sqlmodel import Session, select
+from pathlib import Path
+from datetime import datetime
+
+from app.db.database import get_session
+from app.db.models import Download, DownloadStatus, AppSetting
+from app.services.archive_client import ArchiveClient
+from app.services.hasher import hash_rom
+
+router = APIRouter(prefix="/downloads")
+templates = Jinja2Templates(directory="app/templates")
+
+
+def _get_setting(session: Session, key: str, default: str = "") -> str:
+    s = session.get(AppSetting, key)
+    return s.value if s else default
+
+
+@router.get("", response_class=HTMLResponse)
+async def downloads_page(request: Request, session: Session = Depends(get_session)):
+    downloads = session.exec(
+        select(Download).order_by(Download.created_at.desc())
+    ).all()
+    return templates.TemplateResponse(
+        "downloads.html",
+        {"request": request, "downloads": downloads},
+    )
+
+
+@router.post("/start", response_class=HTMLResponse)
+async def start_download(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    game_title: str = Form(...),
+    system: str = Form(...),
+    file_name: str = Form(...),
+    archive_identifier: str = Form(...),
+    session: Session = Depends(get_session),
+):
+    """Enqueue a download and kick off the background task."""
+    client = ArchiveClient()
+    source_url = client.get_download_url(archive_identifier, file_name)
+
+    download = Download(
+        game_title=game_title,
+        system=system,
+        file_name=file_name,
+        source_url=source_url,
+        archive_identifier=archive_identifier,
+        status=DownloadStatus.pending,
+    )
+    session.add(download)
+    session.commit()
+    session.refresh(download)
+
+    background_tasks.add_task(_run_download, download.id)
+
+    return templates.TemplateResponse(
+        "partials/download_item.html",
+        {"request": request, "download": download},
+    )
+
+
+@router.get("/{download_id}/status", response_class=HTMLResponse)
+async def download_status(
+    request: Request,
+    download_id: int,
+    session: Session = Depends(get_session),
+):
+    """HTMX polling endpoint: returns current state of one download."""
+    download = session.get(Download, download_id)
+    if not download:
+        return HTMLResponse('<p class="text-red-400 text-sm">Download not found.</p>')
+
+    return templates.TemplateResponse(
+        "partials/download_item.html",
+        {"request": request, "download": download},
+    )
+
+
+@router.delete("/{download_id}", response_class=HTMLResponse)
+async def delete_download(
+    download_id: int,
+    session: Session = Depends(get_session),
+):
+    download = session.get(Download, download_id)
+    if download:
+        session.delete(download)
+        session.commit()
+    return HTMLResponse("")  # HTMX swaps in empty string to remove the element
+
+
+async def _run_download(download_id: int) -> None:
+    """Background task: download the file and update DB progress."""
+    from app.db.database import engine
+    from sqlmodel import Session
+
+    with Session(engine) as session:
+        download = session.get(Download, download_id)
+        if not download:
+            return
+
+        download_dir = _get_setting(session, "download_dir", str(Path.home() / "ROMs"))
+        dest = Path(download_dir) / download.system / download.file_name
+
+        download.status = DownloadStatus.downloading
+        download.updated_at = datetime.utcnow()
+        session.add(download)
+        session.commit()
+
+        async def on_progress(fraction: float):
+            with Session(engine) as s:
+                d = s.get(Download, download_id)
+                if d:
+                    d.progress = fraction
+                    d.updated_at = datetime.utcnow()
+                    s.add(d)
+                    s.commit()
+
+        try:
+            client = ArchiveClient()
+            await client.download_file(download.source_url, dest, on_progress)
+
+            file_hash = hash_rom(dest, download.system)
+            download.file_path = str(dest)
+            download.file_hash = file_hash
+            download.progress = 1.0
+            download.status = DownloadStatus.completed
+        except Exception as exc:
+            download.status = DownloadStatus.failed
+            download.error_message = str(exc)
+
+        download.updated_at = datetime.utcnow()
+        session.add(download)
+        session.commit()
