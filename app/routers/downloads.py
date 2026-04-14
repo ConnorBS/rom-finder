@@ -32,7 +32,7 @@ async def start_download(
     request: Request,
     background_tasks: BackgroundTasks,
     game_title: str = Form(...),
-    system: str = Form(...),
+    system: str = Form(default=""),
     file_name: str = Form(...),
     archive_identifier: str = Form(...),
     session: Session = Depends(get_session),
