@@ -20,9 +20,10 @@
                 hx-get="/games/{{ item.identifier }}/files"
                 hx-target="#item-{{ item.identifier }}"
                 hx-swap="outerHTML"
-                hx-indicator="#spinner-{{ item.identifier }}"
+                hx-indicator="this"
             >
-                Browse files
+                <span class="htmx-label">Browse files</span>
+                <span class="htmx-indicator">Loading...</span>
             </button>
         </div>
     </div>

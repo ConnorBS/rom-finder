@@ -33,8 +33,9 @@
             </div>
             <form
                 hx-post="/downloads/start"
-                hx-target="#download-list"
-                hx-swap="afterbegin"
+                hx-target="closest li"
+                hx-swap="outerHTML"
+                hx-indicator="find button"
                 class="flex-shrink-0"
             >
                 <input type="hidden" name="game_title" value="{{ file.name | replace('.zip','') | replace('.7z','') }}">
@@ -45,7 +46,8 @@
                     type="submit"
                     class="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1.5 rounded-md transition-colors"
                 >
-                    Download
+                    <span class="htmx-label">Download</span>
+                    <span class="htmx-indicator">Queuing...</span>
                 </button>
             </form>
         </li>

@@ -55,7 +55,15 @@ async def start_download(
 
     background_tasks.add_task(_run_download, download.id)
 
-    return templates.TemplateResponse(request, "partials/download_item.html", {"download": download})
+    return HTMLResponse(
+        f'<li class="flex items-center justify-between px-4 py-2.5 bg-green-900/20 border-l-2 border-green-600 gap-4">'
+        f'<div class="min-w-0">'
+        f'<p class="text-green-400 text-xs font-medium">Queued</p>'
+        f'<p class="text-gray-500 text-xs font-mono truncate">{download.file_name}</p>'
+        f'</div>'
+        f'<a href="/downloads" class="text-blue-400 text-xs hover:underline flex-shrink-0">View queue</a>'
+        f'</li>'
+    )
 
 
 @router.get("/{download_id}/status", response_class=HTMLResponse)

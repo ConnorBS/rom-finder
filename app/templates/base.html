@@ -9,6 +9,13 @@
     <script>
         tailwind.config = { darkMode: 'class' }
     </script>
+    <style>
+        /* HTMX loading states */
+        .htmx-indicator { display: none; }
+        .htmx-request .htmx-indicator { display: inline; }
+        .htmx-request.htmx-indicator { display: inline; }
+        .htmx-request .htmx-label { display: none; }
+    </style>
 </head>
 <body class="dark bg-gray-950 text-gray-100 flex min-h-screen">
 
