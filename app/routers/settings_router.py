@@ -30,10 +30,7 @@ async def settings_page(request: Request, session: Session = Depends(get_session
         "ra_username": get_setting(session, "ra_username"),
         "ra_api_key": get_setting(session, "ra_api_key"),
     }
-    return templates.TemplateResponse(
-        "settings.html",
-        {"request": request, "settings": current},
-    )
+    return templates.TemplateResponse(request, "settings.html", {"settings": current})
 
 
 @router.post("", response_class=HTMLResponse)

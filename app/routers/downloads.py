@@ -24,10 +24,7 @@ async def downloads_page(request: Request, session: Session = Depends(get_sessio
     downloads = session.exec(
         select(Download).order_by(Download.created_at.desc())
     ).all()
-    return templates.TemplateResponse(
-        "downloads.html",
-        {"request": request, "downloads": downloads},
-    )
+    return templates.TemplateResponse(request, "downloads.html", {"downloads": downloads})
 
 
 @router.post("/start", response_class=HTMLResponse)
@@ -58,10 +55,7 @@ async def start_download(
 
     background_tasks.add_task(_run_download, download.id)
 
-    return templates.TemplateResponse(
-        "partials/download_item.html",
-        {"request": request, "download": download},
-    )
+    return templates.TemplateResponse(request, "partials/download_item.html", {"download": download})
 
 
 @router.get("/{download_id}/status", response_class=HTMLResponse)
@@ -75,10 +69,7 @@ async def download_status(
     if not download:
         return HTMLResponse('<p class="text-red-400 text-sm">Download not found.</p>')
 
-    return templates.TemplateResponse(
-        "partials/download_item.html",
-        {"request": request, "download": download},
-    )
+    return templates.TemplateResponse(request, "partials/download_item.html", {"download": download})
 
 
 @router.delete("/{download_id}", response_class=HTMLResponse)

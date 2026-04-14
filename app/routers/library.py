@@ -30,12 +30,6 @@ async def library_page(
     ).all()
 
     return templates.TemplateResponse(
-        "library.html",
-        {
-            "request": request,
-            "entries": entries,
-            "systems": systems,
-            "selected_system": system,
-            "query": q,
-        },
+        request, "library.html",
+        {"entries": entries, "systems": systems, "selected_system": system, "query": q},
     )

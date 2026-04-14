@@ -11,10 +11,7 @@ templates = Jinja2Templates(directory="app/templates")
 
 @router.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    return templates.TemplateResponse(
-        "index.html",
-        {"request": request, "systems": SYSTEMS},
-    )
+    return templates.TemplateResponse(request, "index.html", {"systems": SYSTEMS})
 
 
 @router.get("/search", response_class=HTMLResponse)
@@ -35,8 +32,8 @@ async def search(
             error = str(exc)
 
     return templates.TemplateResponse(
-        "partials/search_results.html",
-        {"request": request, "results": results, "query": q, "error": error},
+        request, "partials/search_results.html",
+        {"results": results, "query": q, "error": error},
     )
 
 
@@ -57,12 +54,6 @@ async def browse_files(
         error = str(exc)
 
     return templates.TemplateResponse(
-        "partials/file_list.html",
-        {
-            "request": request,
-            "files": files,
-            "identifier": identifier,
-            "query": q,
-            "error": error,
-        },
+        request, "partials/file_list.html",
+        {"files": files, "identifier": identifier, "query": q, "error": error},
     )
