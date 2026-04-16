@@ -1,0 +1,78 @@
+<div id="ra-game-{{ game_id }}" class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
+
+    <!-- Header -->
+    <div class="px-4 py-3 border-b border-gray-800 bg-gray-800/50">
+        <div class="flex items-center justify-between gap-4">
+            <div class="min-w-0">
+                <p class="text-gray-200 text-sm font-medium truncate">{{ game_title }}</p>
+                <p class="text-gray-500 text-xs mt-0.5">{{ system_name }}</p>
+            </div>
+            <a
+                href="https://retroachievements.org/game/{{ game_id }}"
+                target="_blank"
+                class="text-blue-500 hover:text-blue-400 text-xs flex-shrink-0"
+            >RA ↗</a>
+        </div>
+    </div>
+
+    {% if error %}
+    <div class="px-4 py-3 text-red-400 text-xs">Error: {{ error }}</div>
+
+    {% elif not rom_names %}
+    <div class="px-4 py-4 text-gray-500 text-xs">No ROM hashes found for this game on RetroAchievements.</div>
+
+    {% else %}
+
+    <!-- Known ROM names from RA -->
+    <div class="px-4 py-3 border-b border-gray-800">
+        <p class="text-gray-500 text-xs mb-2 uppercase tracking-wide font-medium">Expected ROM files</p>
+        <ul class="space-y-1">
+            {% for entry in rom_names %}
+            <li class="flex items-center gap-2">
+                <span class="text-gray-300 text-xs font-mono truncate">{{ entry.name }}</span>
+                {% for label in entry.labels %}
+                <span class="flex-shrink-0 bg-gray-800 text-gray-500 text-xs px-1.5 py-0.5 rounded">{{ label }}</span>
+                {% endfor %}
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+
+    <!-- Archive.org collections -->
+    {% if collections %}
+    <div class="divide-y divide-gray-800">
+        {% for item in collections %}
+        <div id="ra-src-{{ loop.index }}-{{ game_id }}" class="px-4 py-3">
+            <div class="flex items-center justify-between gap-4">
+                <div class="min-w-0 flex-1">
+                    <p class="text-gray-300 text-xs font-medium truncate">{{ item.title or item.identifier }}</p>
+                    <div class="flex items-center gap-2 mt-0.5">
+                        <p class="text-gray-600 text-xs font-mono truncate">{{ item.identifier }}</p>
+                        <a href="https://archive.org/details/{{ item.identifier }}"
+                           target="_blank"
+                           class="text-blue-500 hover:text-blue-400 text-xs flex-shrink-0">↗</a>
+                    </div>
+                </div>
+                <button
+                    class="flex-shrink-0 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 hover:text-white text-xs px-3 py-1.5 rounded-md transition-colors"
+                    hx-get="/games/{{ item.identifier }}/files?system={{ system_name | urlencode }}&game_title={{ game_title | urlencode }}&q={{ rom_names[0].name | urlencode }}"
+                    hx-target="#ra-src-{{ loop.index }}-{{ game_id }}"
+                    hx-swap="outerHTML"
+                    hx-indicator="this"
+                >
+                    <span class="htmx-label">Browse files</span>
+                    <span class="htmx-indicator">Loading...</span>
+                </button>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="px-4 py-4 text-gray-500 text-xs">
+        No archive.org collections found. Try searching manually on the
+        <a href="/" class="text-blue-500 hover:text-blue-400 underline">Search page</a>.
+    </div>
+    {% endif %}
+
+    {% endif %}
+</div>

@@ -91,6 +91,24 @@ class RAClient:
             data = resp.json()
             return [h["MD5"] for h in data.get("Results", [])]
 
+    async def get_game_hashes_full(self, game_id: int) -> list[dict]:
+        """Return full hash entries (MD5, Name, Labels) for a game."""
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"{RA_BASE_URL}/API_GetGameHashes.php",
+                params=self._params({"i": game_id}),
+                timeout=15,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return data.get("Results", [])
+
+    async def search_games(self, system_id: int, query: str) -> list[dict]:
+        """Search for games on a system by title (case-insensitive substring match)."""
+        games = await self.get_game_list(system_id)
+        q = query.lower()
+        return [g for g in games if q in g.get("Title", "").lower()]
+
     async def lookup_hash(self, md5: str) -> Optional[dict]:
         """Look up a game by its ROM MD5 hash. Returns game info or None."""
         async with httpx.AsyncClient() as client:

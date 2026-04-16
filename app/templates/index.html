@@ -3,46 +3,123 @@
 {% block content %}
 <div class="p-6 max-w-5xl mx-auto">
     <h1 class="text-xl font-semibold text-white mb-1">Find ROMs</h1>
-    <p class="text-gray-500 text-sm mb-6">Search archive.org for No-Intro and Redump ROM sets.</p>
+    <p class="text-gray-500 text-sm mb-5">Search for games by name or browse archive.org collections.</p>
 
-    <!-- Search bar -->
-    <div class="flex gap-3 mb-6">
-        <select
-            id="system-select"
-            name="system"
-            class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 w-64"
-        >
-            <option value="">All Systems</option>
-            {% for id, name in systems.items() %}
-            <option value="{{ name }}">{{ name }}</option>
-            {% endfor %}
-        </select>
+    <!-- Mode toggle -->
+    <div class="flex gap-1 mb-5 bg-gray-900 border border-gray-800 rounded-lg p-1 w-fit">
+        <button
+            id="btn-ra"
+            onclick="setMode('ra')"
+            class="px-4 py-1.5 rounded-md text-xs font-medium transition-colors bg-gray-700 text-white"
+        >Game Lookup</button>
+        <button
+            id="btn-archive"
+            onclick="setMode('archive')"
+            class="px-4 py-1.5 rounded-md text-xs font-medium transition-colors text-gray-400 hover:text-white"
+        >Archive Search</button>
+    </div>
 
-        <input
-            type="search"
-            id="search-input"
-            name="q"
-            placeholder="Search by game or collection name..."
-            autocomplete="off"
-            class="flex-1 bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 placeholder-gray-600"
-            hx-get="/search"
-            hx-target="#results"
-            hx-trigger="input changed delay:500ms, search"
-            hx-include="#system-select"
-            hx-indicator="#search-spinner"
-        >
+    <!-- RA Lookup mode -->
+    <div id="mode-ra">
+        <div class="flex gap-3 mb-6">
+            <select
+                id="ra-system-select"
+                name="system_id"
+                class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 w-64"
+                hx-trigger="change"
+                hx-get="/ra/search"
+                hx-target="#ra-results"
+                hx-include="#ra-query"
+            >
+                <option value="">Select a system...</option>
+                {% for id, name in systems.items() %}
+                <option value="{{ id }}">{{ name }}</option>
+                {% endfor %}
+            </select>
 
-        <div id="search-spinner" class="htmx-indicator flex items-center px-2">
-            <svg class="animate-spin h-4 w-4 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
-            </svg>
+            <input
+                type="search"
+                id="ra-query"
+                name="q"
+                placeholder="Search by game title..."
+                autocomplete="off"
+                class="flex-1 bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 placeholder-gray-600"
+                hx-get="/ra/search"
+                hx-target="#ra-results"
+                hx-trigger="input changed delay:400ms, search"
+                hx-include="#ra-system-select"
+                hx-indicator="#ra-spinner"
+            >
+
+            <div id="ra-spinner" class="htmx-indicator flex items-center px-2">
+                <svg class="animate-spin h-4 w-4 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+                </svg>
+            </div>
+        </div>
+
+        <div id="ra-results">
+            <p class="text-gray-600 text-sm">Select a system and type a game title to search RetroAchievements.</p>
         </div>
     </div>
 
-    <!-- Results area -->
-    <div id="results">
-        <p class="text-gray-600 text-sm">Start typing to search for ROM collections...</p>
+    <!-- Archive Search mode (hidden by default) -->
+    <div id="mode-archive" class="hidden">
+        <div class="flex gap-3 mb-6">
+            <select
+                id="system-select"
+                name="system"
+                class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 w-64"
+            >
+                <option value="">All Systems</option>
+                {% for id, name in systems.items() %}
+                <option value="{{ name }}">{{ name }}</option>
+                {% endfor %}
+            </select>
+
+            <input
+                type="search"
+                id="search-input"
+                name="q"
+                placeholder="Search by game or collection name..."
+                autocomplete="off"
+                class="flex-1 bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 placeholder-gray-600"
+                hx-get="/search"
+                hx-target="#results"
+                hx-trigger="input changed delay:500ms, search"
+                hx-include="#system-select"
+                hx-indicator="#search-spinner"
+            >
+
+            <div id="search-spinner" class="htmx-indicator flex items-center px-2">
+                <svg class="animate-spin h-4 w-4 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+                </svg>
+            </div>
+        </div>
+
+        <div id="results">
+            <p class="text-gray-600 text-sm">Start typing to search for ROM collections...</p>
+        </div>
     </div>
 </div>
+
+<script>
+function setMode(mode) {
+    var isRA = mode === 'ra';
+    document.getElementById('mode-ra').classList.toggle('hidden', !isRA);
+    document.getElementById('mode-archive').classList.toggle('hidden', isRA);
+    document.getElementById('btn-ra').className = 'px-4 py-1.5 rounded-md text-xs font-medium transition-colors ' +
+        (isRA ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-white');
+    document.getElementById('btn-archive').className = 'px-4 py-1.5 rounded-md text-xs font-medium transition-colors ' +
+        (!isRA ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-white');
+    localStorage.setItem('romfinder_mode', mode);
+}
+
+// Restore last mode on load
+var saved = localStorage.getItem('romfinder_mode');
+if (saved === 'archive') setMode('archive');
+</script>
 {% endblock %}

@@ -8,7 +8,7 @@ from datetime import datetime
 from app.db.database import get_session
 from app.db.models import Download, DownloadStatus, AppSetting
 from app.services.archive_client import ArchiveClient
-from app.services.hasher import hash_rom
+from app.services.hasher import hash_rom, extract_rom_from_zip
 
 router = APIRouter(prefix="/downloads")
 templates = Jinja2Templates(directory="app/templates")
@@ -125,11 +125,32 @@ async def _run_download(download_id: int) -> None:
             client = ArchiveClient()
             await client.download_file(download.source_url, dest, on_progress)
 
-            file_hash = hash_rom(dest, download.system)
-            download.file_path = str(dest)
+            # Extract the ROM if it was downloaded as a zip
+            rom_path = dest
+            if dest.suffix.lower() == ".zip":
+                rom_path = extract_rom_from_zip(dest)
+
+            file_hash = hash_rom(rom_path, download.system)
+            download.file_path = str(rom_path)
+            download.file_name = rom_path.name
             download.file_hash = file_hash
             download.progress = 1.0
             download.status = DownloadStatus.completed
+
+            # Verify hash against RetroAchievements if enabled
+            ra_enabled = _get_setting(session, "ra_enabled", "false") == "true"
+            ra_username = _get_setting(session, "ra_username")
+            ra_api_key = _get_setting(session, "ra_api_key")
+            if ra_enabled and ra_username and ra_api_key:
+                from app.services.ra_client import RAClient
+                ra = RAClient(ra_username, ra_api_key)
+                try:
+                    match = await ra.lookup_hash(file_hash)
+                    if match:
+                        download.hash_verified = True
+                        download.status = DownloadStatus.verified
+                except Exception:
+                    pass  # RA lookup failure doesn't fail the download
         except Exception as exc:
             download.status = DownloadStatus.failed
             download.error_message = str(exc)
