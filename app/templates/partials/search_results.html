@@ -21,24 +21,20 @@
                     {% if item.region %}
                     <span class="text-gray-400 text-xs">{{ item.region }}</span>
                     {% endif %}
-                    {% for tag in item.version_tags or [] %}
-                    <span class="bg-gray-800 text-gray-500 text-xs px-1.5 py-0.5 rounded">{{ tag }}</span>
-                    {% endfor %}
-                    {% if not item.region and not item.version_tags %}
-                    <p class="text-gray-500 text-xs font-mono truncate">{{ item.identifier }}</p>
-                    {% endif %}
                     {% if item.source_id == 'archive_org' %}
                     <a href="https://archive.org/details/{{ item.identifier }}"
                        target="_blank"
-                       class="text-blue-500 hover:text-blue-400 text-xs flex-shrink-0">
-                        archive.org ↗
+                       class="text-blue-500 hover:text-blue-400 text-xs font-mono flex-shrink-0">
+                        archive.org/{{ item.identifier }} ↗
                     </a>
                     {% elif item.source_id == 'vimm' %}
-                    <a href="https://vimm.net/vault/{{ item.identifier }}/"
+                    <a href="{{ item.url or 'https://vimm.net/vault/' ~ item.identifier ~ '/' }}"
                        target="_blank"
-                       class="text-blue-500 hover:text-blue-400 text-xs flex-shrink-0">
-                        vimm.net ↗
+                       class="text-blue-500 hover:text-blue-400 text-xs font-mono flex-shrink-0">
+                        vimm.net/vault/{{ item.identifier }}/ ↗
                     </a>
+                    {% else %}
+                    <p class="text-gray-500 text-xs font-mono truncate">{{ item.identifier }}</p>
                     {% endif %}
                 </div>
                 {% if item.description %}

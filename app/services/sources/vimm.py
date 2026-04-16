@@ -91,29 +91,22 @@ class VimmSource(RomSource):
                 if not title:
                     continue
 
-                # Extract metadata from non-title cells (region, version flags, etc.)
+                # Extract region from flag images (alt text e.g. "USA", "Europe")
                 region = ""
-                version_tags: list[str] = []
                 for cell in cells:
-                    # Skip the cell containing the game link
                     if cell.find("a") is link:
                         continue
-                    # Region images use alt text (e.g. "USA", "Europe", "Japan")
                     for img in cell.find_all("img"):
                         alt = img.get("alt", "").strip()
                         if alt and not region:
                             region = alt
-                    # Any plain text in non-link cells is version/tag info
-                    cell_text = cell.get_text(strip=True)
-                    if cell_text:
-                        version_tags.append(cell_text)
 
                 results.append({
                     "identifier": media_id,
                     "title": title,
                     "description": "VIMM's Lair",
                     "region": region,
-                    "version_tags": version_tags,
+                    "url": f"{VIMM_BASE}/vault/{media_id}/",
                     "source_id": self.source_id,
                 })
 
