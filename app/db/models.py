@@ -27,6 +27,7 @@ class Download(SQLModel, table=True):
     file_name: str
     file_path: Optional[str] = None
     source_url: str
+    source_id: str = "archive_org"
     archive_identifier: str = ""
     status: DownloadStatus = DownloadStatus.pending
     progress: float = 0.0

@@ -14,6 +14,11 @@ DEFAULT_SETTINGS = {
     "ra_enabled": "false",
     "ra_username": "",
     "ra_api_key": "",
+    # Source enabled flags — archive.org on by default, others opt-in
+    "source_archive_org_enabled": "true",
+    "source_vimm_enabled": "false",
+    "source_romsfun_enabled": "false",
+    "source_wowroms_enabled": "false",
 }
 
 

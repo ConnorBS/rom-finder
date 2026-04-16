@@ -6,7 +6,7 @@ from sqlmodel import Session
 
 from app.db.database import get_session
 from app.db.models import AppSetting
-from app.services.archive_client import ArchiveClient
+from app.services import sources as source_registry
 from app.services.ra_client import SYSTEMS, RAClient
 
 router = APIRouter()
@@ -18,8 +18,17 @@ def _get_setting(session: Session, key: str, default: str = "") -> str:
     return s.value if s else default
 
 
+def _enabled_source_ids(session: Session) -> set[str]:
+    """Return the set of source IDs the user has enabled."""
+    enabled = set()
+    for src in source_registry.all_sources():
+        key = f"source_{src.source_id}_enabled"
+        if _get_setting(session, key, "false") == "true":
+            enabled.add(src.source_id)
+    return enabled
+
+
 def _get_ra_client(session: Session) -> RAClient | None:
-    """Return an RAClient if RA is enabled and configured, else None."""
     if _get_setting(session, "ra_enabled") != "true":
         return None
     username = _get_setting(session, "ra_username")
@@ -30,8 +39,13 @@ def _get_ra_client(session: Session) -> RAClient | None:
 
 
 @router.get("/", response_class=HTMLResponse)
-async def index(request: Request):
-    return templates.TemplateResponse(request, "index.html", {"systems": SYSTEMS})
+async def index(request: Request, session: Session = Depends(get_session)):
+    enabled_ids = _enabled_source_ids(session)
+    all_srcs = source_registry.all_sources()
+    return templates.TemplateResponse(
+        request, "index.html",
+        {"systems": SYSTEMS, "sources": all_srcs, "enabled_source_ids": enabled_ids},
+    )
 
 
 @router.get("/search", response_class=HTMLResponse)
@@ -39,15 +53,27 @@ async def search(
     request: Request,
     q: str = Query(default=""),
     system: str = Query(default=""),
+    source_id: str = Query(default=""),
+    session: Session = Depends(get_session),
 ):
-    """HTMX endpoint: search archive.org and return a results partial."""
+    """HTMX: search enabled sources and return a results partial."""
     results = []
     error = None
 
     if q:
+        # Determine which sources to query
+        enabled_ids = _enabled_source_ids(session)
+        if source_id and source_id in enabled_ids:
+            srcs = [source_registry.get(source_id)]
+        else:
+            srcs = source_registry.enabled_sources(enabled_ids)
+
         try:
-            client = ArchiveClient()
-            results = await client.search_collections(q, system)
+            for src in srcs:
+                if src is None:
+                    continue
+                src_results = await src.search(q, system)
+                results.extend(src_results)
         except Exception as exc:
             error = str(exc)
 
@@ -64,21 +90,32 @@ async def browse_files(
     q: str = Query(default=""),
     system: str = Query(default=""),
     game_title: str = Query(default=""),
+    source_id: str = Query(default="archive_org"),
 ):
-    """HTMX endpoint: list ROM files inside an archive.org item."""
+    """HTMX: list ROM files inside a source result."""
     files = []
     error = None
 
-    try:
-        client = ArchiveClient()
-        files = await client.get_files(identifier, name_filter=q)
-    except Exception as exc:
-        error = str(exc)
+    src = source_registry.get(source_id)
+    if src is None:
+        error = f"Unknown source: {source_id}"
+    else:
+        try:
+            files = await src.get_files(identifier, name_filter=q)
+        except Exception as exc:
+            error = str(exc)
 
     return templates.TemplateResponse(
         request, "partials/file_list.html",
-        {"files": files, "identifier": identifier, "query": q,
-         "system": system, "game_title": game_title, "error": error},
+        {
+            "files": files,
+            "identifier": identifier,
+            "query": q,
+            "system": system,
+            "game_title": game_title,
+            "source_id": source_id,
+            "error": error,
+        },
     )
 
 
@@ -121,7 +158,7 @@ async def ra_game_sources(
     system_name: str = Query(default=""),
     session: Session = Depends(get_session),
 ):
-    """HTMX: fetch RA hashes for a game, then search archive.org for matching collections."""
+    """HTMX: fetch RA hashes, then search enabled sources for matching collections."""
     ra = _get_ra_client(session)
     if not ra:
         return HTMLResponse('<p class="text-red-400 text-sm">RA not configured.</p>')
@@ -133,19 +170,28 @@ async def ra_game_sources(
 
     try:
         hashes = await ra.get_game_hashes_full(game_id)
-        # Collect unique ROM file names from RA hash entries
-        seen = set()
+        seen: set[str] = set()
         for h in hashes:
             name = h.get("Name", "")
             if name and name not in seen:
-                rom_names.append({"name": name, "md5": h.get("MD5", ""), "labels": h.get("Labels", [])})
+                rom_names.append({
+                    "name": name,
+                    "md5": h.get("MD5", ""),
+                    "labels": h.get("Labels", []),
+                })
                 seen.add(name)
 
         if rom_names:
-            # Use the first ROM name (strip extension) as the archive.org search query
-            first_name = Path(rom_names[0]["name"]).stem
-            archive = ArchiveClient()
-            collections = await archive.search_collections(first_name, system_name)
+            first_stem = Path(rom_names[0]["name"]).stem
+            enabled_ids = _enabled_source_ids(session)
+            for src in source_registry.enabled_sources(enabled_ids):
+                try:
+                    results = await src.search(first_stem, system_name)
+                    for r in results:
+                        r["_source_name"] = src.name
+                    collections.extend(results)
+                except Exception:
+                    pass
     except Exception as exc:
         error = str(exc)
 

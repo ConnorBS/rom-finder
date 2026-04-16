@@ -45,17 +45,26 @@
         <div id="ra-src-{{ loop.index }}-{{ game_id }}" class="px-4 py-3">
             <div class="flex items-center justify-between gap-4">
                 <div class="min-w-0 flex-1">
-                    <p class="text-gray-300 text-xs font-medium truncate">{{ item.title or item.identifier }}</p>
+                    <div class="flex items-center gap-2">
+                        <p class="text-gray-300 text-xs font-medium truncate">{{ item.title or item.identifier }}</p>
+                        {% if item._source_name %}
+                        <span class="flex-shrink-0 text-xs bg-gray-800 text-gray-500 px-1.5 py-0.5 rounded">{{ item._source_name }}</span>
+                        {% endif %}
+                    </div>
                     <div class="flex items-center gap-2 mt-0.5">
                         <p class="text-gray-600 text-xs font-mono truncate">{{ item.identifier }}</p>
-                        <a href="https://archive.org/details/{{ item.identifier }}"
-                           target="_blank"
+                        {% if item.source_id == 'archive_org' %}
+                        <a href="https://archive.org/details/{{ item.identifier }}" target="_blank"
                            class="text-blue-500 hover:text-blue-400 text-xs flex-shrink-0">↗</a>
+                        {% elif item.source_id == 'vimm' %}
+                        <a href="https://vimm.net/vault/{{ item.identifier }}/" target="_blank"
+                           class="text-blue-500 hover:text-blue-400 text-xs flex-shrink-0">↗</a>
+                        {% endif %}
                     </div>
                 </div>
                 <button
                     class="flex-shrink-0 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 hover:text-white text-xs px-3 py-1.5 rounded-md transition-colors"
-                    hx-get="/games/{{ item.identifier }}/files?system={{ system_name | urlencode }}&game_title={{ game_title | urlencode }}&q={{ rom_names[0].name | urlencode }}"
+                    hx-get="/games/{{ item.identifier }}/files?source_id={{ item.source_id or 'archive_org' }}&system={{ system_name | urlencode }}&game_title={{ game_title | urlencode }}&q={{ rom_names[0].name | urlencode }}"
                     hx-target="#ra-src-{{ loop.index }}-{{ game_id }}"
                     hx-swap="outerHTML"
                     hx-indicator="this"

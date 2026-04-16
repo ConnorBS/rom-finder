@@ -7,7 +7,7 @@ from datetime import datetime
 
 from app.db.database import get_session
 from app.db.models import Download, DownloadStatus, AppSetting
-from app.services.archive_client import ArchiveClient
+from app.services import sources as source_registry
 from app.services.hasher import hash_rom, extract_rom_from_zip
 
 router = APIRouter(prefix="/downloads")
@@ -35,17 +35,19 @@ async def start_download(
     system: str = Form(default=""),
     file_name: str = Form(...),
     archive_identifier: str = Form(...),
+    source_id: str = Form(default="archive_org"),
     session: Session = Depends(get_session),
 ):
     """Enqueue a download and kick off the background task."""
-    client = ArchiveClient()
-    source_url = client.get_download_url(archive_identifier, file_name)
+    src = source_registry.get(source_id) or source_registry.get("archive_org")
+    source_url = src.get_download_url(archive_identifier, file_name)
 
     download = Download(
         game_title=game_title,
         system=system,
         file_name=file_name,
         source_url=source_url,
+        source_id=source_id,
         archive_identifier=archive_identifier,
         status=DownloadStatus.pending,
     )
@@ -122,8 +124,8 @@ async def _run_download(download_id: int) -> None:
                     s.commit()
 
         try:
-            client = ArchiveClient()
-            await client.download_file(download.source_url, dest, on_progress)
+            src = source_registry.get(download.source_id) or source_registry.get("archive_org")
+            await src.download_file(download.source_url, dest, on_progress)
 
             # Extract the ROM if it was downloaded as a zip
             rom_path = dest

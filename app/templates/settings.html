@@ -76,6 +76,42 @@
             </div>
         </section>
 
+        <!-- Sources -->
+        <section>
+            <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">ROM Sources</h2>
+            <div class="bg-gray-900 border border-gray-800 rounded-lg divide-y divide-gray-800">
+                {% for src in sources %}
+                <div class="flex items-center justify-between px-5 py-4 gap-4">
+                    <div class="min-w-0">
+                        <p class="text-sm text-gray-200 font-medium">{{ src.name }}</p>
+                        <p class="text-xs text-gray-600 mt-0.5">
+                            {% if not src.available %}
+                            Coming soon — not yet implemented
+                            {% elif src.source_id == 'archive_org' %}
+                            No-Intro &amp; Redump collections via the Internet Archive API
+                            {% elif src.source_id == 'vimm' %}
+                            Scraped search against vimm.net
+                            {% else %}
+                            {{ src.source_id }}
+                            {% endif %}
+                        </p>
+                    </div>
+                    <label class="flex items-center gap-2 flex-shrink-0 {% if not src.available %}opacity-40 pointer-events-none{% endif %}">
+                        <input
+                            type="checkbox"
+                            name="source_{{ src.source_id }}_enabled"
+                            value="true"
+                            {% if source_enabled[src.source_id] %}checked{% endif %}
+                            {% if not src.available %}disabled{% endif %}
+                            class="w-4 h-4 rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-blue-500 focus:ring-offset-gray-900"
+                        >
+                        <span class="text-xs text-gray-400">Enabled</span>
+                    </label>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+
         <div class="flex items-center gap-4">
             <button
                 type="submit"
