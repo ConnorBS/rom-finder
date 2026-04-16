@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -6,7 +7,7 @@ from sqlmodel import SQLModel, Session, text
 
 from app.db.database import engine
 from app.db.models import AppSetting, WantedGame  # noqa: F401 — registers table
-from app.routers import games, downloads, library, settings_router, wanted
+from app.routers import games, downloads, library, settings_router, wanted, api
 
 
 # (column_name, sql_type, default_value)
@@ -56,6 +57,16 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="ROM Finder", lifespan=lifespan)
+
+# Allow requests from the Chrome extension (chrome-extension://*) and any
+# local/remote address the user might host this on.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=["*"],
+)
+
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 app.include_router(games.router)
@@ -63,3 +74,4 @@ app.include_router(downloads.router)
 app.include_router(library.router)
 app.include_router(settings_router.router)
 app.include_router(wanted.router)
+app.include_router(api.router)

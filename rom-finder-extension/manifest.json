@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "ROM Finder",
+  "version": "1.1.0",
+  "description": "Add RetroAchievements games to your ROM Finder wanted list and search sources directly in the browser.",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://retroachievements.org/*",
+    "http://localhost:*/*",
+    "http://127.0.0.1:*/*",
+    "http://*/*",
+    "https://*/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://retroachievements.org/game/*"],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "options_page": "options.html",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "ROM Finder"
+  }
+}

@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      width: 260px;
+      padding: 16px;
+      color: #1e293b;
+      background: #fff;
+    }
+    h2 { font-size: 14px; font-weight: 600; margin: 0 0 4px; }
+    .subtitle { font-size: 11px; color: #94a3b8; margin: 0 0 12px; }
+    .url-box {
+      font-size: 11px;
+      font-family: monospace;
+      color: #475569;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 5px;
+      padding: 6px 8px;
+      word-break: break-all;
+    }
+    .status {
+      font-size: 12px;
+      margin: 8px 0 0;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .dot.ok   { background: #22c55e; }
+    .dot.err  { background: #ef4444; }
+    .dot.wait { background: #94a3b8; }
+    hr { border: none; border-top: 1px solid #f1f5f9; margin: 12px 0; }
+    .links { display: flex; justify-content: space-between; }
+    .links a {
+      font-size: 12px;
+      color: #3b82f6;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .links a:hover { text-decoration: underline; }
+    .hint {
+      font-size: 11px;
+      color: #94a3b8;
+      margin-top: 8px;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <h2>ROM Finder</h2>
+  <p class="subtitle">Visit any RetroAchievements game page to use the panel.</p>
+  <div class="url-box" id="url-display">—</div>
+  <div class="status" id="status">
+    <span class="dot wait" id="dot"></span>
+    <span id="status-text">Checking…</span>
+  </div>
+  <hr>
+  <div class="links">
+    <a id="open-wanted">Open Wanted list</a>
+    <a id="options-link">Options</a>
+  </div>
+  <p class="hint">Go to <strong>retroachievements.org/game/…</strong> to add games and search sources.</p>
+  <script src="popup.js"></script>
+</body>
+</html>
