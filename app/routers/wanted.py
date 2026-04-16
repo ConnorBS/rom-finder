@@ -141,8 +141,10 @@ async def wanted_sources(
                     })
                     seen.add(name)
 
-        # Search all enabled sources
-        search_query = Path(rom_names[0]["name"]).stem if rom_names else wanted.game_title
+        # Use the game title as the search query — RA ROM filenames use
+        # No-Intro naming (e.g. "Game (Europe) (En,Fr,De)") which doesn't
+        # match how sources like VIMM title their entries.
+        search_query = wanted.game_title
         enabled_ids = _enabled_source_ids(session)
         for src in source_registry.enabled_sources(enabled_ids):
             try:
