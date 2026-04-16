@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- Background -->
+  <rect width="128" height="128" rx="22" fill="#0f172a"/>
+
+  <!-- Cartridge body -->
+  <rect x="20" y="28" width="88" height="62" rx="7" fill="#1e293b"/>
+  <rect x="20" y="28" width="88" height="62" rx="7" fill="none" stroke="#334155" stroke-width="2"/>
+
+  <!-- Cartridge label (blue panel) -->
+  <rect x="30" y="36" width="68" height="36" rx="4" fill="#1e3a8a"/>
+  <rect x="30" y="36" width="68" height="36" rx="4" fill="none" stroke="#2563eb" stroke-width="1.5"/>
+
+  <!-- "RF" label text -->
+  <text x="64" y="62" font-family="ui-monospace, monospace" font-size="22" font-weight="700"
+        text-anchor="middle" fill="#ffffff" letter-spacing="2">RF</text>
+
+  <!-- Connector pins at bottom of cartridge -->
+  <rect x="34" y="84" width="8"  height="10" rx="1.5" fill="#475569"/>
+  <rect x="46" y="84" width="8"  height="10" rx="1.5" fill="#475569"/>
+  <rect x="58" y="84" width="8"  height="10" rx="1.5" fill="#475569"/>
+  <rect x="70" y="84" width="8"  height="10" rx="1.5" fill="#475569"/>
+  <rect x="82" y="84" width="8"  height="10" rx="1.5" fill="#475569"/>
+
+  <!-- Magnifying glass overlay (bottom-right) -->
+  <circle cx="91" cy="95" r="14" fill="#0f172a" stroke="#0f172a" stroke-width="4"/>
+  <circle cx="91" cy="95" r="10" fill="none" stroke="#2563eb" stroke-width="3.5"/>
+  <line x1="98" y1="102" x2="106" y2="110" stroke="#2563eb" stroke-width="3.5" stroke-linecap="round"/>
+</svg>
