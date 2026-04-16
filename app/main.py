@@ -5,8 +5,8 @@ from pathlib import Path
 from sqlmodel import SQLModel, Session, text
 
 from app.db.database import engine
-from app.db.models import AppSetting
-from app.routers import games, downloads, library, settings_router
+from app.db.models import AppSetting, WantedGame  # noqa: F401 — registers table
+from app.routers import games, downloads, library, settings_router, wanted
 
 
 # (column_name, sql_type, default_value)
@@ -45,6 +45,7 @@ DEFAULT_SETTINGS = {
 async def lifespan(app: FastAPI):
     SQLModel.metadata.create_all(engine)
     _run_migrations()
+    Path("static/covers").mkdir(parents=True, exist_ok=True)
     # Seed default settings if not already present
     with Session(engine) as session:
         for key, value in DEFAULT_SETTINGS.items():
@@ -61,3 +62,4 @@ app.include_router(games.router)
 app.include_router(downloads.router)
 app.include_router(library.router)
 app.include_router(settings_router.router)
+app.include_router(wanted.router)

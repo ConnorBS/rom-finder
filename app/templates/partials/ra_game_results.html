@@ -20,6 +20,30 @@
                     {% endif %}
                 </div>
             </div>
+
+            {% if mode == 'add' %}
+            <!-- Add to Wanted mode -->
+            <form
+                id="add-form-{{ game.ID }}"
+                hx-post="/wanted/add"
+                hx-target="#add-form-{{ game.ID }}"
+                hx-swap="innerHTML"
+                hx-indicator="find button"
+                class="flex-shrink-0"
+            >
+                <input type="hidden" name="ra_game_id" value="{{ game.ID }}">
+                <input type="hidden" name="game_title" value="{{ game.Title }}">
+                <input type="hidden" name="system" value="{{ system_name }}">
+                <button
+                    type="submit"
+                    class="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1.5 rounded-md transition-colors"
+                >
+                    <span class="htmx-label">+ Add to Wanted</span>
+                    <span class="htmx-indicator">Adding...</span>
+                </button>
+            </form>
+            {% else %}
+            <!-- Default: find sources inline -->
             <button
                 class="flex-shrink-0 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 hover:text-white text-xs px-3 py-1.5 rounded-md transition-colors"
                 hx-get="/ra/games/{{ game.ID }}/sources?game_title={{ game.Title | urlencode }}&system_name={{ system_name | urlencode }}"
@@ -30,6 +54,7 @@
                 <span class="htmx-label">Find Sources</span>
                 <span class="htmx-indicator">Searching...</span>
             </button>
+            {% endif %}
         </div>
     </div>
     {% endfor %}

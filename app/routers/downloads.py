@@ -151,6 +151,17 @@ async def _run_download(download_id: int) -> None:
                     if match:
                         download.hash_verified = True
                         download.status = DownloadStatus.verified
+                        # Mark any matching wanted game as verified
+                        ra_game_id = match.get("ID")
+                        if ra_game_id:
+                            from app.db.models import WantedGame, HuntStatus
+                            wanted = session.exec(
+                                select(WantedGame).where(WantedGame.ra_game_id == ra_game_id)
+                            ).first()
+                            if wanted and wanted.status != HuntStatus.verified:
+                                wanted.status = HuntStatus.verified
+                                wanted.updated_at = datetime.utcnow()
+                                session.add(wanted)
                 except Exception:
                     pass  # RA lookup failure doesn't fail the download
         except Exception as exc:

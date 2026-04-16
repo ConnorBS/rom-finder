@@ -1,0 +1,87 @@
+<div class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden mb-6">
+
+    <!-- Panel header -->
+    <div class="flex items-center justify-between px-4 py-3 border-b border-gray-800 bg-gray-800/50">
+        <div>
+            <p class="text-gray-200 text-sm font-medium">{{ wanted.game_title }}</p>
+            <p class="text-gray-500 text-xs mt-0.5">{{ wanted.system }}</p>
+        </div>
+        <button
+            onclick="document.getElementById('source-panel').innerHTML=''"
+            class="text-gray-600 hover:text-gray-400 text-lg leading-none"
+            title="Close"
+        >&times;</button>
+    </div>
+
+    {% if error %}
+    <div class="px-4 py-3 text-red-400 text-xs">Error: {{ error }}</div>
+
+    {% else %}
+
+    <!-- Known ROM names from RA -->
+    {% if rom_names %}
+    <div class="px-4 py-3 border-b border-gray-800">
+        <p class="text-gray-600 text-xs uppercase tracking-wide font-medium mb-2">Expected ROM files</p>
+        <ul class="space-y-1">
+            {% for entry in rom_names %}
+            <li class="flex items-center gap-2 flex-wrap">
+                <span class="text-gray-300 text-xs font-mono">{{ entry.name }}</span>
+                {% for label in entry.labels %}
+                <span class="bg-gray-800 text-gray-500 text-xs px-1.5 py-0.5 rounded">{{ label }}</span>
+                {% endfor %}
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    <!-- Source results -->
+    {% if collections %}
+    <div class="divide-y divide-gray-800">
+        {% for item in collections %}
+        <div id="wsrc-{{ loop.index }}-{{ wanted.id }}" class="px-4 py-3">
+            <div class="flex items-center justify-between gap-4">
+                <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2">
+                        <p class="text-gray-300 text-xs font-medium truncate">{{ item.title or item.identifier }}</p>
+                        {% if item._source_name %}
+                        <span class="flex-shrink-0 text-xs bg-gray-800 text-gray-500 px-1.5 py-0.5 rounded">{{ item._source_name }}</span>
+                        {% endif %}
+                    </div>
+                    <div class="flex items-center gap-2 mt-0.5">
+                        <p class="text-gray-600 text-xs font-mono truncate">{{ item.identifier }}</p>
+                        {% if item.source_id == 'archive_org' %}
+                        <a href="https://archive.org/details/{{ item.identifier }}" target="_blank"
+                           class="text-blue-500 hover:text-blue-400 text-xs flex-shrink-0">↗</a>
+                        {% elif item.source_id == 'vimm' %}
+                        <a href="https://vimm.net/vault/{{ item.identifier }}/" target="_blank"
+                           class="text-blue-500 hover:text-blue-400 text-xs flex-shrink-0">↗</a>
+                        {% endif %}
+                    </div>
+                </div>
+                <button
+                    class="flex-shrink-0 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 hover:text-white text-xs px-3 py-1.5 rounded-md transition-colors"
+                    hx-get="/games/{{ item.identifier }}/files?source_id={{ item.source_id or 'archive_org' }}&system={{ wanted.system | urlencode }}&game_title={{ wanted.game_title | urlencode }}{% if rom_names %}&q={{ rom_names[0].name | urlencode }}{% endif %}"
+                    hx-target="#wsrc-{{ loop.index }}-{{ wanted.id }}"
+                    hx-swap="outerHTML"
+                    hx-indicator="this"
+                >
+                    <span class="htmx-label">Browse files</span>
+                    <span class="htmx-indicator">Loading...</span>
+                </button>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="px-4 py-6 text-center">
+        <p class="text-gray-500 text-sm">No results found across enabled sources.</p>
+        <p class="text-gray-600 text-xs mt-1">Try enabling more sources in
+            <a href="/settings" class="text-blue-500 hover:underline">Settings</a>
+            or search manually.
+        </p>
+    </div>
+    {% endif %}
+
+    {% endif %}
+</div>

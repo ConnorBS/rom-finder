@@ -124,9 +124,13 @@ async def ra_search(
     request: Request,
     system_id: int = Query(...),
     q: str = Query(default=""),
+    mode: str = Query(default="lookup"),
     session: Session = Depends(get_session),
 ):
-    """HTMX: search RA game list for a system by title."""
+    """HTMX: search RA game list for a system by title.
+    mode='add'    → 'Add to Wanted' button (Wanted page)
+    mode='lookup' → 'Find Sources' button (default)
+    """
     ra = _get_ra_client(session)
     if not ra:
         return HTMLResponse(
@@ -146,7 +150,7 @@ async def ra_search(
 
     return templates.TemplateResponse(
         request, "partials/ra_game_results.html",
-        {"games": games, "query": q, "system_name": system_name, "error": error},
+        {"games": games, "query": q, "system_name": system_name, "mode": mode, "error": error},
     )
 
 
