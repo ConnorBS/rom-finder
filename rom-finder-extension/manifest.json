@@ -6,8 +6,6 @@
   "permissions": ["storage"],
   "host_permissions": [
     "https://retroachievements.org/*",
-    "http://localhost:*/*",
-    "http://127.0.0.1:*/*",
     "http://*/*",
     "https://*/*"
   ],
