@@ -2,11 +2,30 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 from pathlib import Path
-from sqlmodel import SQLModel, Session
+from sqlmodel import SQLModel, Session, text
 
 from app.db.database import engine
 from app.db.models import AppSetting
 from app.routers import games, downloads, library, settings_router
+
+
+# (column_name, sql_type, default_value)
+_MIGRATIONS = [
+    ("download", "source_id", "VARCHAR", "'archive_org'"),
+]
+
+
+def _run_migrations() -> None:
+    """Add any columns that exist in the model but not yet in the DB."""
+    with Session(engine) as session:
+        for table, col, col_type, default in _MIGRATIONS:
+            rows = session.exec(text(f"PRAGMA table_info({table})")).all()
+            existing = {r[1] for r in rows}
+            if col not in existing:
+                session.exec(
+                    text(f"ALTER TABLE {table} ADD COLUMN {col} {col_type} NOT NULL DEFAULT {default}")
+                )
+        session.commit()
 
 
 DEFAULT_SETTINGS = {
@@ -25,6 +44,7 @@ DEFAULT_SETTINGS = {
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     SQLModel.metadata.create_all(engine)
+    _run_migrations()
     # Seed default settings if not already present
     with Session(engine) as session:
         for key, value in DEFAULT_SETTINGS.items():
