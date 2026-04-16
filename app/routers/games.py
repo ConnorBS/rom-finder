@@ -122,7 +122,7 @@ async def browse_files(
 @router.get("/ra/search", response_class=HTMLResponse)
 async def ra_search(
     request: Request,
-    system_id: int | None = Query(default=None),
+    system_id: str = Query(default=""),
     q: str = Query(default=""),
     mode: str = Query(default="lookup"),
     session: Session = Depends(get_session),
@@ -138,18 +138,21 @@ async def ra_search(
             'Enable it in <a href="/settings" class="underline">Settings</a>.</p>'
         )
 
+    # system_id arrives as an empty string when nothing is selected
+    sid: int | None = int(system_id) if system_id.strip() else None
+
     games = []
     error = None
-    system_name = SYSTEMS.get(system_id, "") if system_id else ""
+    system_name = SYSTEMS.get(sid, "") if sid else ""
 
-    if q and not system_id:
+    if q and not sid:
         return HTMLResponse(
             '<p class="text-gray-500 text-sm">Select a console above to search.</p>'
         )
 
-    if q and system_id:
+    if q and sid:
         try:
-            games = await ra.search_games(system_id, q)
+            games = await ra.search_games(sid, q)
         except Exception as exc:
             error = str(exc)
 
