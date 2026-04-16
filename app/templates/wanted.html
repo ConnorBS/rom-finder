@@ -38,7 +38,7 @@
                 hx-vals='{"mode": "add"}'
                 hx-trigger="change"
             >
-                <option value="">Select a system...</option>
+                <option value="">All Systems</option>
                 {% for id, name in systems.items() %}
                 <option value="{{ id }}">{{ name }}</option>
                 {% endfor %}
@@ -67,7 +67,7 @@
             </div>
         </div>
         <div id="add-results">
-            <p class="text-gray-600 text-sm">Select a system and type a title to search.</p>
+            <p class="text-gray-600 text-sm">Type a title to search. Select a console to filter by system.</p>
         </div>
     </div>
 

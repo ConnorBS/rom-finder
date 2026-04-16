@@ -122,7 +122,7 @@ async def browse_files(
 @router.get("/ra/search", response_class=HTMLResponse)
 async def ra_search(
     request: Request,
-    system_id: int = Query(...),
+    system_id: int | None = Query(default=None),
     q: str = Query(default=""),
     mode: str = Query(default="lookup"),
     session: Session = Depends(get_session),
@@ -140,9 +140,14 @@ async def ra_search(
 
     games = []
     error = None
-    system_name = SYSTEMS.get(system_id, "")
+    system_name = SYSTEMS.get(system_id, "") if system_id else ""
 
-    if q:
+    if q and not system_id:
+        return HTMLResponse(
+            '<p class="text-gray-500 text-sm">Select a console above to search.</p>'
+        )
+
+    if q and system_id:
         try:
             games = await ra.search_games(system_id, q)
         except Exception as exc:

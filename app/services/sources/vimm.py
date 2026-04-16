@@ -76,6 +76,9 @@ class VimmSource(RomSource):
 
         # VIMM lists games in a table; each row links to /vault/{mediaId}/
         for row in soup.select("table.rounded tr"):
+            cells = row.find_all("td")
+            if not cells:
+                continue
             link = row.find("a", href=True)
             if not link:
                 continue
@@ -85,13 +88,34 @@ class VimmSource(RomSource):
             if len(parts) == 2 and parts[0] == "vault" and parts[1].isdigit():
                 media_id = parts[1]
                 title = link.get_text(strip=True)
-                if title:
-                    results.append({
-                        "identifier": media_id,
-                        "title": title,
-                        "description": f"VIMM's Lair — Media ID {media_id}",
-                        "source_id": self.source_id,
-                    })
+                if not title:
+                    continue
+
+                # Extract metadata from non-title cells (region, version flags, etc.)
+                region = ""
+                version_tags: list[str] = []
+                for cell in cells:
+                    # Skip the cell containing the game link
+                    if cell.find("a") is link:
+                        continue
+                    # Region images use alt text (e.g. "USA", "Europe", "Japan")
+                    for img in cell.find_all("img"):
+                        alt = img.get("alt", "").strip()
+                        if alt and not region:
+                            region = alt
+                    # Any plain text in non-link cells is version/tag info
+                    cell_text = cell.get_text(strip=True)
+                    if cell_text:
+                        version_tags.append(cell_text)
+
+                results.append({
+                    "identifier": media_id,
+                    "title": title,
+                    "description": "VIMM's Lair",
+                    "region": region,
+                    "version_tags": version_tags,
+                    "source_id": self.source_id,
+                })
 
         return results
 
