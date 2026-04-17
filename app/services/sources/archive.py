@@ -68,8 +68,10 @@ class ArchiveSource(RomSource):
         ]
 
         if name_filter:
-            name_filter_lower = name_filter.lower()
-            files = [f for f in files if name_filter_lower in f.get("name", "").lower()]
+            # Strip extension before matching: RA ROM names end in .iso/.bin but
+            # Archive files are often .7z or .zip with the same base name.
+            filter_stem = Path(name_filter).stem.lower()
+            files = [f for f in files if filter_stem in Path(f.get("name", "")).stem.lower()]
 
         for f in files:
             f["identifier"] = identifier
