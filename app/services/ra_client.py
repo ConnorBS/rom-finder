@@ -121,6 +121,26 @@ class RAClient:
             data = resp.json()
             return data if data.get("ID") else None
 
+    async def test_credentials(self) -> tuple[bool, str]:
+        """Test if credentials are valid. Returns (success, message)."""
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(
+                    f"{RA_BASE_URL}/API_GetUserProfile.php",
+                    params={"z": self.username, "y": self.api_key, "u": self.username},
+                    timeout=10,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                if data.get("User"):
+                    return True, f"Connected as {data['User']}"
+                error = data.get("Error", "Invalid credentials or no response")
+                return False, error
+        except httpx.HTTPStatusError as e:
+            return False, f"HTTP {e.response.status_code}"
+        except Exception as e:
+            return False, str(e)
+
     async def get_game_info(self, game_id: int) -> dict:
         """Fetch detailed info for a single game including achievement count."""
         async with httpx.AsyncClient() as client:

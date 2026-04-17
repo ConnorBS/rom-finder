@@ -1,3 +1,5 @@
+import json
+import shutil
 from fastapi import APIRouter, Request, Form, Depends, BackgroundTasks
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -6,9 +8,10 @@ from pathlib import Path
 from datetime import datetime
 
 from app.db.database import get_session
-from app.db.models import Download, DownloadStatus, AppSetting
+from app.db.models import Download, DownloadStatus, AppSetting, LibraryEntry
 from app.services import sources as source_registry
-from app.services.hasher import hash_rom, extract_rom_from_zip
+from app.services.hasher import hash_rom, extract_rom_from_zip, DISC_SYSTEMS
+from app.services.rahasher import compute_ra_hash
 
 router = APIRouter(prefix="/downloads")
 templates = Jinja2Templates(directory="app/templates")
@@ -19,12 +22,22 @@ def _get_setting(session: Session, key: str, default: str = "") -> str:
     return s.value if s else default
 
 
+def _resolve_folder(folder_map: dict, system: str) -> str:
+    """Return the mapped folder name for a system, falling back to the system name."""
+    return folder_map.get(system, system)
+
+
 @router.get("", response_class=HTMLResponse)
 async def downloads_page(request: Request, session: Session = Depends(get_session)):
-    downloads = session.exec(
+    all_downloads = session.exec(
         select(Download).order_by(Download.created_at.desc())
     ).all()
-    return templates.TemplateResponse(request, "downloads.html", {"downloads": downloads})
+    pending = [d for d in all_downloads if d.status == DownloadStatus.pending_approval]
+    active = [d for d in all_downloads if d.status != DownloadStatus.pending_approval]
+    return templates.TemplateResponse(
+        request, "downloads.html",
+        {"pending": pending, "active": active},
+    )
 
 
 @router.post("/start", response_class=HTMLResponse)
@@ -38,7 +51,6 @@ async def start_download(
     source_id: str = Form(default="archive_org"),
     session: Session = Depends(get_session),
 ):
-    """Enqueue a download and kick off the background task."""
     src = source_registry.get(source_id) or source_registry.get("archive_org")
     source_url = src.get_download_url(archive_identifier, file_name)
 
@@ -76,12 +88,132 @@ async def download_status(
     download_id: int,
     session: Session = Depends(get_session),
 ):
-    """HTMX polling endpoint: returns current state of one download."""
     download = session.get(Download, download_id)
     if not download:
         return HTMLResponse('<p class="text-red-400 text-sm">Download not found.</p>')
-
     return templates.TemplateResponse(request, "partials/download_item.html", {"download": download})
+
+
+@router.post("/{download_id}/approve", response_class=HTMLResponse)
+async def approve_download(
+    download_id: int,
+    session: Session = Depends(get_session),
+):
+    download = session.get(Download, download_id)
+    if not download or not download.file_path:
+        return HTMLResponse("")
+
+    download_dir = _get_setting(session, "download_dir", str(Path.home() / "ROMs"))
+    folder_map = json.loads(_get_setting(session, "folder_map", "{}"))
+    folder_name = _resolve_folder(folder_map, download.system)
+
+    final_dir = Path(download_dir) / folder_name
+    final_dir.mkdir(parents=True, exist_ok=True)
+
+    src_path = Path(download.file_path)
+    dest_path = final_dir / src_path.name
+    if src_path.exists():
+        shutil.move(str(src_path), str(dest_path))
+
+    entry = LibraryEntry(
+        game_title=download.game_title,
+        system=download.system,
+        file_name=dest_path.name,
+        file_path=str(dest_path),
+        file_hash=download.file_hash,
+        hash_verified=download.hash_verified,
+        ra_game_id=download.ra_game_id,
+        ra_matched=download.hash_verified,
+    )
+    session.add(entry)
+
+    # Mark matching wanted game verified
+    if download.ra_game_id:
+        from app.db.models import WantedGame, HuntStatus
+        wanted = session.exec(
+            select(WantedGame).where(WantedGame.ra_game_id == download.ra_game_id)
+        ).first()
+        if wanted and wanted.status != HuntStatus.verified:
+            wanted.status = HuntStatus.verified
+            wanted.updated_at = datetime.utcnow()
+            session.add(wanted)
+
+    session.delete(download)
+    session.commit()
+    return HTMLResponse("")
+
+
+@router.post("/{download_id}/reject", response_class=HTMLResponse)
+async def reject_download(
+    download_id: int,
+    session: Session = Depends(get_session),
+):
+    download = session.get(Download, download_id)
+    if not download:
+        return HTMLResponse("")
+    if download.file_path:
+        p = Path(download.file_path)
+        if p.exists():
+            p.unlink()
+    session.delete(download)
+    session.commit()
+    return HTMLResponse("")
+
+
+@router.post("/approve-all", response_class=HTMLResponse)
+async def approve_all_verified(
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    """Approve all hash-verified pending items at once."""
+    pending = session.exec(
+        select(Download).where(Download.status == DownloadStatus.pending_approval)
+    ).all()
+
+    download_dir = _get_setting(session, "download_dir", str(Path.home() / "ROMs"))
+    folder_map = json.loads(_get_setting(session, "folder_map", "{}"))
+
+    for download in pending:
+        if not download.file_path:
+            continue
+        folder_name = _resolve_folder(folder_map, download.system)
+        final_dir = Path(download_dir) / folder_name
+        final_dir.mkdir(parents=True, exist_ok=True)
+        src_path = Path(download.file_path)
+        dest_path = final_dir / src_path.name
+        if src_path.exists():
+            shutil.move(str(src_path), str(dest_path))
+        entry = LibraryEntry(
+            game_title=download.game_title,
+            system=download.system,
+            file_name=dest_path.name,
+            file_path=str(dest_path),
+            file_hash=download.file_hash,
+            hash_verified=download.hash_verified,
+            ra_game_id=download.ra_game_id,
+            ra_matched=download.hash_verified,
+        )
+        session.add(entry)
+        if download.ra_game_id:
+            from app.db.models import WantedGame, HuntStatus
+            wanted = session.exec(
+                select(WantedGame).where(WantedGame.ra_game_id == download.ra_game_id)
+            ).first()
+            if wanted and wanted.status != HuntStatus.verified:
+                wanted.status = HuntStatus.verified
+                wanted.updated_at = datetime.utcnow()
+                session.add(wanted)
+        session.delete(download)
+
+    session.commit()
+
+    all_downloads = session.exec(select(Download).order_by(Download.created_at.desc())).all()
+    pending_list = [d for d in all_downloads if d.status == DownloadStatus.pending_approval]
+    active_list = [d for d in all_downloads if d.status != DownloadStatus.pending_approval]
+    return templates.TemplateResponse(
+        request, "downloads.html",
+        {"pending": pending_list, "active": active_list},
+    )
 
 
 @router.delete("/{download_id}", response_class=HTMLResponse)
@@ -93,11 +225,10 @@ async def delete_download(
     if download:
         session.delete(download)
         session.commit()
-    return HTMLResponse("")  # HTMX swaps in empty string to remove the element
+    return HTMLResponse("")
 
 
 async def _run_download(download_id: int) -> None:
-    """Background task: download the file and update DB progress."""
     from app.db.database import engine
     from sqlmodel import Session
 
@@ -106,8 +237,11 @@ async def _run_download(download_id: int) -> None:
         if not download:
             return
 
-        download_dir = _get_setting(session, "download_dir", str(Path.home() / "ROMs"))
-        dest = Path(download_dir) / download.system / download.file_name
+        check_dir = _get_setting(session, "check_dir", str(Path.home() / "ROMs-check"))
+        folder_map = json.loads(_get_setting(session, "folder_map", "{}"))
+        folder_name = _resolve_folder(folder_map, download.system)
+        dest = Path(check_dir) / folder_name / download.file_name
+        dest.parent.mkdir(parents=True, exist_ok=True)
 
         download.status = DownloadStatus.downloading
         download.updated_at = datetime.utcnow()
@@ -127,43 +261,38 @@ async def _run_download(download_id: int) -> None:
             src = source_registry.get(download.source_id) or source_registry.get("archive_org")
             await src.download_file(download.source_url, dest, on_progress)
 
-            # Extract the ROM if it was downloaded as a zip
             rom_path = dest
             if dest.suffix.lower() == ".zip":
                 rom_path = extract_rom_from_zip(dest)
 
-            file_hash = hash_rom(rom_path, download.system)
+            # Compute RA hash — try RAHasher binary first, fall back to Python
+            file_hash = await compute_ra_hash(rom_path, download.system)
+            if file_hash is None:
+                file_hash = hash_rom(rom_path, download.system)
+
             download.file_path = str(rom_path)
             download.file_name = rom_path.name
             download.file_hash = file_hash
             download.progress = 1.0
-            download.status = DownloadStatus.completed
 
-            # Verify hash against RetroAchievements if enabled
-            ra_enabled = _get_setting(session, "ra_enabled", "false") == "true"
+            # RA hash verification — runs regardless of ra_enabled so we always
+            # know if a ROM is in the RA database; ra_enabled only gates whether
+            # hash matching blocks/gates the approval flow in future.
             ra_username = _get_setting(session, "ra_username")
             ra_api_key = _get_setting(session, "ra_api_key")
-            if ra_enabled and ra_username and ra_api_key:
+            if ra_username and ra_api_key:
                 from app.services.ra_client import RAClient
                 ra = RAClient(ra_username, ra_api_key)
                 try:
                     match = await ra.lookup_hash(file_hash)
                     if match:
                         download.hash_verified = True
-                        download.status = DownloadStatus.verified
-                        # Mark any matching wanted game as verified
-                        ra_game_id = match.get("ID")
-                        if ra_game_id:
-                            from app.db.models import WantedGame, HuntStatus
-                            wanted = session.exec(
-                                select(WantedGame).where(WantedGame.ra_game_id == ra_game_id)
-                            ).first()
-                            if wanted and wanted.status != HuntStatus.verified:
-                                wanted.status = HuntStatus.verified
-                                wanted.updated_at = datetime.utcnow()
-                                session.add(wanted)
+                        download.ra_game_id = match.get("ID")
                 except Exception:
-                    pass  # RA lookup failure doesn't fail the download
+                    pass
+
+            download.status = DownloadStatus.pending_approval
+
         except Exception as exc:
             download.status = DownloadStatus.failed
             download.error_message = str(exc)

@@ -11,9 +11,10 @@ from app.db.models import AppSetting, WantedGame  # noqa: F401 — registers tab
 from app.routers import games, downloads, library, settings_router, wanted, api
 
 
-# (column_name, sql_type, default_value)
+# (table, column, sql_type, default_expr or None for nullable)
 _MIGRATIONS = [
     ("download", "source_id", "VARCHAR", "'archive_org'"),
+    ("download", "ra_game_id", "INTEGER", None),
 ]
 
 
@@ -24,14 +25,21 @@ def _run_migrations() -> None:
             rows = session.exec(text(f"PRAGMA table_info({table})")).all()
             existing = {r[1] for r in rows}
             if col not in existing:
-                session.exec(
-                    text(f"ALTER TABLE {table} ADD COLUMN {col} {col_type} NOT NULL DEFAULT {default}")
-                )
+                if default is not None:
+                    session.exec(
+                        text(f"ALTER TABLE {table} ADD COLUMN {col} {col_type} NOT NULL DEFAULT {default}")
+                    )
+                else:
+                    session.exec(
+                        text(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}")
+                    )
         session.commit()
 
 
 DEFAULT_SETTINGS = {
     "download_dir": os.environ.get("DOWNLOAD_DIR", str(Path.home() / "ROMs")),
+    "check_dir": os.environ.get("CHECK_DIR", str(Path.home() / "ROMs-check")),
+    "folder_map": "{}",
     "ra_enabled": "false",
     "ra_username": "",
     "ra_api_key": "",

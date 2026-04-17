@@ -16,16 +16,28 @@
             <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">Downloads</h2>
             <div class="bg-gray-900 border border-gray-800 rounded-lg p-5 space-y-4">
                 <div>
-                    <label class="block text-sm text-gray-300 mb-1.5" for="download_dir">Download directory</label>
+                    <label class="block text-sm text-gray-300 mb-1.5" for="download_dir">ROMs directory</label>
                     <input
                         type="text"
                         id="download_dir"
                         name="download_dir"
                         value="{{ settings.download_dir }}"
                         class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 font-mono"
-                        placeholder="C:\Users\You\ROMs"
+                        placeholder="/roms"
                     >
-                    <p class="text-gray-600 text-xs mt-1">ROMs are saved under system subfolders (e.g. <span class="font-mono">SNES\game.zip</span>).</p>
+                    <p class="text-gray-600 text-xs mt-1">Final destination for approved ROMs, organised into system subfolders.</p>
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-300 mb-1.5" for="check_dir">Review directory</label>
+                    <input
+                        type="text"
+                        id="check_dir"
+                        name="check_dir"
+                        value="{{ settings.check_dir }}"
+                        class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 font-mono"
+                        placeholder="/rom-check"
+                    >
+                    <p class="text-gray-600 text-xs mt-1">ROMs land here first. Approve them to move to the ROMs directory.</p>
                 </div>
             </div>
         </section>
@@ -34,45 +46,108 @@
         <section>
             <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">RetroAchievements Integration</h2>
             <div class="bg-gray-900 border border-gray-800 rounded-lg p-5 space-y-4">
-                <label class="flex items-center gap-3 cursor-pointer select-none">
+                <div>
+                    <label class="block text-sm text-gray-300 mb-1.5" for="ra_username">RA Username</label>
                     <input
-                        type="checkbox"
-                        name="ra_enabled"
-                        value="true"
-                        {% if settings.ra_enabled == "true" %}checked{% endif %}
-                        class="w-4 h-4 rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-blue-500 focus:ring-offset-gray-900"
-                        id="ra_enabled_toggle"
-                        onchange="document.getElementById('ra-fields').classList.toggle('hidden', !this.checked)"
+                        type="text"
+                        id="ra_username"
+                        name="ra_username"
+                        value="{{ settings.ra_username }}"
+                        autocomplete="off"
+                        class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
                     >
-                    <span class="text-sm text-gray-300">Enable RetroAchievements hash matching</span>
-                </label>
-                <p class="text-gray-600 text-xs -mt-2">When enabled, found ROMs are checked against RA's accepted hash list.</p>
-
-                <div id="ra-fields" class="space-y-4 {% if settings.ra_enabled != 'true' %}hidden{% endif %}">
-                    <div>
-                        <label class="block text-sm text-gray-300 mb-1.5" for="ra_username">RA Username</label>
-                        <input
-                            type="text"
-                            id="ra_username"
-                            name="ra_username"
-                            value="{{ settings.ra_username }}"
-                            autocomplete="off"
-                            class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
-                        >
-                    </div>
-                    <div>
-                        <label class="block text-sm text-gray-300 mb-1.5" for="ra_api_key">RA API Key</label>
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-300 mb-1.5" for="ra_api_key">RA API Key</label>
+                    <div class="flex gap-2 items-start">
                         <input
                             type="password"
                             id="ra_api_key"
                             name="ra_api_key"
                             value="{{ settings.ra_api_key }}"
                             autocomplete="new-password"
-                            class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+                            class="flex-1 bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
                         >
-                        <p class="text-gray-600 text-xs mt-1">Found at retroachievements.org → Settings → API Key.</p>
+                        <button
+                            type="button"
+                            hx-post="/settings/ra-test"
+                            hx-include="[name='ra_username'],[name='ra_api_key']"
+                            hx-target="#ra-test-result"
+                            hx-swap="innerHTML"
+                            class="bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs px-3 py-2 rounded-lg transition-colors flex-shrink-0"
+                        >Test connection</button>
                     </div>
+                    <p class="text-gray-600 text-xs mt-1">Found at retroachievements.org → Settings → API Key.</p>
+                    <div id="ra-test-result" class="mt-1.5"></div>
                 </div>
+
+                <div class="border-t border-gray-800 pt-4">
+                    <label class="flex items-center gap-3 cursor-pointer select-none">
+                        <input
+                            type="checkbox"
+                            name="ra_enabled"
+                            value="true"
+                            {% if settings.ra_enabled == "true" %}checked{% endif %}
+                            class="w-4 h-4 rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-blue-500 focus:ring-offset-gray-900"
+                        >
+                        <span class="text-sm text-gray-300">Enable hash matching for downloads</span>
+                    </label>
+                    <p class="text-gray-600 text-xs mt-1.5 ml-7">After each download, the ROM's hash is checked against RA's accepted list. Matched ROMs are marked verified.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- System Folder Mapping -->
+        <section>
+            <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">System Folder Mapping</h2>
+            <div class="bg-gray-900 border border-gray-800 rounded-lg p-5">
+                <p class="text-gray-500 text-xs mb-4">Map each existing folder in your ROMs directory to a system. ROM Finder will use these folders instead of creating new ones.</p>
+                <div class="overflow-x-auto">
+                    <table class="w-full">
+                        <thead>
+                            <tr>
+                                <th class="text-left text-xs text-gray-500 font-medium pb-2 pr-4">Folder</th>
+                                <th class="text-left text-xs text-gray-500 font-medium pb-2">System</th>
+                            </tr>
+                        </thead>
+                        <tbody id="folder-map-rows">
+                            {% if roms_folders %}
+                                {% for folder in roms_folders %}
+                                {% set assigned = namespace(sys="") %}
+                                {% for sys, f in folder_map.items() %}
+                                    {% if f == folder %}{% set assigned.sys = sys %}{% endif %}
+                                {% endfor %}
+                                <tr class="border-t border-gray-800">
+                                    <td class="py-2 pr-4 text-sm text-gray-300 font-mono">{{ folder }}</td>
+                                    <td class="py-2">
+                                        <input type="hidden" name="folder_names[]" value="{{ folder }}">
+                                        <select name="folder_systems[]" class="bg-gray-800 border border-gray-700 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500">
+                                            <option value="">— Not mapped —</option>
+                                            {% for sys in known_systems %}
+                                            <option value="{{ sys }}" {% if sys == assigned.sys %}selected{% endif %}>{{ sys }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            {% else %}
+                                <tr id="folder-map-empty">
+                                    <td colspan="2" class="py-4 text-gray-600 text-sm text-center">
+                                        {% if settings.download_dir %}No subfolders found — save settings first if the path changed.{% else %}Set a ROMs directory above to scan for folders.{% endif %}
+                                    </td>
+                                </tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
+                </div>
+                <button
+                    type="button"
+                    hx-get="/settings/folder-scan"
+                    hx-vals='js:{"path": document.getElementById("download_dir").value}'
+                    hx-target="#folder-map-rows"
+                    hx-swap="innerHTML"
+                    class="mt-3 text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                >↻ Rescan folder</button>
             </div>
         </section>
 

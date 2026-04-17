@@ -10,6 +10,7 @@ class DownloadStatus(str, Enum):
     completed = "completed"
     failed = "failed"
     verified = "verified"
+    pending_approval = "pending_approval"
 
 
 class AppSetting(SQLModel, table=True):
@@ -33,6 +34,7 @@ class Download(SQLModel, table=True):
     progress: float = 0.0
     file_hash: Optional[str] = None
     hash_verified: bool = False
+    ra_game_id: Optional[int] = None
     error_message: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)

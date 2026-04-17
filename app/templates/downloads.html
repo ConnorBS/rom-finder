@@ -1,20 +1,54 @@
 {% extends "base.html" %}
 {% block title %}Downloads — ROM Finder{% endblock %}
 {% block content %}
-<div class="p-6 max-w-5xl mx-auto">
-    <h1 class="text-xl font-semibold text-white mb-1">Downloads</h1>
-    <p class="text-gray-500 text-sm mb-6">Active and completed downloads.</p>
+<div class="p-6 max-w-5xl mx-auto space-y-8">
 
-    {% if downloads %}
-    <div class="space-y-3" id="download-list">
-        {% for download in downloads %}
-        {% include "partials/download_item.html" %}
-        {% endfor %}
-    </div>
-    {% else %}
-    <div class="bg-gray-900 border border-gray-800 rounded-lg p-8 text-center">
-        <p class="text-gray-500 text-sm">No downloads yet. Search for ROMs to get started.</p>
-    </div>
-    {% endif %}
+    <!-- Approval Queue -->
+    <section>
+        <div class="flex items-center justify-between mb-4">
+            <div>
+                <h1 class="text-xl font-semibold text-white">Pending Approval</h1>
+                <p class="text-gray-500 text-sm mt-0.5">Downloaded to your review folder. Approve to move to your ROMs directory.</p>
+            </div>
+            {% if pending %}
+            <button
+                hx-post="/downloads/approve-all"
+                hx-target="body"
+                hx-swap="innerHTML"
+                class="bg-green-700 hover:bg-green-600 text-white text-xs font-medium px-4 py-2 rounded-lg transition-colors flex-shrink-0"
+            >Approve all</button>
+            {% endif %}
+        </div>
+
+        {% if pending %}
+        <div class="space-y-2" id="pending-list">
+            {% for download in pending %}
+            {% include "partials/download_item.html" %}
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="bg-gray-900 border border-gray-800 rounded-lg p-6 text-center">
+            <p class="text-gray-600 text-sm">No ROMs waiting for approval.</p>
+        </div>
+        {% endif %}
+    </section>
+
+    <!-- Active / History -->
+    <section>
+        <h2 class="text-base font-semibold text-white mb-4">Active Downloads</h2>
+
+        {% if active %}
+        <div class="space-y-2" id="download-list">
+            {% for download in active %}
+            {% include "partials/download_item.html" %}
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="bg-gray-900 border border-gray-800 rounded-lg p-6 text-center">
+            <p class="text-gray-500 text-sm">No active downloads. Search for ROMs to get started.</p>
+        </div>
+        {% endif %}
+    </section>
+
 </div>
 {% endblock %}
