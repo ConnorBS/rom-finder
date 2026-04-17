@@ -22,7 +22,7 @@
             hx-target="closest div.overflow-hidden"
             hx-swap="outerHTML"
             hx-trigger="input changed delay:300ms"
-            hx-vals='{"q": ""}'
+            hx-vals='{"system": "{{ system }}", "game_title": "{{ game_title }}", "source_id": "{{ source_id or 'archive_org' }}"}'
             name="q"
             value="{{ query }}"
         >
@@ -45,8 +45,9 @@
                 hx-indicator="find button"
                 class="flex-shrink-0"
             >
-                <input type="hidden" name="game_title" value="{{ file.name | replace('.zip','') | replace('.7z','') }}">
-                <input type="hidden" name="system" value="">
+                <input type="hidden" name="game_title" value="{{ game_title or (file.name | replace('.zip','') | replace('.7z','') | replace('.rar','')) }}">
+                <input type="hidden" name="system" value="{{ system }}">
+                <input type="hidden" name="source_id" value="{{ source_id or file.source_id or 'archive_org' }}">
                 <input type="hidden" name="file_name" value="{{ file.name }}">
                 <input type="hidden" name="archive_identifier" value="{{ identifier }}">
                 <button

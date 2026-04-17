@@ -7,8 +7,8 @@ from datetime import datetime
 
 from app.db.database import get_session
 from app.db.models import Download, DownloadStatus, AppSetting
-from app.services.archive_client import ArchiveClient
-from app.services.hasher import hash_rom
+from app.services import sources as source_registry
+from app.services.hasher import hash_rom, extract_rom_from_zip
 
 router = APIRouter(prefix="/downloads")
 templates = Jinja2Templates(directory="app/templates")
@@ -35,17 +35,19 @@ async def start_download(
     system: str = Form(default=""),
     file_name: str = Form(...),
     archive_identifier: str = Form(...),
+    source_id: str = Form(default="archive_org"),
     session: Session = Depends(get_session),
 ):
     """Enqueue a download and kick off the background task."""
-    client = ArchiveClient()
-    source_url = client.get_download_url(archive_identifier, file_name)
+    src = source_registry.get(source_id) or source_registry.get("archive_org")
+    source_url = src.get_download_url(archive_identifier, file_name)
 
     download = Download(
         game_title=game_title,
         system=system,
         file_name=file_name,
         source_url=source_url,
+        source_id=source_id,
         archive_identifier=archive_identifier,
         status=DownloadStatus.pending,
     )
@@ -122,14 +124,46 @@ async def _run_download(download_id: int) -> None:
                     s.commit()
 
         try:
-            client = ArchiveClient()
-            await client.download_file(download.source_url, dest, on_progress)
+            src = source_registry.get(download.source_id) or source_registry.get("archive_org")
+            await src.download_file(download.source_url, dest, on_progress)
 
-            file_hash = hash_rom(dest, download.system)
-            download.file_path = str(dest)
+            # Extract the ROM if it was downloaded as a zip
+            rom_path = dest
+            if dest.suffix.lower() == ".zip":
+                rom_path = extract_rom_from_zip(dest)
+
+            file_hash = hash_rom(rom_path, download.system)
+            download.file_path = str(rom_path)
+            download.file_name = rom_path.name
             download.file_hash = file_hash
             download.progress = 1.0
             download.status = DownloadStatus.completed
+
+            # Verify hash against RetroAchievements if enabled
+            ra_enabled = _get_setting(session, "ra_enabled", "false") == "true"
+            ra_username = _get_setting(session, "ra_username")
+            ra_api_key = _get_setting(session, "ra_api_key")
+            if ra_enabled and ra_username and ra_api_key:
+                from app.services.ra_client import RAClient
+                ra = RAClient(ra_username, ra_api_key)
+                try:
+                    match = await ra.lookup_hash(file_hash)
+                    if match:
+                        download.hash_verified = True
+                        download.status = DownloadStatus.verified
+                        # Mark any matching wanted game as verified
+                        ra_game_id = match.get("ID")
+                        if ra_game_id:
+                            from app.db.models import WantedGame, HuntStatus
+                            wanted = session.exec(
+                                select(WantedGame).where(WantedGame.ra_game_id == ra_game_id)
+                            ).first()
+                            if wanted and wanted.status != HuntStatus.verified:
+                                wanted.status = HuntStatus.verified
+                                wanted.updated_at = datetime.utcnow()
+                                session.add(wanted)
+                except Exception:
+                    pass  # RA lookup failure doesn't fail the download
         except Exception as exc:
             download.status = DownloadStatus.failed
             download.error_message = str(exc)

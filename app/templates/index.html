@@ -1,11 +1,14 @@
 {% extends "base.html" %}
-{% block title %}Search — ROM Finder{% endblock %}
+{% block title %}Manual Search — ROM Finder{% endblock %}
 {% block content %}
 <div class="p-6 max-w-5xl mx-auto">
-    <h1 class="text-xl font-semibold text-white mb-1">Find ROMs</h1>
-    <p class="text-gray-500 text-sm mb-6">Search archive.org for No-Intro and Redump ROM sets.</p>
+    <h1 class="text-xl font-semibold text-white mb-1">Manual Search</h1>
+    <p class="text-gray-500 text-sm mb-6">
+        Browse enabled sources directly.
+        Looking for a specific game? Use
+        <a href="/wanted" class="text-blue-400 hover:underline">Wanted</a> to track and verify with hash matching.
+    </p>
 
-    <!-- Search bar -->
     <div class="flex gap-3 mb-6">
         <select
             id="system-select"
@@ -40,9 +43,8 @@
         </div>
     </div>
 
-    <!-- Results area -->
     <div id="results">
-        <p class="text-gray-600 text-sm">Start typing to search for ROM collections...</p>
+        <p class="text-gray-600 text-sm">Start typing to search enabled sources...</p>
     </div>
 </div>
 {% endblock %}

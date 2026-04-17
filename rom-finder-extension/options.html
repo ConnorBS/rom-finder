@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>ROM Finder — Options</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      padding: 32px;
+      max-width: 500px;
+      color: #1e293b;
+      background: #fff;
+    }
+    h1 { font-size: 18px; font-weight: 600; margin: 0 0 6px; }
+    p.subtitle { font-size: 13px; color: #64748b; margin: 0 0 24px; }
+    label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; color: #334155; }
+    input[type="text"] {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      font-size: 13px;
+      font-family: monospace;
+      color: #1e293b;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    input[type="text"]:focus {
+      outline: none;
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 3px rgba(59,130,246,0.15);
+    }
+    .help { font-size: 12px; color: #94a3b8; margin: 6px 0 0; }
+    .row { display: flex; gap: 8px; margin-top: 16px; }
+    button {
+      padding: 8px 18px;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      font-family: inherit;
+      transition: background 0.15s;
+    }
+    .primary { background: #3b82f6; color: #fff; }
+    .primary:hover { background: #2563eb; }
+    .secondary { background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0; }
+    .secondary:hover { background: #e2e8f0; }
+    #status { font-size: 12px; margin-top: 12px; min-height: 18px; }
+    .ok { color: #16a34a; }
+    .err { color: #dc2626; }
+    .checking { color: #64748b; }
+    hr { border: none; border-top: 1px solid #e2e8f0; margin: 28px 0; }
+    .note { font-size: 12px; color: #64748b; line-height: 1.6; }
+    .note code { background: #f1f5f9; padding: 1px 5px; border-radius: 3px; font-size: 11px; }
+  </style>
+</head>
+<body>
+  <h1>ROM Finder</h1>
+  <p class="subtitle">Configure your local ROM Finder instance.</p>
+
+  <label for="url">ROM Finder URL</label>
+  <input type="text" id="url" placeholder="http://127.0.0.1:8080" spellcheck="false">
+  <p class="help">The address where ROM Finder is running. Include the port number.</p>
+
+  <div class="row">
+    <button class="primary" id="save">Save</button>
+    <button class="secondary" id="test">Test connection</button>
+  </div>
+  <p id="status"></p>
+
+  <hr>
+
+  <p class="note">
+    <strong>Local:</strong> <code>http://127.0.0.1:8080</code> (default)<br>
+    <strong>Docker / server:</strong> use the IP or domain where you're hosting ROM Finder,
+    e.g. <code>http://192.168.1.100:8080</code> or <code>http://romfinder.home</code>.<br><br>
+    Make sure CORS is enabled on the server (it is by default).
+  </p>
+
+  <script src="options.js"></script>
+</body>
+</html>

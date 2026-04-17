@@ -5,7 +5,19 @@ Some systems require stripping headers before hashing (e.g. NES iNES header).
 """
 
 import hashlib
+import zipfile
 from pathlib import Path
+
+# Extensions treated as ROM files (used when picking from inside a zip)
+_ROM_EXTENSIONS = {
+    ".nes", ".sfc", ".smc", ".gba", ".gb", ".gbc",
+    ".md", ".gen", ".smd", ".bin",
+    ".iso", ".cue", ".chd",
+    ".n64", ".z64", ".v64",
+    ".nds", ".3ds",
+    ".psp", ".cso",
+    ".a26", ".lnx", ".pce", ".ws", ".wsc",
+}
 
 
 def md5_file(path: Path) -> str:
@@ -23,6 +35,31 @@ def md5_nes(path: Path) -> str:
         header = f.read(16)
         data = f.read() if header[:4] == b"NES\x1a" else header + f.read()
     return hashlib.md5(data).hexdigest()
+
+
+def extract_rom_from_zip(zip_path: Path) -> Path:
+    """Extract the ROM file from a zip archive next to the zip, then delete the zip.
+
+    If there are multiple files inside, picks the one with a known ROM extension
+    (largest if ties). Returns the path to the extracted file.
+    Raises ValueError if no ROM-like file is found inside.
+    """
+    dest_dir = zip_path.parent
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        members = zf.infolist()
+        rom_members = [m for m in members if Path(m.filename).suffix.lower() in _ROM_EXTENSIONS]
+        if not rom_members:
+            # Fall back to any non-directory member
+            rom_members = [m for m in members if not m.filename.endswith("/")]
+        if not rom_members:
+            raise ValueError(f"No files found inside {zip_path.name}")
+        # Pick the largest member (the ROM, not metadata)
+        target = max(rom_members, key=lambda m: m.file_size)
+        zf.extract(target, dest_dir)
+
+    extracted = dest_dir / target.filename
+    zip_path.unlink()
+    return extracted
 
 
 # Systems that need special hash handling

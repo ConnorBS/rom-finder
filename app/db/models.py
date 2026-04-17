@@ -27,6 +27,7 @@ class Download(SQLModel, table=True):
     file_name: str
     file_path: Optional[str] = None
     source_url: str
+    source_id: str = "archive_org"
     archive_identifier: str = ""
     status: DownloadStatus = DownloadStatus.pending
     progress: float = 0.0
@@ -34,6 +35,24 @@ class Download(SQLModel, table=True):
     hash_verified: bool = False
     error_message: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class HuntStatus(str, Enum):
+    hunting = "hunting"
+    verified = "verified"
+
+
+class WantedGame(SQLModel, table=True):
+    """A game the user is actively hunting for."""
+    __tablename__ = "wanted_games"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    game_title: str
+    system: str
+    ra_game_id: int = Field(index=True)
+    cover_path: str = ""        # relative path under static/, e.g. "covers/1234.png"
+    status: HuntStatus = HuntStatus.hunting
+    added_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 

@@ -1,0 +1,66 @@
+<div id="wanted-{{ game.id }}" class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden flex flex-col group">
+
+    <!-- Cover -->
+    <div class="relative bg-gray-800 aspect-[3/4] overflow-hidden">
+        {% if game.cover_path %}
+        <img
+            src="/static/{{ game.cover_path }}"
+            alt="{{ game.game_title }}"
+            class="w-full h-full object-cover"
+        >
+        {% else %}
+        <div class="w-full h-full flex items-center justify-center">
+            <span class="text-gray-600 text-3xl font-bold select-none">
+                {{ game.game_title[0] | upper }}
+            </span>
+        </div>
+        {% endif %}
+
+        <!-- Status badge overlay -->
+        {% if game.status.value == 'verified' %}
+        <div class="absolute top-2 right-2 bg-green-600 rounded-full p-1" title="Hash verified">
+            <svg class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
+            </svg>
+        </div>
+        {% else %}
+        <div class="absolute top-2 right-2 bg-gray-900/80 border border-gray-700 rounded-full px-2 py-0.5">
+            <span class="text-yellow-500 text-xs">Hunting</span>
+        </div>
+        {% endif %}
+
+        <!-- Remove button (visible on hover) -->
+        <button
+            class="absolute top-2 left-2 bg-gray-900/80 hover:bg-red-900/80 border border-gray-700 rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+            hx-delete="/wanted/{{ game.id }}"
+            hx-target="#wanted-{{ game.id }}"
+            hx-swap="outerHTML"
+            hx-confirm="Remove {{ game.game_title }} from Wanted?"
+            title="Remove"
+        >
+            <svg class="w-3 h-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+        </button>
+    </div>
+
+    <!-- Info -->
+    <div class="p-2 flex-1 flex flex-col gap-1">
+        <p class="text-gray-200 text-xs font-medium leading-tight line-clamp-2" title="{{ game.game_title }}">
+            {{ game.game_title }}
+        </p>
+        <p class="text-gray-600 text-xs truncate">{{ game.system }}</p>
+
+        <button
+            class="mt-auto w-full bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 hover:text-white text-xs px-2 py-1.5 rounded transition-colors"
+            hx-get="/wanted/{{ game.id }}/sources"
+            hx-target="#source-panel"
+            hx-swap="innerHTML"
+            hx-indicator="this"
+            onclick="document.getElementById('source-panel').scrollIntoView({behavior:'smooth', block:'nearest'})"
+        >
+            <span class="htmx-label">Search Sources</span>
+            <span class="htmx-indicator">Searching...</span>
+        </button>
+    </div>
+</div>

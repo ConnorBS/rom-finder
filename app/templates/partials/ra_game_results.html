@@ -1,0 +1,66 @@
+{% if error %}
+<div class="bg-red-900/40 border border-red-700 text-red-300 px-4 py-3 rounded-lg text-sm">
+    Search failed: {{ error }}
+</div>
+
+{% elif games %}
+<div class="space-y-2">
+    {% for game in games %}
+    <div id="ra-game-{{ game.ID }}" class="bg-gray-900 border border-gray-800 rounded-lg p-4">
+        <div class="flex items-start justify-between gap-4">
+            <div class="min-w-0 flex-1">
+                <p class="text-gray-200 text-sm font-medium truncate">{{ game.Title }}</p>
+                <div class="flex items-center gap-3 mt-0.5">
+                    <span class="text-gray-500 text-xs">{{ system_name }}</span>
+                    {% if game.NumAchievements %}
+                    <span class="text-yellow-600 text-xs">{{ game.NumAchievements }} achievements</span>
+                    {% endif %}
+                    {% if game.HashedRomCount %}
+                    <span class="text-gray-600 text-xs">{{ game.HashedRomCount }} ROM{{ 's' if game.HashedRomCount != 1 }}</span>
+                    {% endif %}
+                </div>
+            </div>
+
+            {% if mode == 'add' %}
+            <!-- Add to Wanted mode -->
+            <form
+                id="add-form-{{ game.ID }}"
+                hx-post="/wanted/add"
+                hx-target="#add-form-{{ game.ID }}"
+                hx-swap="innerHTML"
+                hx-indicator="find button"
+                class="flex-shrink-0"
+            >
+                <input type="hidden" name="ra_game_id" value="{{ game.ID }}">
+                <input type="hidden" name="game_title" value="{{ game.Title }}">
+                <input type="hidden" name="system" value="{{ system_name }}">
+                <button
+                    type="submit"
+                    class="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1.5 rounded-md transition-colors"
+                >
+                    <span class="htmx-label">+ Add to Wanted</span>
+                    <span class="htmx-indicator">Adding...</span>
+                </button>
+            </form>
+            {% else %}
+            <!-- Default: find sources inline -->
+            <button
+                class="flex-shrink-0 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 hover:text-white text-xs px-3 py-1.5 rounded-md transition-colors"
+                hx-get="/ra/games/{{ game.ID }}/sources?game_title={{ game.Title | urlencode }}&system_name={{ system_name | urlencode }}"
+                hx-target="#ra-game-{{ game.ID }}"
+                hx-swap="outerHTML"
+                hx-indicator="this"
+            >
+                <span class="htmx-label">Find Sources</span>
+                <span class="htmx-indicator">Searching...</span>
+            </button>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+{% elif query %}
+<p class="text-gray-500 text-sm">No games found for <span class="text-gray-300">"{{ query }}"</span> on {{ system_name }}.</p>
+
+{% endif %}
