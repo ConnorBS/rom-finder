@@ -58,7 +58,8 @@ _SYSTEM_MAP: dict[str, str] = {
     "Vectrex": "Vectrex",
 }
 
-_VAULT_RE = re.compile(r"^/vault/(\d+)/?$")
+# Matches /vault/8003, /vault/8003/, or /vault/8003/Burnout-3-Takedown/
+_VAULT_ID_RE = re.compile(r"/vault/(\d+)")
 
 
 class VimmSource(RomSource):
@@ -88,10 +89,10 @@ class VimmSource(RomSource):
         seen_ids: set[str] = set()
 
         # Vimm search results are a div/list layout.
-        # Each game entry contains an <a href="/vault/{id}"> link and
+        # Each game entry contains an <a href="/vault/{id}/..."> link and
         # a flag image at /images/flags/{country}.png with the region as alt text.
-        for a in soup.find_all("a", href=_VAULT_RE):
-            m = _VAULT_RE.match(a["href"])
+        for a in soup.find_all("a", href=_VAULT_ID_RE):
+            m = _VAULT_ID_RE.search(a["href"])
             if not m:
                 continue
             media_id = m.group(1)

@@ -49,6 +49,7 @@ async def start_download(
     file_name: str = Form(...),
     archive_identifier: str = Form(...),
     source_id: str = Form(default="archive_org"),
+    ra_game_id: int = Form(default=0),
     session: Session = Depends(get_session),
 ):
     src = source_registry.get(source_id) or source_registry.get("archive_org")
@@ -62,6 +63,7 @@ async def start_download(
         source_id=source_id,
         archive_identifier=archive_identifier,
         status=DownloadStatus.pending,
+        ra_game_id=ra_game_id if ra_game_id else None,
     )
     session.add(download)
     session.commit()
