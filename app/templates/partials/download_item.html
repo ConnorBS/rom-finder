@@ -12,7 +12,6 @@
             <p class="text-gray-200 text-sm font-medium truncate">{{ download.game_title }}</p>
             <p class="text-gray-500 text-xs mt-0.5 font-mono truncate">{{ download.file_name }}</p>
 
-            <!-- Progress bar (visible while downloading) -->
             {% if download.status.value == 'downloading' %}
             <div class="mt-2 bg-gray-800 rounded-full h-1.5 w-full">
                 <div
@@ -28,7 +27,7 @@
             {% endif %}
         </div>
 
-        <div class="flex items-center gap-3 flex-shrink-0">
+        <div class="flex items-center gap-2 flex-shrink-0">
             <!-- Status badge -->
             {% if download.status.value == 'pending' %}
             <span class="text-yellow-500 text-xs">Pending</span>
@@ -40,19 +39,41 @@
             <span class="text-green-400 text-xs font-medium">Verified</span>
             {% elif download.status.value == 'failed' %}
             <span class="text-red-400 text-xs">Failed</span>
+            {% elif download.status.value == 'pending_approval' %}
+                {% if download.hash_verified %}
+                <span class="text-green-400 text-xs font-medium">&#10003; Hash verified</span>
+                {% else %}
+                <span class="text-yellow-500 text-xs">Awaiting review</span>
+                {% endif %}
             {% endif %}
 
-            <!-- Remove button -->
-            {% if download.status.value not in ['downloading'] %}
+            <!-- Approve / Reject (pending_approval only) -->
+            {% if download.status.value == 'pending_approval' %}
+            <button
+                hx-post="/downloads/{{ download.id }}/approve"
+                hx-target="#download-{{ download.id }}"
+                hx-swap="outerHTML"
+                class="text-green-400 hover:text-green-300 text-xs border border-green-800 hover:border-green-600 px-2 py-1 rounded transition-colors"
+                title="Move to ROMs directory"
+            >Approve</button>
+            <button
+                hx-post="/downloads/{{ download.id }}/reject"
+                hx-target="#download-{{ download.id }}"
+                hx-swap="outerHTML"
+                class="text-red-500 hover:text-red-400 text-xs border border-red-900 hover:border-red-700 px-2 py-1 rounded transition-colors"
+                title="Delete file"
+            >Reject</button>
+            {% endif %}
+
+            <!-- Remove button for non-active states -->
+            {% if download.status.value in ['completed', 'verified', 'failed'] %}
             <button
                 hx-delete="/downloads/{{ download.id }}"
                 hx-target="#download-{{ download.id }}"
                 hx-swap="outerHTML"
                 class="text-gray-600 hover:text-gray-400 text-xs transition-colors"
                 title="Remove"
-            >
-                &times;
-            </button>
+            >&times;</button>
             {% endif %}
         </div>
     </div>

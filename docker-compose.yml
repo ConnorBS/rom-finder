@@ -11,10 +11,12 @@ services:
       - DEBUG=false
       - DB_URL=sqlite:////data/rom_finder.db
       - DOWNLOAD_DIR=/roms
+      - CHECK_DIR=/rom-check
     volumes:
       - rom-finder-data:/data
       - rom-finder-covers:/app/static/covers
-      - /mnt/user/ROMs:/roms   # Unraid: change to your ROMs share path
+      - /mnt/user/ROMs:/roms         # Unraid: final ROMs library share
+      - /mnt/ssd_cache/Media/ROMs:/rom-check   # Unraid: review/staging folder
 
 volumes:
   rom-finder-data:
