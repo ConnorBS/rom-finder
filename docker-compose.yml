@@ -1,0 +1,21 @@
+services:
+  rom-finder:
+    build: .
+    container_name: rom-finder
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8080
+      - DEBUG=false
+      - DB_URL=sqlite:////data/rom_finder.db
+      - DOWNLOAD_DIR=/roms
+    volumes:
+      - rom-finder-data:/data
+      - rom-finder-covers:/app/static/covers
+      - /mnt/user/ROMs:/roms   # Unraid: change to your ROMs share path
+
+volumes:
+  rom-finder-data:
+  rom-finder-covers:

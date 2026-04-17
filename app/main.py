@@ -1,3 +1,4 @@
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -30,7 +31,7 @@ def _run_migrations() -> None:
 
 
 DEFAULT_SETTINGS = {
-    "download_dir": str(Path.home() / "ROMs"),
+    "download_dir": os.environ.get("DOWNLOAD_DIR", str(Path.home() / "ROMs")),
     "ra_enabled": "false",
     "ra_username": "",
     "ra_api_key": "",

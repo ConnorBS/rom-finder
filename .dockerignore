@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.env
+.venv
+venv/
+*.db
+*.db-shm
+*.db-wal
+static/covers/
+.git/
+.gitignore
+*.zip
+node_modules/
