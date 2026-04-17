@@ -1,13 +1,13 @@
 from fastapi import APIRouter, Request, Query, Depends
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
-from pathlib import Path
 from sqlmodel import Session
 
 from app.db.database import get_session
 from app.db.models import AppSetting
 from app.services import sources as source_registry
 from app.services.ra_client import SYSTEMS, RAClient
+from app.services.title_utils import search_variations, stem_from_rom_name
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -29,8 +29,6 @@ def _enabled_source_ids(session: Session) -> set[str]:
 
 
 def _get_ra_client(session: Session) -> RAClient | None:
-    if _get_setting(session, "ra_enabled") != "true":
-        return None
     username = _get_setting(session, "ra_username")
     api_key = _get_setting(session, "ra_api_key")
     if not username or not api_key:
@@ -134,8 +132,8 @@ async def ra_search(
     ra = _get_ra_client(session)
     if not ra:
         return HTMLResponse(
-            '<p class="text-yellow-500 text-sm">RetroAchievements is not configured. '
-            'Enable it in <a href="/settings" class="underline">Settings</a>.</p>'
+            '<p class="text-yellow-500 text-sm">Add your RetroAchievements credentials in '
+            '<a href="/settings" class="underline">Settings</a> to search games.</p>'
         )
 
     # system_id arrives as an empty string when nothing is selected
@@ -182,28 +180,46 @@ async def ra_game_sources(
 
     try:
         hashes = await ra.get_game_hashes_full(game_id)
-        seen: set[str] = set()
+        seen_names: set[str] = set()
         for h in hashes:
             name = h.get("Name", "")
-            if name and name not in seen:
+            if name and name not in seen_names:
                 rom_names.append({
                     "name": name,
                     "md5": h.get("MD5", ""),
                     "labels": h.get("Labels", []),
                 })
-                seen.add(name)
+                seen_names.add(name)
 
-        if rom_names:
-            first_stem = Path(rom_names[0]["name"]).stem
-            enabled_ids = _enabled_source_ids(session)
+        # Build search query candidates: ROM filename stems first, then title variants
+        queries: list[str] = []
+        seen_queries: set[str] = set()
+        for rom in rom_names[:3]:  # use up to 3 ROM names
+            stem = stem_from_rom_name(rom["name"])
+            if stem and stem not in seen_queries:
+                queries.append(stem)
+                seen_queries.add(stem)
+        for variant in search_variations(game_title):
+            if variant not in seen_queries:
+                queries.append(variant)
+                seen_queries.add(variant)
+
+        seen_ids: set[str] = set()
+        enabled_ids = _enabled_source_ids(session)
+        for query in queries:
             for src in source_registry.enabled_sources(enabled_ids):
                 try:
-                    results = await src.search(first_stem, system_name)
+                    results = await src.search(query, system_name)
                     for r in results:
-                        r["_source_name"] = src.name
-                    collections.extend(results)
+                        uid = r.get("identifier", r.get("title", ""))
+                        if uid not in seen_ids:
+                            seen_ids.add(uid)
+                            r["_source_name"] = src.name
+                            collections.append(r)
                 except Exception:
                     pass
+            if collections:
+                break  # stop trying more query variants once we have results
     except Exception as exc:
         error = str(exc)
 
