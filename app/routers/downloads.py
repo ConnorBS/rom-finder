@@ -10,7 +10,8 @@ from datetime import datetime
 from app.db.database import get_session
 from app.db.models import Download, DownloadStatus, AppSetting, LibraryEntry
 from app.services import sources as source_registry
-from app.services.hasher import hash_rom, extract_rom_from_zip
+from app.services.hasher import hash_rom, extract_rom_from_zip, DISC_SYSTEMS
+from app.services.rahasher import compute_ra_hash
 
 router = APIRouter(prefix="/downloads")
 templates = Jinja2Templates(directory="app/templates")
@@ -264,17 +265,22 @@ async def _run_download(download_id: int) -> None:
             if dest.suffix.lower() == ".zip":
                 rom_path = extract_rom_from_zip(dest)
 
-            file_hash = hash_rom(rom_path, download.system)
+            # Compute RA hash — try RAHasher binary first, fall back to Python
+            file_hash = await compute_ra_hash(rom_path, download.system)
+            if file_hash is None:
+                file_hash = hash_rom(rom_path, download.system)
+
             download.file_path = str(rom_path)
             download.file_name = rom_path.name
             download.file_hash = file_hash
             download.progress = 1.0
 
-            # RA hash verification
-            ra_enabled = _get_setting(session, "ra_enabled", "false") == "true"
+            # RA hash verification — runs regardless of ra_enabled so we always
+            # know if a ROM is in the RA database; ra_enabled only gates whether
+            # hash matching blocks/gates the approval flow in future.
             ra_username = _get_setting(session, "ra_username")
             ra_api_key = _get_setting(session, "ra_api_key")
-            if ra_enabled and ra_username and ra_api_key:
+            if ra_username and ra_api_key:
                 from app.services.ra_client import RAClient
                 ra = RAClient(ra_username, ra_api_key)
                 try:

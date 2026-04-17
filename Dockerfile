@@ -3,8 +3,16 @@ FROM python:3.12-slim
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
+    gcc curl \
     && rm -rf /var/lib/apt/lists/*
+
+# Download RAHasher for accurate per-platform RA hash computation.
+# Falls back gracefully to Python MD5 hashing if unavailable.
+RUN curl -fsSL \
+    "https://github.com/RetroAchievements/RAHasher/releases/latest/download/RAHasher-x86_64" \
+    -o /usr/local/bin/RAHasher \
+    && chmod +x /usr/local/bin/RAHasher \
+    || echo "RAHasher download failed — Python fallback hashing will be used"
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
