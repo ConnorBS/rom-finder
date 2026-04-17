@@ -7,8 +7,8 @@ from pathlib import Path
 from sqlmodel import SQLModel, Session, text
 
 from app.db.database import engine
-from app.db.models import AppSetting, WantedGame  # noqa: F401 — registers table
-from app.routers import games, downloads, library, settings_router, wanted, api
+from app.db.models import AppSetting, WantedGame, AppLog  # noqa: F401 — registers tables
+from app.routers import games, downloads, library, settings_router, wanted, api, logs
 
 
 # (table, column, sql_type, default_expr or None for nullable)
@@ -84,3 +84,4 @@ app.include_router(library.router)
 app.include_router(settings_router.router)
 app.include_router(wanted.router)
 app.include_router(api.router)
+app.include_router(logs.router)

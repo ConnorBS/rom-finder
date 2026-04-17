@@ -58,6 +58,32 @@ class WantedGame(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class LogLevel(str, Enum):
+    info = "info"
+    warning = "warning"
+    error = "error"
+
+
+class LogCategory(str, Enum):
+    search = "search"
+    download = "download"
+    hash = "hash"
+    navigation = "navigation"
+    source = "source"
+    system = "system"
+
+
+class AppLog(SQLModel, table=True):
+    """Structured activity log for debugging and audit."""
+    __tablename__ = "app_logs"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ts: datetime = Field(default_factory=datetime.utcnow, index=True)
+    level: str = LogLevel.info
+    category: str = ""
+    message: str = ""
+    details: str = "{}"   # JSON payload
+
+
 class LibraryEntry(SQLModel, table=True):
     """ROMs that have been downloaded and are tracked locally."""
     __tablename__ = "library"

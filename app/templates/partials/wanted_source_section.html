@@ -1,0 +1,69 @@
+{% set sid = source.source_id if source else source_id %}
+{% set sname = source.name if source else source_id %}
+
+<div id="wsrc-{{ sid }}-{{ wanted.id }}" class="border-t border-gray-800">
+
+    <!-- Source header row -->
+    <div class="px-4 py-2 bg-gray-800/30 flex items-center gap-2">
+        <span class="text-gray-400 text-xs font-semibold">{{ sname }}</span>
+        {% if error %}
+        <span class="text-red-400 text-xs">— error</span>
+        {% elif results %}
+        <span class="text-gray-600 text-xs">— {{ results | length }} result{{ 's' if results | length != 1 }}</span>
+        {% else %}
+        <span class="text-gray-600 text-xs">— no results</span>
+        {% endif %}
+    </div>
+
+    {% if error %}
+    <div class="px-4 py-2">
+        <p class="text-red-400 text-xs font-mono">{{ error }}</p>
+    </div>
+
+    {% elif results %}
+    <div class="divide-y divide-gray-800/60">
+        {% for item in results %}
+        <div id="wsrc-item-{{ sid }}-{{ loop.index }}-{{ wanted.id }}" class="px-4 py-2.5">
+            <div class="flex items-center justify-between gap-4">
+                <div class="min-w-0 flex-1">
+                    <p class="text-gray-300 text-xs font-medium truncate">{{ item.title or item.identifier }}</p>
+                    <div class="flex items-center gap-2 mt-0.5 flex-wrap">
+                        {% if item.region %}
+                        <span class="text-gray-500 text-xs">{{ item.region }}</span>
+                        {% endif %}
+                        {% if item.source_id == 'archive_org' %}
+                        <a href="https://archive.org/details/{{ item.identifier }}" target="_blank"
+                           class="text-blue-500 hover:text-blue-400 text-xs font-mono">archive.org/{{ item.identifier }} ↗</a>
+                        {% elif item.source_id == 'vimm' %}
+                        <a href="{{ item.url or 'https://vimm.net/vault/' ~ item.identifier ~ '/' }}" target="_blank"
+                           class="text-blue-500 hover:text-blue-400 text-xs font-mono">vimm.net/vault/{{ item.identifier }}/ ↗</a>
+                        {% elif item.url %}
+                        <a href="{{ item.url }}" target="_blank"
+                           class="text-blue-500 hover:text-blue-400 text-xs font-mono truncate">{{ item.url }} ↗</a>
+                        {% else %}
+                        <span class="text-gray-600 text-xs font-mono truncate">{{ item.identifier }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <button
+                    class="flex-shrink-0 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 hover:text-white text-xs px-3 py-1.5 rounded-md transition-colors"
+                    hx-get="/games/{{ item.identifier }}/files?source_id={{ item.source_id or 'archive_org' }}&system={{ wanted.system | urlencode }}&game_title={{ wanted.game_title | urlencode }}&ra_game_id={{ wanted.ra_game_id }}{% if rom_names %}&q={{ rom_names[0].name | urlencode }}{% endif %}"
+                    hx-target="#wsrc-item-{{ sid }}-{{ loop.index }}-{{ wanted.id }}"
+                    hx-swap="outerHTML"
+                    hx-indicator="this"
+                >
+                    <span class="htmx-label">Browse files</span>
+                    <span class="htmx-indicator">Loading...</span>
+                </button>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    {% else %}
+    <div class="px-4 py-2">
+        <p class="text-gray-600 text-xs">No results found.</p>
+    </div>
+    {% endif %}
+
+</div>
