@@ -19,7 +19,7 @@
         >+ Add Game</button>
         {% else %}
         <a href="/settings" class="text-yellow-500 text-sm hover:underline">
-            Configure RetroAchievements to add games →
+            Add RA credentials in Settings to search games →
         </a>
         {% endif %}
     </div>
@@ -84,9 +84,11 @@
     {% else %}
     <div class="flex flex-col items-center justify-center py-20 text-center">
         <p class="text-gray-500 text-sm">No games in your wanted list yet.</p>
-        {% if ra_configured %}
-        <p class="text-gray-600 text-xs mt-1">Click <span class="text-gray-400">+ Add Game</span> to start hunting.</p>
-        {% endif %}
+        <p class="text-gray-600 text-xs mt-1">
+            {% if ra_configured %}Click <span class="text-gray-400">+ Add Game</span> to start hunting.
+            {% else %}Add your RetroAchievements credentials in <a href="/settings" class="text-blue-500 hover:underline">Settings</a> to get started.
+            {% endif %}
+        </p>
     </div>
     {% endif %}
 </div>

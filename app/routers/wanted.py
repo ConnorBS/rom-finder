@@ -11,6 +11,7 @@ from app.db.database import get_session
 from app.db.models import AppSetting, WantedGame, HuntStatus
 from app.services import sources as source_registry
 from app.services.ra_client import SYSTEMS, RAClient
+from app.services.title_utils import search_variations, stem_from_rom_name
 
 router = APIRouter(prefix="/wanted")
 templates = Jinja2Templates(directory="app/templates")
@@ -24,8 +25,6 @@ def _get_setting(session: Session, key: str, default: str = "") -> str:
 
 
 def _get_ra_client(session: Session) -> RAClient | None:
-    if _get_setting(session, "ra_enabled") != "true":
-        return None
     username = _get_setting(session, "ra_username")
     api_key = _get_setting(session, "ra_api_key")
     if not username or not api_key:
@@ -127,33 +126,49 @@ async def wanted_sources(
     error: str | None = None
 
     try:
-        # Get canonical ROM file names from RA if available
+        # Get canonical ROM file names from RA if credentials are available
         if ra:
             hashes = await ra.get_game_hashes_full(wanted.ra_game_id)
-            seen: set[str] = set()
+            seen_names: set[str] = set()
             for h in hashes:
                 name = h.get("Name", "")
-                if name and name not in seen:
+                if name and name not in seen_names:
                     rom_names.append({
                         "name": name,
                         "md5": h.get("MD5", ""),
                         "labels": h.get("Labels", []),
                     })
-                    seen.add(name)
+                    seen_names.add(name)
 
-        # Use the game title as the search query — RA ROM filenames use
-        # No-Intro naming (e.g. "Game (Europe) (En,Fr,De)") which doesn't
-        # match how sources like VIMM title their entries.
-        search_query = wanted.game_title
+        # Build query candidates: ROM filename stems → cleaned title variants
+        queries: list[str] = []
+        seen_queries: set[str] = set()
+        for rom in rom_names[:3]:
+            stem = stem_from_rom_name(rom["name"])
+            if stem and stem not in seen_queries:
+                queries.append(stem)
+                seen_queries.add(stem)
+        for variant in search_variations(wanted.game_title):
+            if variant not in seen_queries:
+                queries.append(variant)
+                seen_queries.add(variant)
+
+        seen_ids: set[str] = set()
         enabled_ids = _enabled_source_ids(session)
-        for src in source_registry.enabled_sources(enabled_ids):
-            try:
-                results = await src.search(search_query, wanted.system)
-                for r in results:
-                    r["_source_name"] = src.name
-                collections.extend(results)
-            except Exception:
-                pass
+        for query in queries:
+            for src in source_registry.enabled_sources(enabled_ids):
+                try:
+                    results = await src.search(query, wanted.system)
+                    for r in results:
+                        uid = r.get("identifier", r.get("title", ""))
+                        if uid not in seen_ids:
+                            seen_ids.add(uid)
+                            r["_source_name"] = src.name
+                            collections.append(r)
+                except Exception:
+                    pass
+            if collections:
+                break  # stop trying more variants once we have results
     except Exception as exc:
         error = str(exc)
 
