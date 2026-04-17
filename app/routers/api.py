@@ -3,10 +3,13 @@
 from fastapi import APIRouter, BackgroundTasks, Depends
 from pydantic import BaseModel
 from sqlmodel import Session, select
+from typing import Optional
 
 from app.db.database import get_session
 from app.db.models import AppSetting, WantedGame
 from app.services import sources as source_registry
+from app.services.ra_client import SYSTEMS
+from app.services.title_utils import clean_title
 
 router = APIRouter(prefix="/api")
 
@@ -42,6 +45,7 @@ class WantedAddRequest(BaseModel):
     ra_game_id: int
     game_title: str
     system: str = ""
+    system_id: Optional[int] = None
 
 
 @router.post("/wanted")
@@ -56,9 +60,11 @@ async def api_add_wanted(
     if existing:
         return {"status": "exists", "id": existing.id, "game_title": existing.game_title}
 
+    # Use canonical system name from SYSTEMS dict when system_id is provided
+    system = SYSTEMS.get(req.system_id, req.system) if req.system_id else req.system
     game = WantedGame(
-        game_title=req.game_title,
-        system=req.system,
+        game_title=clean_title(req.game_title),
+        system=system,
         ra_game_id=req.ra_game_id,
     )
     session.add(game)
