@@ -65,7 +65,7 @@
                 </div>
                 <button
                     class="flex-shrink-0 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 hover:text-white text-xs px-3 py-1.5 rounded-md transition-colors"
-                    hx-get="/games/{{ item.identifier }}/files?source_id={{ item.source_id or 'archive_org' }}&system={{ wanted.system | urlencode }}&game_title={{ wanted.game_title | urlencode }}{% if rom_names %}&q={{ rom_names[0].name | urlencode }}{% endif %}"
+                    hx-get="/games/{{ item.identifier }}/files?source_id={{ item.source_id or 'archive_org' }}&system={{ wanted.system | urlencode }}&game_title={{ wanted.game_title | urlencode }}&ra_game_id={{ wanted.ra_game_id }}{% if rom_names %}&q={{ rom_names[0].name | urlencode }}{% endif %}"
                     hx-target="#wsrc-{{ loop.index }}-{{ wanted.id }}"
                     hx-swap="outerHTML"
                     hx-indicator="this"

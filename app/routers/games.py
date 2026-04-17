@@ -89,6 +89,7 @@ async def browse_files(
     system: str = Query(default=""),
     game_title: str = Query(default=""),
     source_id: str = Query(default="archive_org"),
+    ra_game_id: int = Query(default=0),
 ):
     """HTMX: list ROM files inside a source result."""
     files = []
@@ -112,6 +113,7 @@ async def browse_files(
             "system": system,
             "game_title": game_title,
             "source_id": source_id,
+            "ra_game_id": ra_game_id,
             "error": error,
         },
     )
