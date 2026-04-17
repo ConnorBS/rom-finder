@@ -29,21 +29,40 @@
     ];
     for (const sel of selectors) {
       const el = document.querySelector(sel);
-      if (el && el.textContent.trim()) return el.textContent.trim();
+      if (el && el.textContent.trim()) return cleanTitle(el.textContent.trim());
     }
     // Fall back to stripping " - RetroAchievements" from the page title
-    return document.title.replace(/\s*[-–|].*RetroAchievements.*$/i, '').trim();
+    const raw = document.title.replace(/\s*[-–|].*RetroAchievements.*$/i, '').trim();
+    return cleanTitle(raw);
   }
 
-  function getSystemName() {
-    // System links look like /system/5 → "Game Boy Advance"
-    const link = document.querySelector('a[href*="/system/"]');
-    if (link) return link.textContent.trim();
-    return '';
+  function cleanTitle(title) {
+    // Strip "· RetroAchievements" or "- RetroAchievements" suffix
+    title = title.replace(/\s*[·•\-]\s*RetroAchievements\s*$/i, '').trim();
+    // Strip platform disambiguation in parens e.g. "(PlayStation 2)" or "(NES)"
+    title = title.replace(
+      /\s*\((?:PlayStation(?: \d+)?|PSP|PS\d|Nintendo\s+(?:64|DS|DSi|Switch)|SNES|NES|Famicom|Game\s*Boy(?:\s+(?:Advance|Color|Colour))?|GameCube|Wii(?:\s*U)?|Sega\s+(?:Genesis|Mega\s+Drive|CD|Saturn|32X|Dreamcast|Master\s+System)|Mega\s+Drive|Saturn|Dreamcast|Xbox(?:\s+(?:360|One|Series\s+[XS]))?|Atari\s+\d{4}|Game\s+Gear|TurboGrafx|PC\s*Engine|3DO|Jaguar|Lynx|Neo\s*Geo(?:\s+Pocket)?|WonderSwan|Virtual\s+Boy|Arcade|MSX|Amstrad|Apple\s+II|PC-\w+)\)/gi,
+      ''
+    ).trim();
+    return title;
+  }
+
+  function getSystemInfo() {
+    // The RA site nav lists every system (NES first) inside <nav>/<header>
+    // elements that appear before the game content in the DOM.
+    // Skip those and take the first system link that's in the page body.
+    const allLinks = document.querySelectorAll('a[href*="/system/"]');
+    for (const link of allLinks) {
+      if (link.closest('nav, header, [role="navigation"], [role="menu"]')) continue;
+      const name = link.textContent.trim();
+      const m = link.href.match(/\/system\/(\d+)/);
+      return { name, id: m ? parseInt(m[1], 10) : null };
+    }
+    return { name: '', id: null };
   }
 
   const gameTitle  = getGameTitle();
-  const systemName = getSystemName();
+  const { name: systemName, id: systemId } = getSystemInfo();
 
   // -------------------------------------------------------------------------
   // Build the floating panel (all inline styles for isolation)
@@ -270,13 +289,14 @@
     addStatus.style.color = '#94a3b8';
 
     try {
-      const resp = await fetch(`${base}/api/wanted`, {
+      const resp = await apiFetch(`${base}/api/wanted`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ra_game_id: gameId,
           game_title: gameTitle,
           system: systemName,
+          system_id: systemId,
         }),
       });
 
@@ -320,10 +340,11 @@
     showResultsMsg('Searching enabled sources…', '#94a3b8');
 
     const params = new URLSearchParams({ q });
-    if (systemName) params.set('system', systemName);
+    const sysForSearch = systemName || '';
+    if (sysForSearch) params.set('system', sysForSearch);
 
     try {
-      const resp = await fetch(`${base}/api/search?${params}`);
+      const resp = await apiFetch(`${base}/api/search?${params}`);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const results = await resp.json();
 
@@ -453,6 +474,30 @@
   function storageGet(defaults) {
     return new Promise((resolve) => {
       chrome.storage.sync.get(defaults, resolve);
+    });
+  }
+
+  /**
+   * Proxy fetch through the background service worker to avoid mixed-content
+   * blocks when the RA page is HTTPS but the local ROM Finder server is HTTP.
+   */
+  function apiFetch(url, options = {}) {
+    return new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage({ type: 'API_FETCH', url, options }, (resp) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+          return;
+        }
+        if (resp.error) {
+          reject(new Error(resp.error));
+          return;
+        }
+        resolve({
+          ok: resp.ok,
+          status: resp.status,
+          json: () => Promise.resolve(JSON.parse(resp.text)),
+        });
+      });
     });
   }
 })();

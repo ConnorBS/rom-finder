@@ -4,6 +4,9 @@
   "version": "1.1.0",
   "description": "Add RetroAchievements games to your ROM Finder wanted list and search sources directly in the browser.",
   "permissions": ["storage"],
+  "background": {
+    "service_worker": "background.js"
+  },
   "host_permissions": [
     "https://retroachievements.org/*",
     "http://*/*",
