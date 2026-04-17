@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}Activity Log — ROM Finder{% endblock %}
+{% block content %}
+<div class="p-6 max-w-7xl mx-auto">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-5">
+        <div>
+            <h1 class="text-xl font-semibold text-white">Activity Log</h1>
+            <p class="text-gray-500 text-sm mt-0.5">{{ entries | length }} entries shown (newest first)</p>
+        </div>
+        <div class="flex items-center gap-2">
+            <a
+                href="/logs/download?level={{ level_filter }}&category={{ category_filter }}"
+                class="bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 hover:text-white text-xs px-3 py-1.5 rounded-md transition-colors"
+            >↓ Download .log</a>
+            <button
+                hx-post="/logs/clear"
+                hx-target="#clear-status"
+                hx-confirm="Clear all logs?"
+                class="bg-red-900/40 hover:bg-red-900/70 border border-red-800 text-red-400 hover:text-red-300 text-xs px-3 py-1.5 rounded-md transition-colors"
+            >Clear</button>
+            <span id="clear-status" class="text-xs"></span>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="flex items-center gap-3 mb-4 flex-wrap">
+        <span class="text-gray-500 text-xs">Filter:</span>
+
+        <!-- Level -->
+        <div class="flex items-center gap-1">
+            {% for lv, label, cls in [
+                ('', 'All levels', 'bg-gray-700 text-gray-300'),
+                ('info',    'Info',    'bg-blue-900/50 text-blue-300'),
+                ('warning', 'Warning', 'bg-yellow-900/50 text-yellow-300'),
+                ('error',   'Error',   'bg-red-900/50 text-red-300'),
+            ] %}
+            <a href="/logs?level={{ lv }}&category={{ category_filter }}"
+               class="text-xs px-2.5 py-1 rounded-full border transition-colors
+                      {{ 'border-blue-500 ' + cls if level_filter == lv else 'border-gray-700 bg-gray-800/50 text-gray-500 hover:text-gray-300' }}">
+                {{ label }}
+            </a>
+            {% endfor %}
+        </div>
+
+        <span class="text-gray-700">|</span>
+
+        <!-- Category -->
+        <div class="flex items-center gap-1">
+            {% for cat, label in [
+                ('', 'All'),
+                ('search',     'Search'),
+                ('download',   'Download'),
+                ('hash',       'Hash'),
+                ('source',     'Source'),
+                ('navigation', 'Nav'),
+                ('system',     'System'),
+            ] %}
+            <a href="/logs?level={{ level_filter }}&category={{ cat }}"
+               class="text-xs px-2.5 py-1 rounded-full border transition-colors
+                      {{ 'border-blue-500 bg-gray-700 text-gray-300' if category_filter == cat else 'border-gray-700 bg-gray-800/50 text-gray-500 hover:text-gray-300' }}">
+                {{ label }}
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Log table -->
+    {% if entries %}
+    <div class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
+        {% for entry in entries %}
+        {% set log = entry.log %}
+        {% set details = entry.details %}
+        <details class="border-b border-gray-800 last:border-0 group">
+            <summary class="flex items-start gap-3 px-4 py-2.5 cursor-pointer hover:bg-gray-800/40 list-none">
+
+                <!-- Timestamp -->
+                <span class="text-gray-600 text-xs font-mono flex-shrink-0 pt-0.5 w-36">
+                    {{ log.ts.strftime('%m-%d %H:%M:%S') }}
+                </span>
+
+                <!-- Level badge -->
+                {% if log.level == 'error' %}
+                <span class="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-red-900/60 text-red-300 font-medium w-14 text-center">error</span>
+                {% elif log.level == 'warning' %}
+                <span class="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-yellow-900/60 text-yellow-300 font-medium w-14 text-center">warn</span>
+                {% else %}
+                <span class="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-blue-900/40 text-blue-400 font-medium w-14 text-center">info</span>
+                {% endif %}
+
+                <!-- Category -->
+                <span class="flex-shrink-0 text-xs text-gray-600 w-20">{{ log.category }}</span>
+
+                <!-- Message -->
+                <span class="text-gray-300 text-xs flex-1 leading-relaxed">{{ log.message }}</span>
+
+                <!-- Expand hint -->
+                {% if details %}
+                <span class="text-gray-700 text-xs flex-shrink-0 group-open:hidden">▸ details</span>
+                <span class="text-gray-500 text-xs flex-shrink-0 hidden group-open:inline">▾ hide</span>
+                {% endif %}
+            </summary>
+
+            {% if details %}
+            <div class="px-4 pb-3 pt-1 ml-52">
+                <pre class="text-xs text-gray-400 bg-gray-950 border border-gray-800 rounded p-3 overflow-x-auto leading-relaxed">{{ details | tojson(indent=2) }}</pre>
+            </div>
+            {% endif %}
+        </details>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="flex flex-col items-center justify-center py-20 text-center">
+        <p class="text-gray-500 text-sm">No log entries yet.</p>
+        <p class="text-gray-600 text-xs mt-1">Activity will appear here as you search, download, and manage ROMs.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

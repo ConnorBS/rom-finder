@@ -12,6 +12,7 @@ from app.db.models import Download, DownloadStatus, AppSetting, LibraryEntry
 from app.services import sources as source_registry
 from app.services.hasher import hash_rom, extract_rom_from_zip, DISC_SYSTEMS
 from app.services.rahasher import compute_ra_hash
+from app.services import logger as applog
 
 router = APIRouter(prefix="/downloads")
 templates = Jinja2Templates(directory="app/templates")
@@ -249,6 +250,7 @@ async def _run_download(download_id: int) -> None:
         download.updated_at = datetime.utcnow()
         session.add(download)
         session.commit()
+        applog.log_download(download.game_title, download.file_name, download.source_url, "started")
 
         async def on_progress(fraction: float):
             with Session(engine) as s:
@@ -277,11 +279,15 @@ async def _run_download(download_id: int) -> None:
             download.file_hash = file_hash
             download.progress = 1.0
 
+            hasher_used = "RAHasher" if await compute_ra_hash(rom_path, download.system) is not None else "Python"
+
             # RA hash verification — runs regardless of ra_enabled so we always
             # know if a ROM is in the RA database; ra_enabled only gates whether
             # hash matching blocks/gates the approval flow in future.
             ra_username = _get_setting(session, "ra_username")
             ra_api_key = _get_setting(session, "ra_api_key")
+            ra_matched = False
+            ra_game_id_matched = None
             if ra_username and ra_api_key:
                 from app.services.ra_client import RAClient
                 ra = RAClient(ra_username, ra_api_key)
@@ -289,13 +295,18 @@ async def _run_download(download_id: int) -> None:
                     match = await ra.lookup_hash(file_hash)
                     if match:
                         download.hash_verified = True
-                        download.ra_game_id = match.get("ID")
-                except Exception:
-                    pass
+                        download.ra_game_id = download.ra_game_id or match.get("ID")
+                        ra_matched = True
+                        ra_game_id_matched = match.get("ID")
+                except Exception as exc:
+                    applog.warning("hash", f"RA hash lookup failed: {exc}", {"file": rom_path.name, "hash": file_hash})
 
+            applog.log_hash(rom_path.name, download.system, file_hash or "", hasher_used, ra_matched, ra_game_id_matched)
+            applog.log_download(download.game_title, rom_path.name, download.source_url, "completed")
             download.status = DownloadStatus.pending_approval
 
         except Exception as exc:
+            applog.log_download(download.game_title, download.file_name, download.source_url, "failed", str(exc))
             download.status = DownloadStatus.failed
             download.error_message = str(exc)
 

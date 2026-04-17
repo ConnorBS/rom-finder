@@ -116,17 +116,17 @@ async def wanted_sources(
     game_id: int,
     session: Session = Depends(get_session),
 ):
+    """Return the source-search panel. Fetches RA hashes once, then renders one
+    auto-loading section per enabled source so results trickle in in parallel."""
     wanted = session.get(WantedGame, game_id)
     if not wanted:
         return HTMLResponse('<p class="text-red-400 text-xs">Not found.</p>')
 
     ra = _get_ra_client(session)
     rom_names: list[dict] = []
-    collections: list[dict] = []
     error: str | None = None
 
     try:
-        # Get canonical ROM file names from RA if credentials are available
         if ra:
             hashes = await ra.get_game_hashes_full(wanted.ra_game_id)
             seen_names: set[str] = set()
@@ -139,46 +139,93 @@ async def wanted_sources(
                         "labels": h.get("Labels", []),
                     })
                     seen_names.add(name)
-
-        # Build query candidates: ROM filename stems → cleaned title variants
-        queries: list[str] = []
-        seen_queries: set[str] = set()
-        for rom in rom_names[:3]:
-            stem = stem_from_rom_name(rom["name"])
-            if stem and stem not in seen_queries:
-                queries.append(stem)
-                seen_queries.add(stem)
-        for variant in search_variations(wanted.game_title):
-            if variant not in seen_queries:
-                queries.append(variant)
-                seen_queries.add(variant)
-
-        seen_ids: set[str] = set()
-        enabled_ids = _enabled_source_ids(session)
-        for query in queries:
-            for src in source_registry.enabled_sources(enabled_ids):
-                try:
-                    results = await src.search(query, wanted.system)
-                    for r in results:
-                        uid = r.get("identifier", r.get("title", ""))
-                        if uid not in seen_ids:
-                            seen_ids.add(uid)
-                            r["_source_name"] = src.name
-                            collections.append(r)
-                except Exception:
-                    pass
-            if collections:
-                break  # stop trying more variants once we have results
     except Exception as exc:
         error = str(exc)
+
+    # Build query list once here and pass to each per-source section as a
+    # pipe-delimited URL param so each source doesn't re-fetch RA hashes.
+    queries: list[str] = []
+    seen_q: set[str] = set()
+    for rom in rom_names[:3]:
+        stem = stem_from_rom_name(rom["name"])
+        if stem and stem not in seen_q:
+            queries.append(stem)
+            seen_q.add(stem)
+    for variant in search_variations(wanted.game_title):
+        if variant not in seen_q:
+            queries.append(variant)
+            seen_q.add(variant)
+
+    enabled_ids = _enabled_source_ids(session)
+    enabled_srcs = source_registry.enabled_sources(enabled_ids)
+    queries_param = "|".join(queries)
+
+    from app.services import logger
+    logger.info("navigation", f"Source search opened: {wanted.game_title}", {
+        "game_id": game_id, "system": wanted.system,
+        "queries": queries, "sources": [s.source_id for s in enabled_srcs],
+    })
 
     return templates.TemplateResponse(
         request, "partials/wanted_sources.html",
         {
             "wanted": wanted,
             "rom_names": rom_names,
-            "collections": collections,
+            "sources": enabled_srcs,
+            "queries_param": queries_param,
             "error": error,
+        },
+    )
+
+
+@router.get("/{game_id}/sources/{source_id}", response_class=HTMLResponse)
+async def wanted_source_results(
+    request: Request,
+    game_id: int,
+    source_id: str,
+    queries: str = Query(default=""),
+    system: str = Query(default=""),
+    session: Session = Depends(get_session),
+):
+    """HTMX: search a single source for a wanted game. Fires in parallel for
+    each source section via hx-trigger='load'."""
+    wanted = session.get(WantedGame, game_id)
+    src = source_registry.get(source_id)
+    results: list[dict] = []
+    error: str | None = None
+
+    if src is None:
+        error = f"Unknown source: {source_id}"
+    else:
+        query_list = [q for q in queries.split("|") if q]
+        seen_ids: set[str] = set()
+
+        for query in query_list:
+            try:
+                src_results = await src.search(query, system)
+                for r in src_results:
+                    uid = r.get("identifier", r.get("title", ""))
+                    if uid not in seen_ids:
+                        seen_ids.add(uid)
+                        results.append(r)
+            except Exception as exc:
+                error = str(exc)
+                break
+            if results:
+                break  # stop on first query that yields results
+
+    from app.services import logger
+    logger.log_search(src.name if src else source_id, queries.split("|")[0] if queries else "", system, len(results), error or "")
+
+    return templates.TemplateResponse(
+        request, "partials/wanted_source_section.html",
+        {
+            "source": src,
+            "source_id": source_id,
+            "results": results,
+            "error": error,
+            "wanted": wanted,
+            "rom_names": [],
         },
     )
 
