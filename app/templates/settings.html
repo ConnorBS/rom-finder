@@ -39,6 +39,18 @@
                     >
                     <p class="text-gray-600 text-xs mt-1">ROMs land here first. Approve them to move to the ROMs directory.</p>
                 </div>
+                <div>
+                    <label class="block text-sm text-gray-300 mb-1.5" for="covers_dir">Covers directory</label>
+                    <input
+                        type="text"
+                        id="covers_dir"
+                        name="covers_dir"
+                        value="{{ settings.covers_dir }}"
+                        class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 font-mono"
+                        placeholder="/mnt/ssd_cache/appdata/rom-finder/covers"
+                    >
+                    <p class="text-gray-600 text-xs mt-1">Where game cover art is saved. Use an absolute path to store outside the container.</p>
+                </div>
             </div>
         </section>
 

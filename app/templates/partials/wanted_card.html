@@ -4,7 +4,7 @@
     <div class="relative bg-gray-800 aspect-[3/4] overflow-hidden">
         {% if game.cover_path %}
         <img
-            src="/static/{{ game.cover_path }}"
+            src="/covers/{{ game.cover_path.split('/')[-1] }}"
             alt="{{ game.game_title }}"
             class="w-full h-full object-cover"
         >

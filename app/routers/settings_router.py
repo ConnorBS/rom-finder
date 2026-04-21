@@ -48,6 +48,7 @@ async def settings_page(request: Request, session: Session = Depends(get_session
     current = {
         "download_dir": download_dir,
         "check_dir": get_setting(session, "check_dir", str(Path.home() / "ROMs-check")),
+        "covers_dir": get_setting(session, "covers_dir", "static/covers"),
         "ra_enabled": get_setting(session, "ra_enabled", "false"),
         "ra_username": get_setting(session, "ra_username"),
         "ra_api_key": get_setting(session, "ra_api_key"),
@@ -78,11 +79,16 @@ async def save_settings(
     session: Session = Depends(get_session),
     download_dir: str = Form(...),
     check_dir: str = Form(...),
+    covers_dir: str = Form(default="static/covers"),
     ra_username: str = Form(default=""),
     ra_api_key: str = Form(default=""),
 ):
     set_setting(session, "download_dir", download_dir)
     set_setting(session, "check_dir", check_dir)
+    set_setting(session, "covers_dir", covers_dir)
+    # Ensure the new covers directory exists immediately
+    from pathlib import Path as _Path
+    _Path(covers_dir).mkdir(parents=True, exist_ok=True)
     set_setting(session, "ra_username", ra_username)
     set_setting(session, "ra_api_key", ra_api_key)
 
@@ -121,6 +127,7 @@ async def save_settings(
     applog.log_settings("Settings saved", {
         "download_dir": download_dir,
         "check_dir": check_dir,
+        "covers_dir": covers_dir,
         "ra_enabled": ra_enabled,
         "ra_username": ra_username,
         "enabled_sources": enabled_srcs,

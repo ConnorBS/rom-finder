@@ -244,9 +244,10 @@ async def wanted_source_results(
 # ---------------------------------------------------------------------------
 
 async def _fetch_cover(wanted_id: int, ra_game_id: int, username: str, api_key: str) -> None:
-    """Download cover art from RA media CDN and cache it locally."""
+    """Download cover art from RA media CDN and save to the configured covers_dir."""
     from app.db.database import engine
     from sqlmodel import Session as SyncSession
+    from app.db.models import AppSetting
 
     try:
         ra = RAClient(username, api_key)
@@ -256,14 +257,18 @@ async def _fetch_cover(wanted_id: int, ra_game_id: int, username: str, api_key: 
             return
 
         cover_url = f"{RA_MEDIA_BASE}{icon}"
-        cover_dir = Path("static/covers")
-        cover_dir.mkdir(parents=True, exist_ok=True)
-        cover_path = cover_dir / f"{ra_game_id}.png"
+
+        with SyncSession(engine) as s:
+            setting = s.get(AppSetting, "covers_dir")
+            covers_dir = Path(setting.value if setting else "static/covers")
+
+        covers_dir.mkdir(parents=True, exist_ok=True)
+        cover_file = covers_dir / f"{ra_game_id}.png"
 
         async with httpx.AsyncClient(follow_redirects=True, timeout=15) as client:
             resp = await client.get(cover_url)
             if resp.status_code == 200:
-                cover_path.write_bytes(resp.content)
+                cover_file.write_bytes(resp.content)
             else:
                 return
     except Exception:
