@@ -61,8 +61,12 @@
     return { name: '', id: null };
   }
 
-  const gameTitle  = getGameTitle();
-  const { name: systemName, id: systemId } = getSystemInfo();
+  // RA uses client-side rendering — title/system elements may not exist yet.
+  // Capture initial values (may be empty) and update the panel once they load.
+  let gameTitle  = getGameTitle();
+  let systemName = '';
+  let systemId   = null;
+  ({ name: systemName, id: systemId } = getSystemInfo());
 
   // -------------------------------------------------------------------------
   // Build the floating panel (all inline styles for isolation)
@@ -261,6 +265,35 @@
   root.appendChild(panel);
   root.appendChild(toggleBtn);
   document.body.appendChild(root);
+
+  // RA is a SPA — the game title and system may not be in the DOM yet.
+  // Poll for up to 4 seconds and update the panel once they appear.
+  (function waitForContent(attempts) {
+    if (attempts <= 0) return;
+    const resolvedTitle = getGameTitle();
+    const resolvedSys   = getSystemInfo();
+    const gotTitle  = resolvedTitle && resolvedTitle !== `Game #${gameId}`;
+    const gotSystem = resolvedSys.name;
+    if (gotTitle || gotSystem) {
+      if (gotTitle) {
+        gameTitle = resolvedTitle;
+        titleEl.textContent = resolvedTitle;
+        if (!searchInput.value || searchInput.value === `Game #${gameId}`) {
+          searchInput.value = resolvedTitle;
+        }
+      }
+      if (gotSystem) {
+        systemName = resolvedSys.name;
+        systemId   = resolvedSys.id;
+        systemEl.textContent = resolvedSys.name;
+      }
+      if (!gotTitle || !gotSystem) {
+        setTimeout(() => waitForContent(attempts - 1), 200);
+      }
+    } else {
+      setTimeout(() => waitForContent(attempts - 1), 200);
+    }
+  })(20);
 
   // -------------------------------------------------------------------------
   // Toggle logic
