@@ -32,6 +32,7 @@
         <div class="flex items-center gap-1">
             {% for lv, label, cls in [
                 ('', 'All levels', 'bg-gray-700 text-gray-300'),
+                ('debug',   'Debug',   'bg-purple-900/50 text-purple-300'),
                 ('info',    'Info',    'bg-blue-900/50 text-blue-300'),
                 ('warning', 'Warning', 'bg-yellow-900/50 text-yellow-300'),
                 ('error',   'Error',   'bg-red-900/50 text-red-300'),
@@ -55,6 +56,8 @@
                 ('hash',       'Hash'),
                 ('source',     'Source'),
                 ('navigation', 'Nav'),
+                ('settings',   'Settings'),
+                ('library',    'Library'),
                 ('system',     'System'),
             ] %}
             <a href="/logs?level={{ level_filter }}&category={{ cat }}"
@@ -85,6 +88,8 @@
                 <span class="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-red-900/60 text-red-300 font-medium w-14 text-center">error</span>
                 {% elif log.level == 'warning' %}
                 <span class="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-yellow-900/60 text-yellow-300 font-medium w-14 text-center">warn</span>
+                {% elif log.level == 'debug' %}
+                <span class="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-purple-900/50 text-purple-300 font-medium w-14 text-center">debug</span>
                 {% else %}
                 <span class="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-blue-900/40 text-blue-400 font-medium w-14 text-center">info</span>
                 {% endif %}

@@ -59,6 +59,7 @@ class WantedGame(SQLModel, table=True):
 
 
 class LogLevel(str, Enum):
+    debug = "debug"
     info = "info"
     warning = "warning"
     error = "error"
@@ -71,6 +72,8 @@ class LogCategory(str, Enum):
     navigation = "navigation"
     source = "source"
     system = "system"
+    settings = "settings"
+    library = "library"
 
 
 class AppLog(SQLModel, table=True):

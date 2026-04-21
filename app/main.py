@@ -48,6 +48,8 @@ DEFAULT_SETTINGS = {
     "source_vimm_enabled": "false",
     "source_romsfun_enabled": "false",
     "source_wowroms_enabled": "false",
+    # Verbose logging captures every page load, button press, and navigation event
+    "verbose_logging": "false",
 }
 
 
@@ -62,6 +64,8 @@ async def lifespan(app: FastAPI):
             if not session.get(AppSetting, key):
                 session.add(AppSetting(key=key, value=value))
         session.commit()
+    from app.services import logger as applog
+    applog.info("system", "ROM Finder started")
     yield
 
 

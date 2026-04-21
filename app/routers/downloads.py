@@ -35,6 +35,7 @@ async def downloads_page(request: Request, session: Session = Depends(get_sessio
     ).all()
     pending = [d for d in all_downloads if d.status == DownloadStatus.pending_approval]
     active = [d for d in all_downloads if d.status != DownloadStatus.pending_approval]
+    applog.log_navigation("downloads", {"pending": len(pending), "active": len(active)})
     return templates.TemplateResponse(
         request, "downloads.html",
         {"pending": pending, "active": active},
@@ -141,6 +142,11 @@ async def approve_download(
             wanted.updated_at = datetime.utcnow()
             session.add(wanted)
 
+    applog.log_action("approve_download", {
+        "game": download.game_title, "file": dest_path.name,
+        "system": download.system, "dest": str(dest_path),
+        "ra_verified": download.hash_verified,
+    })
     session.delete(download)
     session.commit()
     return HTMLResponse("")
@@ -154,6 +160,9 @@ async def reject_download(
     download = session.get(Download, download_id)
     if not download:
         return HTMLResponse("")
+    applog.log_action("reject_download", {
+        "game": download.game_title, "file": download.file_name, "system": download.system,
+    })
     if download.file_path:
         p = Path(download.file_path)
         if p.exists():
@@ -210,6 +219,8 @@ async def approve_all_verified(
 
     session.commit()
 
+    applog.log_action("approve_all_downloads", {"approved_count": len(pending)})
+
     all_downloads = session.exec(select(Download).order_by(Download.created_at.desc())).all()
     pending_list = [d for d in all_downloads if d.status == DownloadStatus.pending_approval]
     active_list = [d for d in all_downloads if d.status != DownloadStatus.pending_approval]
@@ -226,6 +237,9 @@ async def delete_download(
 ):
     download = session.get(Download, download_id)
     if download:
+        applog.log_action_verbose("delete_download", {
+            "id": download_id, "game": download.game_title, "status": download.status,
+        })
         session.delete(download)
         session.commit()
     return HTMLResponse("")
@@ -270,16 +284,18 @@ async def _run_download(download_id: int) -> None:
                 rom_path = extract_rom_from_zip(dest)
 
             # Compute RA hash — try RAHasher binary first, fall back to Python
-            file_hash = await compute_ra_hash(rom_path, download.system)
-            if file_hash is None:
+            ra_hash_result = await compute_ra_hash(rom_path, download.system)
+            if ra_hash_result is not None:
+                file_hash = ra_hash_result
+                hasher_used = "RAHasher"
+            else:
                 file_hash = hash_rom(rom_path, download.system)
+                hasher_used = "Python"
 
             download.file_path = str(rom_path)
             download.file_name = rom_path.name
             download.file_hash = file_hash
             download.progress = 1.0
-
-            hasher_used = "RAHasher" if await compute_ra_hash(rom_path, download.system) is not None else "Python"
 
             # RA hash verification — runs regardless of ra_enabled so we always
             # know if a ROM is in the RA database; ra_enabled only gates whether
