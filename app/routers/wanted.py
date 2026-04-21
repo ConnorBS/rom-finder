@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request, Form, Depends, BackgroundTasks
+from fastapi import APIRouter, Request, Form, Depends, BackgroundTasks, Query
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select
@@ -12,6 +12,7 @@ from app.db.models import AppSetting, WantedGame, HuntStatus
 from app.services import sources as source_registry
 from app.services.ra_client import SYSTEMS, RAClient
 from app.services.title_utils import search_variations, stem_from_rom_name
+from app.services import logger as applog
 
 router = APIRouter(prefix="/wanted")
 templates = Jinja2Templates(directory="app/templates")
@@ -51,6 +52,7 @@ async def wanted_page(request: Request, session: Session = Depends(get_session))
         select(WantedGame).order_by(WantedGame.added_at.desc())
     ).all()
     ra_configured = bool(_get_ra_client(session))
+    applog.log_navigation("wanted", {"game_count": len(games), "ra_configured": ra_configured})
     return templates.TemplateResponse(
         request, "wanted.html",
         {"games": games, "systems": SYSTEMS, "ra_configured": ra_configured},
@@ -75,6 +77,9 @@ async def add_wanted(
         select(WantedGame).where(WantedGame.ra_game_id == ra_game_id)
     ).first()
     if existing:
+        applog.log_action_verbose("add_wanted_duplicate", {
+            "game": game_title, "system": system, "ra_game_id": ra_game_id,
+        })
         return HTMLResponse(
             f'<span class="text-gray-500 text-xs">Already in Wanted</span>'
             f'<a href="/wanted" class="text-blue-400 text-xs hover:underline ml-2">View ↗</a>'
@@ -84,6 +89,9 @@ async def add_wanted(
     session.add(game)
     session.commit()
     session.refresh(game)
+    applog.log_action("add_wanted", {
+        "game": game_title, "system": system, "ra_game_id": ra_game_id, "id": game.id,
+    })
 
     # Grab RA credentials for the background cover task
     username = _get_setting(session, "ra_username")
@@ -101,6 +109,9 @@ async def add_wanted(
 async def remove_wanted(game_id: int, session: Session = Depends(get_session)):
     game = session.get(WantedGame, game_id)
     if game:
+        applog.log_action("remove_wanted", {
+            "id": game_id, "game": game.game_title, "system": game.system,
+        })
         session.delete(game)
         session.commit()
     return HTMLResponse("")
@@ -160,8 +171,7 @@ async def wanted_sources(
     enabled_srcs = source_registry.enabled_sources(enabled_ids)
     queries_param = "|".join(queries)
 
-    from app.services import logger
-    logger.info("navigation", f"Source search opened: {wanted.game_title}", {
+    applog.info("navigation", f"Source search opened: {wanted.game_title}", {
         "game_id": game_id, "system": wanted.system,
         "queries": queries, "sources": [s.source_id for s in enabled_srcs],
     })
@@ -214,8 +224,7 @@ async def wanted_source_results(
             if results:
                 break  # stop on first query that yields results
 
-    from app.services import logger
-    logger.log_search(src.name if src else source_id, queries.split("|")[0] if queries else "", system, len(results), error or "")
+    applog.log_search(src.name if src else source_id, queries.split("|")[0] if queries else "", system, len(results), error or "")
 
     return templates.TemplateResponse(
         request, "partials/wanted_source_section.html",

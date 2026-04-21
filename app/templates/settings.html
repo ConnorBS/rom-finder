@@ -187,6 +187,28 @@
             </div>
         </section>
 
+        <section>
+            <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">Logging</h2>
+            <div class="bg-gray-900 border border-gray-800 rounded-lg px-5 py-4">
+                <div class="flex items-center justify-between gap-4">
+                    <div class="min-w-0">
+                        <p class="text-sm text-gray-200 font-medium">Verbose logging</p>
+                        <p class="text-xs text-gray-600 mt-0.5">Capture every page load, navigation, button press, and backend event in the activity log</p>
+                    </div>
+                    <label class="flex items-center gap-2 flex-shrink-0">
+                        <input
+                            type="checkbox"
+                            name="verbose_logging"
+                            value="true"
+                            {% if settings.verbose_logging == "true" %}checked{% endif %}
+                            class="w-4 h-4 rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-blue-500 focus:ring-offset-gray-900"
+                        >
+                        <span class="text-xs text-gray-400">Enabled</span>
+                    </label>
+                </div>
+            </div>
+        </section>
+
         <div class="flex items-center gap-4">
             <button
                 type="submit"

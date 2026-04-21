@@ -5,6 +5,7 @@ from sqlmodel import Session, select
 
 from app.db.database import get_session
 from app.db.models import LibraryEntry
+from app.services import logger as applog
 
 router = APIRouter(prefix="/library")
 templates = Jinja2Templates(directory="app/templates")
@@ -28,6 +29,10 @@ async def library_page(
     systems = session.exec(
         select(LibraryEntry.system).distinct()
     ).all()
+
+    applog.log_navigation("library", {
+        "result_count": len(entries), "system_filter": system, "query": q,
+    })
 
     return templates.TemplateResponse(
         request, "library.html",

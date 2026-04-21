@@ -2,12 +2,28 @@
 
 Writes to the app_logs table so all search, download, hash, and error events
 can be reviewed on the /logs page and exported for debugging.
+
+Set verbose_logging = true in Settings to also capture every page navigation,
+button press, and form submission (debug level).
 """
 
 import json
 from datetime import datetime
 
 from app.db.models import AppLog
+
+
+def _is_verbose() -> bool:
+    """Return True when verbose_logging is enabled in app settings."""
+    try:
+        from app.db.database import engine
+        from sqlmodel import Session
+        from app.db.models import AppSetting
+        with Session(engine) as session:
+            s = session.get(AppSetting, "verbose_logging")
+            return s is not None and s.value == "true"
+    except Exception:
+        return False
 
 
 def log(
@@ -35,6 +51,10 @@ def log(
         pass  # never let logging crash the caller
 
 
+def debug(category: str, message: str, details: dict | None = None) -> None:
+    log("debug", category, message, details)
+
+
 def info(category: str, message: str, details: dict | None = None) -> None:
     log("info", category, message, details)
 
@@ -45,6 +65,12 @@ def warning(category: str, message: str, details: dict | None = None) -> None:
 
 def error(category: str, message: str, details: dict | None = None) -> None:
     log("error", category, message, details)
+
+
+def verbose(category: str, message: str, details: dict | None = None) -> None:
+    """Write a debug-level entry only when verbose_logging is enabled."""
+    if _is_verbose():
+        log("debug", category, message, details)
 
 
 # --- Convenience helpers ---
@@ -94,3 +120,26 @@ def log_hash(
         "file": file_name, "system": system, "hash": hash_value,
         "hasher": hasher_used, "ra_matched": ra_matched, "ra_game_id": ra_game_id,
     })
+
+
+def log_navigation(page: str, details: dict | None = None) -> None:
+    """Log a page navigation event (verbose only)."""
+    verbose("navigation", f"Page: {page}", details)
+
+
+def log_action(action: str, details: dict | None = None) -> None:
+    """Log a user action such as a button press or form submit."""
+    log("info", "navigation", f"Action: {action}", details)
+
+
+def log_action_verbose(action: str, details: dict | None = None) -> None:
+    """Log a low-significance user action only when verbose mode is on."""
+    verbose("navigation", f"Action: {action}", details)
+
+
+def log_settings(message: str, details: dict | None = None) -> None:
+    log("info", "settings", message, details)
+
+
+def log_library(message: str, details: dict | None = None) -> None:
+    log("info", "library", message, details)

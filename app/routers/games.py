@@ -8,6 +8,7 @@ from app.db.models import AppSetting
 from app.services import sources as source_registry
 from app.services.ra_client import SYSTEMS, RAClient
 from app.services.title_utils import search_variations, stem_from_rom_name
+from app.services import logger as applog
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -40,6 +41,7 @@ def _get_ra_client(session: Session) -> RAClient | None:
 async def index(request: Request, session: Session = Depends(get_session)):
     enabled_ids = _enabled_source_ids(session)
     all_srcs = source_registry.all_sources()
+    applog.log_navigation("home", {"enabled_sources": list(enabled_ids)})
     return templates.TemplateResponse(
         request, "index.html",
         {"systems": SYSTEMS, "sources": all_srcs, "enabled_source_ids": enabled_ids},
@@ -75,6 +77,15 @@ async def search(
         except Exception as exc:
             error = str(exc)
 
+    if q:
+        applog.log_search(
+            source_id or "all",
+            q,
+            system,
+            len(results),
+            error or "",
+        )
+
     return templates.TemplateResponse(
         request, "partials/search_results.html",
         {"results": results, "query": q, "error": error},
@@ -103,6 +114,11 @@ async def browse_files(
             files = await src.get_files(identifier, name_filter=q)
         except Exception as exc:
             error = str(exc)
+
+    applog.verbose("navigation", f"Browse files: {identifier}", {
+        "identifier": identifier, "source": source_id, "game": game_title,
+        "system": system, "file_count": len(files), "error": error,
+    })
 
     return templates.TemplateResponse(
         request, "partials/file_list.html",
@@ -155,6 +171,12 @@ async def ra_search(
             games = await ra.search_games(sid, q)
         except Exception as exc:
             error = str(exc)
+
+    if q:
+        applog.verbose("search", f"RA game search: \"{q}\" [{system_name}] → {len(games)} result(s)", {
+            "query": q, "system_id": sid, "system": system_name,
+            "results": len(games), "mode": mode, "error": error,
+        })
 
     return templates.TemplateResponse(
         request, "partials/ra_game_results.html",
@@ -224,6 +246,11 @@ async def ra_game_sources(
                 break  # stop trying more query variants once we have results
     except Exception as exc:
         error = str(exc)
+
+    applog.verbose("source", f"RA sources lookup: {game_title} → {len(collections)} collection(s)", {
+        "game_id": game_id, "game_title": game_title, "system": system_name,
+        "rom_names": [r["name"] for r in rom_names], "collections": len(collections), "error": error,
+    })
 
     return templates.TemplateResponse(
         request, "partials/ra_sources.html",

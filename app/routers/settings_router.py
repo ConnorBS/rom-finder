@@ -9,6 +9,7 @@ from app.db.database import get_session
 from app.db.models import AppSetting
 from app.services import sources as source_registry
 from app.services.ra_client import SYSTEMS
+from app.services import logger as applog
 
 router = APIRouter(prefix="/settings")
 templates = Jinja2Templates(directory="app/templates")
@@ -41,6 +42,7 @@ def _scan_folders(path_str: str) -> list[str]:
 
 @router.get("", response_class=HTMLResponse)
 async def settings_page(request: Request, session: Session = Depends(get_session)):
+    applog.log_navigation("settings")
     download_dir = get_setting(session, "download_dir", str(Path.home() / "ROMs"))
     folder_map = json.loads(get_setting(session, "folder_map", "{}"))
     current = {
@@ -49,6 +51,7 @@ async def settings_page(request: Request, session: Session = Depends(get_session
         "ra_enabled": get_setting(session, "ra_enabled", "false"),
         "ra_username": get_setting(session, "ra_username"),
         "ra_api_key": get_setting(session, "ra_api_key"),
+        "verbose_logging": get_setting(session, "verbose_logging", "false"),
     }
     all_srcs = source_registry.all_sources()
     src_enabled = {
@@ -89,6 +92,10 @@ async def save_settings(
     ra_enabled = "true" if form_data.get("ra_enabled") == "true" else "false"
     set_setting(session, "ra_enabled", ra_enabled)
 
+    # Verbose logging toggle
+    verbose_logging = "true" if form_data.get("verbose_logging") == "true" else "false"
+    set_setting(session, "verbose_logging", verbose_logging)
+
     # Source toggles
     for src in source_registry.all_sources():
         key = f"source_{src.source_id}_enabled"
@@ -105,6 +112,20 @@ async def save_settings(
     set_setting(session, "folder_map", json.dumps(folder_map))
 
     session.commit()
+
+    # Determine enabled sources for audit log (never log ra_api_key)
+    enabled_srcs = [
+        src.source_id for src in source_registry.all_sources()
+        if form_data.get(f"source_{src.source_id}_enabled") == "true"
+    ]
+    applog.log_settings("Settings saved", {
+        "download_dir": download_dir,
+        "check_dir": check_dir,
+        "ra_enabled": ra_enabled,
+        "ra_username": ra_username,
+        "enabled_sources": enabled_srcs,
+        "folder_map": folder_map,
+    })
 
     return HTMLResponse(
         '<div id="settings-toast" class="bg-green-900/50 border border-green-700 '
@@ -123,6 +144,9 @@ async def test_ra_credentials(
     from app.services.ra_client import RAClient
     ra = RAClient(ra_username, ra_api_key)
     ok, msg = await ra.test_credentials()
+    applog.log_settings(f"RA credential test: {'passed' if ok else 'failed'}", {
+        "username": ra_username, "result": msg,
+    })
     if ok:
         return HTMLResponse(f'<span class="text-green-400 text-xs">&#10003; {msg}</span>')
     return HTMLResponse(f'<span class="text-red-400 text-xs">&#10007; {msg}</span>')
