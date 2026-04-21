@@ -73,7 +73,9 @@
   // -------------------------------------------------------------------------
 
   const PANEL_ID = 'rf-panel-root';
-  if (document.getElementById(PANEL_ID)) return; // already injected
+  // Remove stale panel from a previous game page (SPA navigation re-injects this script)
+  const stale = document.getElementById(PANEL_ID);
+  if (stale) stale.remove();
 
   const root = document.createElement('div');
   root.id = PANEL_ID;
