@@ -7,7 +7,7 @@
     "trigger-rule": {
       "match": {
         "type": "value",
-        "value": "{{ getenv \"WEBHOOK_TOKEN\" }}",
+        "value": "REPLACE_WITH_YOUR_SECRET_TOKEN",
         "parameter": {
           "source": "header",
           "name": "X-Deploy-Token"
