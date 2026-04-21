@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - feature/modular-sources
   workflow_dispatch:
 
 env:
@@ -35,6 +36,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=dev,enable=${{ github.ref_name == 'feature/modular-sources' }}
             type=sha,prefix=sha-
 
       - name: Build and push
@@ -44,3 +46,18 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    # Deploy on every push to either branch so Unraid always gets the latest build
+    if: ${{ secrets.DEPLOY_WEBHOOK_URL != '' }}
+    steps:
+      - name: Trigger Unraid redeploy
+        run: |
+          curl -f -s -o /dev/null -w "HTTP %{http_code}" \
+            -X POST \
+            -H "X-Deploy-Token: ${{ secrets.DEPLOY_WEBHOOK_TOKEN }}" \
+            "${{ secrets.DEPLOY_WEBHOOK_URL }}" \
+          && echo " — redeploy triggered" \
+          || echo "Webhook call failed (server may be unreachable)"
