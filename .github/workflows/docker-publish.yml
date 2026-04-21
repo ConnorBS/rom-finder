@@ -50,8 +50,10 @@ jobs:
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
-    # Deploy on every push to either branch so Unraid always gets the latest build
-    if: ${{ secrets.DEPLOY_WEBHOOK_URL != '' }}
+    # secrets context is not available in job-level if; expose via env and check at step level
+    env:
+      DEPLOY_WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
+      DEPLOY_WEBHOOK_TOKEN: ${{ secrets.DEPLOY_WEBHOOK_TOKEN }}
     steps:
       - name: Set image tag
         id: tag
@@ -63,10 +65,12 @@ jobs:
           fi
 
       - name: Trigger Unraid redeploy
+        if: env.DEPLOY_WEBHOOK_URL != ''
         run: |
+          TAG=${{ steps.tag.outputs.value }}
           curl -f -s -o /dev/null -w "HTTP %{http_code}" \
             -X POST \
-            -H "X-Deploy-Token: ${{ secrets.DEPLOY_WEBHOOK_TOKEN }}" \
-            "${{ secrets.DEPLOY_WEBHOOK_URL }}?tag=${{ steps.tag.outputs.value }}" \
-          && echo " — redeploy triggered (tag: ${{ steps.tag.outputs.value }})" \
+            -H "X-Deploy-Token: $DEPLOY_WEBHOOK_TOKEN" \
+            "$DEPLOY_WEBHOOK_URL?tag=$TAG" \
+          && echo " - redeploy triggered (tag: $TAG)" \
           || echo "Webhook call failed (server may be unreachable)"
