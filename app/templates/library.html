@@ -1,19 +1,19 @@
 {% extends "base.html" %}
 {% block title %}Library — ROM Finder{% endblock %}
 {% block content %}
-<div class="p-6 max-w-5xl mx-auto">
+<div class="p-4 sm:p-6 max-w-5xl mx-auto">
     <h1 class="text-xl font-semibold text-white mb-1">Library</h1>
     <p class="text-gray-500 text-sm mb-6">ROMs you have downloaded and verified.</p>
 
     <!-- Filters -->
-    <div class="flex gap-3 mb-6">
+    <div class="flex flex-col sm:flex-row gap-3 mb-6">
         <select
             name="system"
             hx-get="/library"
             hx-target="body"
             hx-push-url="true"
             hx-include="[name='q']"
-            class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 w-56"
+            class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 w-full sm:w-56"
         >
             <option value="">All Systems</option>
             {% for sys in systems %}
@@ -36,8 +36,8 @@
     </div>
 
     {% if entries %}
-    <div class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
-        <table class="w-full text-sm">
+    <div class="bg-gray-900 border border-gray-800 rounded-lg overflow-x-auto">
+        <table class="w-full text-sm min-w-[600px]">
             <thead>
                 <tr class="border-b border-gray-800 text-gray-500 text-xs uppercase tracking-wide">
                     <th class="text-left px-4 py-3 font-medium">Title</th>

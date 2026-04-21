@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Manual Search — ROM Finder{% endblock %}
 {% block content %}
-<div class="p-6 max-w-5xl mx-auto">
+<div class="p-4 sm:p-6 max-w-5xl mx-auto">
     <h1 class="text-xl font-semibold text-white mb-1">Manual Search</h1>
     <p class="text-gray-500 text-sm mb-6">
         Browse enabled sources directly.
@@ -9,11 +9,11 @@
         <a href="/wanted" class="text-blue-400 hover:underline">Wanted</a> to track and verify with hash matching.
     </p>
 
-    <div class="flex gap-3 mb-6">
+    <div class="flex flex-col sm:flex-row gap-3 mb-6">
         <select
             id="system-select"
             name="system"
-            class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 w-64"
+            class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 w-full sm:w-64"
         >
             <option value="">All Systems</option>
             {% for id, name in systems.items() %}
