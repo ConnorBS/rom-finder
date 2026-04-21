@@ -3,6 +3,12 @@
     "id": "redeploy-rom-finder",
     "execute-command": "/scripts/redeploy.sh",
     "command-working-directory": "/scripts",
+    "pass-arguments-to-command": [
+      {
+        "source": "url",
+        "name": "tag"
+      }
+    ],
     "response-message": "Redeploying rom-finder — this takes ~30 seconds.",
     "trigger-rule": {
       "match": {
