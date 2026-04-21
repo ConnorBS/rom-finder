@@ -26,7 +26,7 @@ docker run -d \
   -e DEBUG=false \
   -e DB_URL=sqlite:////data/rom_finder.db \
   -v /mnt/ssd_cache/appdata/rom-finder/data:/data:rw \
-  -v /mnt/user/appdata/rom-finder/covers:/app/static/covers:rw \
+  -v /mnt/ssd_cache/appdata/rom-finder/covers:/app/static/covers:rw \
   -v "/mnt/user/Cloud Storage/Tools/Emulators/Roms/:/roms:rw" \
   -v /mnt/ssd_cache/Media/ROMs:/rom-check:rw \
   --log-opt max-size=50m \
