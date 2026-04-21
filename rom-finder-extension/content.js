@@ -62,8 +62,13 @@
   }
 
   // RA uses client-side rendering — title/system elements may not exist yet.
-  // Capture initial values (may be empty) and update the panel once they load.
-  let gameTitle  = getGameTitle();
+  // On SPA navigation the script is re-injected before React swaps the DOM,
+  // so whatever is in the DOM right now may belong to the previous game.
+  // Snapshot the stale values so the poller knows to keep waiting past them.
+  const staleTitle  = getGameTitle();
+  const staleSystem = getSystemInfo().name;
+
+  let gameTitle  = staleTitle;
   let systemName = '';
   let systemId   = null;
   ({ name: systemName, id: systemId } = getSystemInfo());
@@ -73,7 +78,9 @@
   // -------------------------------------------------------------------------
 
   const PANEL_ID = 'rf-panel-root';
-  if (document.getElementById(PANEL_ID)) return; // already injected
+  // Remove stale panel from a previous game page (SPA navigation re-injects this script)
+  const stale = document.getElementById(PANEL_ID);
+  if (stale) stale.remove();
 
   const root = document.createElement('div');
   root.id = PANEL_ID;
@@ -272,8 +279,8 @@
     if (attempts <= 0) return;
     const resolvedTitle = getGameTitle();
     const resolvedSys   = getSystemInfo();
-    const gotTitle  = resolvedTitle && resolvedTitle !== `Game #${gameId}`;
-    const gotSystem = resolvedSys.name;
+    const gotTitle  = resolvedTitle && resolvedTitle !== `Game #${gameId}` && resolvedTitle !== staleTitle;
+    const gotSystem = resolvedSys.name && resolvedSys.name !== staleSystem;
     if (gotTitle || gotSystem) {
       if (gotTitle) {
         gameTitle = resolvedTitle;
