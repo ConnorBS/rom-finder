@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Request, Query, Depends
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Request, Query, Depends, HTTPException
+from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.templating import Jinja2Templates
+from pathlib import Path
 from sqlmodel import Session
 
 from app.db.database import get_session
@@ -35,6 +36,16 @@ def _get_ra_client(session: Session) -> RAClient | None:
     if not username or not api_key:
         return None
     return RAClient(username, api_key)
+
+
+@router.get("/covers/{filename}")
+async def serve_cover(filename: str, session: Session = Depends(get_session)):
+    """Serve a cover image from the configured covers_dir."""
+    covers_dir = _get_setting(session, "covers_dir", "static/covers")
+    file_path = Path(covers_dir) / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Cover not found")
+    return FileResponse(file_path)
 
 
 @router.get("/", response_class=HTMLResponse)

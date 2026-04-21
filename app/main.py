@@ -39,6 +39,7 @@ def _run_migrations() -> None:
 DEFAULT_SETTINGS = {
     "download_dir": os.environ.get("DOWNLOAD_DIR", str(Path.home() / "ROMs")),
     "check_dir": os.environ.get("CHECK_DIR", str(Path.home() / "ROMs-check")),
+    "covers_dir": os.environ.get("COVERS_DIR", "static/covers"),
     "folder_map": "{}",
     "ra_enabled": "false",
     "ra_username": "",
@@ -57,13 +58,16 @@ DEFAULT_SETTINGS = {
 async def lifespan(app: FastAPI):
     SQLModel.metadata.create_all(engine)
     _run_migrations()
-    Path("static/covers").mkdir(parents=True, exist_ok=True)
     # Seed default settings if not already present
     with Session(engine) as session:
         for key, value in DEFAULT_SETTINGS.items():
             if not session.get(AppSetting, key):
                 session.add(AppSetting(key=key, value=value))
         session.commit()
+        # Ensure the configured covers directory exists
+        covers_setting = session.get(AppSetting, "covers_dir")
+        covers_path = covers_setting.value if covers_setting else "static/covers"
+        Path(covers_path).mkdir(parents=True, exist_ok=True)
     from app.services import logger as applog
     applog.info("system", "ROM Finder started")
     yield
