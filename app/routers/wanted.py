@@ -262,6 +262,9 @@ async def _fetch_cover(wanted_id: int, ra_game_id: int, username: str, api_key: 
         with SyncSession(engine) as s:
             setting = s.get(AppSetting, "covers_dir")
             covers_dir = Path(setting.value if setting else "static/covers")
+            readonly = s.get(AppSetting, "covers_dir_readonly")
+            if readonly and readonly.value == "true":
+                return
 
         covers_dir.mkdir(parents=True, exist_ok=True)
         cover_file = covers_dir / f"{ra_game_id}.png"

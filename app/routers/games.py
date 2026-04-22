@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Request, Query, Depends, HTTPException
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
 from sqlmodel import Session
@@ -48,11 +48,16 @@ async def serve_cover(filename: str, session: Session = Depends(get_session)):
     return FileResponse(file_path)
 
 
-@router.get("/", response_class=HTMLResponse)
-async def index(request: Request, session: Session = Depends(get_session)):
+@router.get("/", response_class=RedirectResponse)
+async def home():
+    return RedirectResponse(url="/collection", status_code=302)
+
+
+@router.get("/search", response_class=HTMLResponse)
+async def search_page(request: Request, session: Session = Depends(get_session)):
     enabled_ids = _enabled_source_ids(session)
     all_srcs = source_registry.all_sources()
-    applog.log_navigation("home", {"enabled_sources": list(enabled_ids)})
+    applog.log_navigation("search", {"enabled_sources": list(enabled_ids)})
     return templates.TemplateResponse(
         request, "index.html",
         {"systems": SYSTEMS, "sources": all_srcs, "enabled_source_ids": enabled_ids},

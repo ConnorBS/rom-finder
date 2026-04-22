@@ -8,7 +8,7 @@ from sqlmodel import SQLModel, Session, text
 
 from app.db.database import engine
 from app.db.models import AppSetting, WantedGame, AppLog  # noqa: F401 — registers tables
-from app.routers import games, downloads, library, settings_router, wanted, api, logs
+from app.routers import games, downloads, library, settings_router, wanted, api, logs, collection
 
 
 # (table, column, sql_type, default_expr or None for nullable)
@@ -51,8 +51,10 @@ DEFAULT_SETTINGS = {
     "source_wowroms_enabled": "false",
     # Verbose logging captures every page load, button press, and navigation event
     "verbose_logging": "false",
-    # When true, the app will not write to the ROMs directory
-    "rom_folder_readonly": "false",
+    # Per-directory read-only locks — prevent any edits, deletes, or writes within the app
+    "download_dir_readonly": "false",
+    "check_dir_readonly": "false",
+    "covers_dir_readonly": "false",
 }
 
 
@@ -93,5 +95,6 @@ app.include_router(downloads.router)
 app.include_router(library.router)
 app.include_router(settings_router.router)
 app.include_router(wanted.router)
+app.include_router(collection.router)
 app.include_router(api.router)
 app.include_router(logs.router)

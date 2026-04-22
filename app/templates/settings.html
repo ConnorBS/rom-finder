@@ -13,8 +13,10 @@
     >
         <!-- Downloads -->
         <section>
-            <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">Downloads</h2>
-            <div class="bg-gray-900 border border-gray-800 rounded-lg p-5 space-y-4">
+            <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">Directories</h2>
+            <div class="bg-gray-900 border border-gray-800 rounded-lg p-5 space-y-5">
+
+                <!-- ROMs directory -->
                 <div>
                     <label class="block text-sm text-gray-300 mb-1.5" for="download_dir">ROMs directory</label>
                     <input
@@ -25,8 +27,25 @@
                         class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 font-mono"
                         placeholder="/roms"
                     >
-                    <p class="text-gray-600 text-xs mt-1">Final destination for approved ROMs, organised into system subfolders.</p>
+                    <div class="flex items-center justify-between mt-1.5">
+                        <p class="text-gray-600 text-xs">Final destination for approved ROMs, organised into system subfolders.</p>
+                        <label class="flex items-center gap-2 flex-shrink-0 ml-4">
+                            <input
+                                type="checkbox"
+                                name="download_dir_readonly"
+                                value="true"
+                                {% if settings.download_dir_readonly == "true" %}checked{% endif %}
+                                class="w-3.5 h-3.5 rounded border-gray-600 bg-gray-700 text-amber-500 focus:ring-amber-500 focus:ring-offset-gray-900"
+                            >
+                            <span class="text-xs text-gray-400 whitespace-nowrap">Read-only</span>
+                        </label>
+                    </div>
+                    <p class="text-amber-700 text-xs mt-0.5 {% if settings.download_dir_readonly != 'true' %}hidden{% endif %}" id="dl-readonly-note">
+                        Read-only: the app will not make any edits, deletes, or writes to this directory.
+                    </p>
                 </div>
+
+                <!-- Review directory -->
                 <div>
                     <label class="block text-sm text-gray-300 mb-1.5" for="check_dir">Review directory</label>
                     <input
@@ -37,8 +56,25 @@
                         class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 font-mono"
                         placeholder="/rom-check"
                     >
-                    <p class="text-gray-600 text-xs mt-1">ROMs land here first. Approve them to move to the ROMs directory.</p>
+                    <div class="flex items-center justify-between mt-1.5">
+                        <p class="text-gray-600 text-xs">ROMs land here first. Approve them to move to the ROMs directory.</p>
+                        <label class="flex items-center gap-2 flex-shrink-0 ml-4">
+                            <input
+                                type="checkbox"
+                                name="check_dir_readonly"
+                                value="true"
+                                {% if settings.check_dir_readonly == "true" %}checked{% endif %}
+                                class="w-3.5 h-3.5 rounded border-gray-600 bg-gray-700 text-amber-500 focus:ring-amber-500 focus:ring-offset-gray-900"
+                            >
+                            <span class="text-xs text-gray-400 whitespace-nowrap">Read-only</span>
+                        </label>
+                    </div>
+                    <p class="text-amber-700 text-xs mt-0.5 {% if settings.check_dir_readonly != 'true' %}hidden{% endif %}" id="check-readonly-note">
+                        Read-only: the app will not make any edits, deletes, or writes to this directory.
+                    </p>
                 </div>
+
+                <!-- Covers directory -->
                 <div>
                     <label class="block text-sm text-gray-300 mb-1.5" for="covers_dir">Covers directory</label>
                     <input
@@ -49,20 +85,22 @@
                         class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 font-mono"
                         placeholder="/mnt/ssd_cache/appdata/rom-finder/covers"
                     >
-                    <p class="text-gray-600 text-xs mt-1">Where game cover art is saved. Use an absolute path to store outside the container.</p>
-                </div>
-                <div class="border-t border-gray-800 pt-4">
-                    <label class="flex items-center gap-3 cursor-pointer select-none">
-                        <input
-                            type="checkbox"
-                            name="rom_folder_readonly"
-                            value="true"
-                            {% if settings.rom_folder_readonly == "true" %}checked{% endif %}
-                            class="w-4 h-4 rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-blue-500 focus:ring-offset-gray-900"
-                        >
-                        <span class="text-sm text-gray-300">Read-only ROM folder</span>
-                    </label>
-                    <p class="text-gray-600 text-xs mt-1.5 ml-7">Prevent the app from writing new files to the ROMs directory. Use the Library scan to populate from existing ROMs.</p>
+                    <div class="flex items-center justify-between mt-1.5">
+                        <p class="text-gray-600 text-xs">Where game cover art is saved. Use an absolute path to store outside the container.</p>
+                        <label class="flex items-center gap-2 flex-shrink-0 ml-4">
+                            <input
+                                type="checkbox"
+                                name="covers_dir_readonly"
+                                value="true"
+                                {% if settings.covers_dir_readonly == "true" %}checked{% endif %}
+                                class="w-3.5 h-3.5 rounded border-gray-600 bg-gray-700 text-amber-500 focus:ring-amber-500 focus:ring-offset-gray-900"
+                            >
+                            <span class="text-xs text-gray-400 whitespace-nowrap">Read-only</span>
+                        </label>
+                    </div>
+                    <p class="text-amber-700 text-xs mt-0.5 {% if settings.covers_dir_readonly != 'true' %}hidden{% endif %}" id="covers-readonly-note">
+                        Read-only: the app will not make any edits, deletes, or writes to this directory.
+                    </p>
                 </div>
             </div>
         </section>
@@ -126,7 +164,7 @@
         <section>
             <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">System Folder Mapping</h2>
             <div class="bg-gray-900 border border-gray-800 rounded-lg p-5">
-                <p class="text-gray-500 text-xs mb-4">Map each existing folder in your ROMs directory to a system. ROM Finder will use these folders instead of creating new ones.</p>
+                <p class="text-gray-500 text-xs mb-4">Map each folder in your ROMs directory to a system. ROM Finder will use these folders instead of creating new ones.</p>
                 <div class="overflow-x-auto">
                     <table class="w-full">
                         <thead>
@@ -165,14 +203,25 @@
                         </tbody>
                     </table>
                 </div>
-                <button
-                    type="button"
-                    hx-get="/settings/folder-scan"
-                    hx-vals='js:{"path": document.getElementById("download_dir").value}'
-                    hx-target="#folder-map-rows"
-                    hx-swap="innerHTML"
-                    class="mt-3 text-xs text-blue-400 hover:text-blue-300 transition-colors"
-                >↻ Rescan folder</button>
+                <div class="flex gap-3 mt-3">
+                    <button
+                        type="button"
+                        hx-get="/settings/folder-scan"
+                        hx-vals='js:{"path": document.getElementById("download_dir").value}'
+                        hx-target="#folder-map-rows"
+                        hx-swap="innerHTML"
+                        class="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                    >↻ Rescan folders</button>
+                    <button
+                        type="button"
+                        hx-get="/settings/folder-automap"
+                        hx-vals='js:{"path": document.getElementById("download_dir").value}'
+                        hx-target="#folder-map-rows"
+                        hx-swap="innerHTML"
+                        class="text-xs text-purple-400 hover:text-purple-300 transition-colors"
+                        title="Automatically suggest system mappings based on folder names"
+                    >&#10024; Auto-map</button>
+                </div>
             </div>
         </section>
 
@@ -245,4 +294,15 @@
         </div>
     </form>
 </div>
+
+<script>
+// Show/hide the read-only warning note when each checkbox toggles
+document.querySelectorAll('input[name$="_readonly"]').forEach(function(cb) {
+    cb.addEventListener('change', function() {
+        var prefix = this.name.replace('_readonly', '').replace('download_dir', 'dl').replace('check_dir', 'check').replace('covers_dir', 'covers');
+        var note = document.getElementById(prefix + '-readonly-note');
+        if (note) note.classList.toggle('hidden', !this.checked);
+    });
+});
+</script>
 {% endblock %}
