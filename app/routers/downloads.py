@@ -12,6 +12,7 @@ from app.db.models import Download, DownloadStatus, AppSetting, LibraryEntry
 from app.services import sources as source_registry
 from app.services.hasher import hash_rom, extract_rom_from_zip, DISC_SYSTEMS
 from app.services.rahasher import compute_ra_hash
+from app.services.ra_client import DEFAULT_FOLDER_MAP
 from app.services import logger as applog
 
 router = APIRouter(prefix="/downloads")
@@ -24,8 +25,9 @@ def _get_setting(session: Session, key: str, default: str = "") -> str:
 
 
 def _resolve_folder(folder_map: dict, system: str) -> str:
-    """Return the mapped folder name for a system, falling back to the system name."""
-    return folder_map.get(system, system)
+    """Return the mapped folder name for a system.
+    Priority: user folder_map → DEFAULT_FOLDER_MAP → system name as-is."""
+    return folder_map.get(system) or DEFAULT_FOLDER_MAP.get(system, system)
 
 
 @router.get("", response_class=HTMLResponse)
@@ -107,7 +109,7 @@ async def approve_download(
     if not download or not download.file_path:
         return HTMLResponse("")
 
-    download_dir = _get_setting(session, "download_dir", str(Path.home() / "ROMs"))
+    download_dir = _get_setting(session, "download_dir", "/roms")
     folder_map = json.loads(_get_setting(session, "folder_map", "{}"))
     folder_name = _resolve_folder(folder_map, download.system)
 
@@ -182,7 +184,7 @@ async def approve_all_verified(
         select(Download).where(Download.status == DownloadStatus.pending_approval)
     ).all()
 
-    download_dir = _get_setting(session, "download_dir", str(Path.home() / "ROMs"))
+    download_dir = _get_setting(session, "download_dir", "/roms")
     folder_map = json.loads(_get_setting(session, "folder_map", "{}"))
 
     for download in pending:
@@ -254,7 +256,7 @@ async def _run_download(download_id: int) -> None:
         if not download:
             return
 
-        check_dir = _get_setting(session, "check_dir", str(Path.home() / "ROMs-check"))
+        check_dir = _get_setting(session, "check_dir", "/rom-check")
         folder_map = json.loads(_get_setting(session, "folder_map", "{}"))
         folder_name = _resolve_folder(folder_map, download.system)
         dest = Path(check_dir) / folder_name / download.file_name

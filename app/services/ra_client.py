@@ -9,6 +9,37 @@ from typing import Optional
 
 RA_BASE_URL = "https://retroachievements.org/API"
 
+# Maps RA system name -> folder name on disk.
+# Only entries where the folder name differs from the system name are needed;
+# _resolve_folder falls back to the system name itself when neither this map
+# nor the user's custom folder_map has an entry.
+DEFAULT_FOLDER_MAP: dict[str, str] = {
+    "NES":                         "Nintendo Entertainment System",
+    "SNES":                        "Super Nintendo Entertainment System",
+    "Game Boy":                    "Nintendo Game Boy",
+    "Game Boy Advance":            "Nintendo Game Boy Advanced",
+    "Game Boy Color":              "Nintendo Game Boy Color",
+    "GameCube":                    "Nintendo Gamecube",
+    "Wii":                         "Wii",
+    "PlayStation":                 "Sony Playstation",
+    "PlayStation 2":               "Sony Playstation 2",
+    "PlayStation Portable":        "Playstation Portable",
+    "Sega Genesis / Mega Drive":   "Sega Genesis",
+    "Dreamcast":                   "Sega Dreamcast",
+    "Master System":               "Sega Master System",
+    "Saturn":                      "Sega Saturn",
+    "Game Gear":                   "gamegear",
+    "Atari 2600":                  "atari2600",
+    "Atari 7800":                  "atari7800",
+    "Atari Jaguar":                "jaguar",
+    "PC Engine / TurboGrafx-16":  "turbografx-16",
+    "PC Engine CD":                "turbografx-cd",
+    "MSX":                         "Microsoft - MSX",
+    "Neo Geo Pocket":              "SNK Neo Geo Pocket",
+    "Pokemon Mini":                "pokemon-mini",
+    "3DO Interactive Multiplayer": "3DO",
+}
+
 # System ID -> display name mapping
 SYSTEMS: dict[int, str] = {
     1: "Sega Genesis / Mega Drive",

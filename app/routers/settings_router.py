@@ -8,7 +8,7 @@ from pathlib import Path
 from app.db.database import get_session
 from app.db.models import AppSetting
 from app.services import sources as source_registry
-from app.services.ra_client import SYSTEMS
+from app.services.ra_client import SYSTEMS, DEFAULT_FOLDER_MAP
 from app.services import logger as applog
 
 router = APIRouter(prefix="/settings")
@@ -43,11 +43,12 @@ def _scan_folders(path_str: str) -> list[str]:
 @router.get("", response_class=HTMLResponse)
 async def settings_page(request: Request, session: Session = Depends(get_session)):
     applog.log_navigation("settings")
-    download_dir = get_setting(session, "download_dir", str(Path.home() / "ROMs"))
-    folder_map = json.loads(get_setting(session, "folder_map", "{}"))
+    download_dir = get_setting(session, "download_dir", "/roms")
+    raw_map = get_setting(session, "folder_map", "{}")
+    folder_map = json.loads(raw_map) or dict(DEFAULT_FOLDER_MAP)
     current = {
         "download_dir": download_dir,
-        "check_dir": get_setting(session, "check_dir", str(Path.home() / "ROMs-check")),
+        "check_dir": get_setting(session, "check_dir", "/rom-check"),
         "covers_dir": get_setting(session, "covers_dir", "static/covers"),
         "ra_enabled": get_setting(session, "ra_enabled", "false"),
         "ra_username": get_setting(session, "ra_username"),
