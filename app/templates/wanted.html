@@ -8,7 +8,7 @@
         <div>
             <h1 class="text-xl font-semibold text-white">Wanted</h1>
             <p class="text-gray-500 text-sm mt-0.5">
-                {{ games | length }} game{{ 's' if games | length != 1 }} tracked
+                <span id="wl-count">{{ games | length }}</span> game{{ 's' if games | length != 1 }} tracked
             </p>
         </div>
         {% if ra_configured %}
@@ -74,13 +74,56 @@
     <!-- Source results panel (filled by per-card search) -->
     <div id="source-panel"></div>
 
-    <!-- Wanted grid -->
     {% if games %}
-    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+    <!-- Filter / sort bar -->
+    <div class="flex flex-col sm:flex-row gap-2 mb-4 flex-wrap items-center">
+
+        <!-- Title search -->
+        <input
+            type="search"
+            id="wl-search"
+            placeholder="Filter by title…"
+            oninput="wlApply()"
+            class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500 placeholder-gray-600 w-full sm:w-52"
+        >
+
+        <!-- System -->
+        <select id="wl-system" onchange="wlApply()"
+            class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500 w-full sm:w-auto">
+            <option value="">All consoles</option>
+            {% for sys in system_list %}
+            <option value="{{ sys }}">{{ sys }}</option>
+            {% endfor %}
+        </select>
+
+        <!-- Status pills -->
+        <div class="flex gap-1">
+            <button onclick="wlSetStatus('', this)"       class="wl-status-btn active-pill px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-700 bg-gray-700 text-white transition-colors">All</button>
+            <button onclick="wlSetStatus('hunting', this)" class="wl-status-btn px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-700 bg-gray-800 text-gray-400 hover:text-white transition-colors">Hunting</button>
+            <button onclick="wlSetStatus('verified', this)" class="wl-status-btn px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-700 bg-gray-800 text-gray-400 hover:text-white transition-colors">Found</button>
+        </div>
+
+        <!-- Sort -->
+        <select id="wl-sort" onchange="wlApply()"
+            class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500 ml-auto w-full sm:w-auto">
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+            <option value="az">Title A–Z</option>
+            <option value="za">Title Z–A</option>
+            <option value="system">Console A–Z</option>
+        </select>
+    </div>
+
+    <!-- Wanted grid -->
+    <div id="wl-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
         {% for game in games %}
         {% include "partials/wanted_card.html" %}
         {% endfor %}
     </div>
+
+    <!-- Empty-after-filter message -->
+    <p id="wl-empty" class="hidden text-center text-gray-500 text-sm py-16">No games match your filters.</p>
+
     {% else %}
     <div class="flex flex-col items-center justify-center py-20 text-center">
         <p class="text-gray-500 text-sm">No games in your wanted list yet.</p>
@@ -100,6 +143,58 @@ function toggleAddPanel() {
     if (!panel.classList.contains('hidden')) {
         document.getElementById('add-query').focus();
     }
+}
+
+// ── Filter / sort state ──────────────────────────────────────────────────────
+var _wlStatus = '';
+
+function wlSetStatus(val, btn) {
+    _wlStatus = val;
+    document.querySelectorAll('.wl-status-btn').forEach(function(b) {
+        b.classList.remove('active-pill', 'bg-gray-700', 'text-white');
+        b.classList.add('bg-gray-800', 'text-gray-400');
+    });
+    btn.classList.add('active-pill', 'bg-gray-700', 'text-white');
+    btn.classList.remove('bg-gray-800', 'text-gray-400');
+    wlApply();
+}
+
+function wlApply() {
+    var query  = (document.getElementById('wl-search').value || '').toLowerCase().trim();
+    var system = document.getElementById('wl-system').value;
+    var sort   = document.getElementById('wl-sort').value;
+    var grid   = document.getElementById('wl-grid');
+    var cards  = Array.from(grid.querySelectorAll('.wl-card'));
+
+    // Filter
+    var visible = cards.filter(function(c) {
+        if (query  && !c.dataset.title.includes(query))    return false;
+        if (system && c.dataset.system !== system)          return false;
+        if (_wlStatus && c.dataset.status !== _wlStatus)   return false;
+        return true;
+    });
+    var hidden = cards.filter(function(c) { return visible.indexOf(c) === -1; });
+
+    hidden.forEach(function(c)  { c.style.display = 'none'; });
+    visible.forEach(function(c) { c.style.display = ''; });
+
+    // Sort visible cards
+    visible.sort(function(a, b) {
+        if (sort === 'az')     return a.dataset.title.localeCompare(b.dataset.title);
+        if (sort === 'za')     return b.dataset.title.localeCompare(a.dataset.title);
+        if (sort === 'system') return a.dataset.system.localeCompare(b.dataset.system) || a.dataset.title.localeCompare(b.dataset.title);
+        if (sort === 'oldest') return a.dataset.added.localeCompare(b.dataset.added);
+        return b.dataset.added.localeCompare(a.dataset.added); // newest
+    });
+    visible.forEach(function(c) { grid.appendChild(c); });
+
+    // Update count
+    var countEl = document.getElementById('wl-count');
+    if (countEl) countEl.textContent = visible.length;
+
+    // Show/hide empty message
+    var emptyEl = document.getElementById('wl-empty');
+    if (emptyEl) emptyEl.classList.toggle('hidden', visible.length > 0);
 }
 </script>
 {% endblock %}

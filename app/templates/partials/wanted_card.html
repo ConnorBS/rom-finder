@@ -1,4 +1,9 @@
-<div id="wanted-{{ game.id }}" class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden flex flex-col group">
+<div id="wanted-{{ game.id }}"
+     class="wl-card bg-gray-900 border border-gray-800 rounded-lg overflow-hidden flex flex-col group"
+     data-system="{{ game.system }}"
+     data-status="{{ game.status.value }}"
+     data-title="{{ game.game_title | lower }}"
+     data-added="{{ game.added_at.isoformat() }}">
 
     <!-- Cover -->
     <div class="relative bg-gray-800 aspect-[3/4] overflow-hidden">

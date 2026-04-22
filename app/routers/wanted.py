@@ -52,10 +52,11 @@ async def wanted_page(request: Request, session: Session = Depends(get_session))
         select(WantedGame).order_by(WantedGame.added_at.desc())
     ).all()
     ra_configured = bool(_get_ra_client(session))
+    system_list = sorted({g.system for g in games if g.system})
     applog.log_navigation("wanted", {"game_count": len(games), "ra_configured": ra_configured})
     return templates.TemplateResponse(
         request, "wanted.html",
-        {"games": games, "systems": SYSTEMS, "ra_configured": ra_configured},
+        {"games": games, "systems": SYSTEMS, "ra_configured": ra_configured, "system_list": system_list},
     )
 
 
