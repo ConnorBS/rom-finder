@@ -51,6 +51,8 @@ DEFAULT_SETTINGS = {
     "source_wowroms_enabled": "false",
     # Verbose logging captures every page load, button press, and navigation event
     "verbose_logging": "false",
+    # When true, the app will not write to the ROMs directory
+    "rom_folder_readonly": "false",
 }
 
 

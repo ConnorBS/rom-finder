@@ -56,6 +56,12 @@ async def start_download(
     ra_game_id: int = Form(default=0),
     session: Session = Depends(get_session),
 ):
+    if _get_setting(session, "rom_folder_readonly", "false") == "true":
+        return HTMLResponse(
+            '<li class="flex items-center px-4 py-2.5 bg-red-900/20 border-l-2 border-red-600 gap-4">'
+            '<p class="text-red-400 text-xs">ROM folder is set to read-only. Disable it in Settings to download ROMs.</p>'
+            '</li>'
+        )
     src = source_registry.get(source_id) or source_registry.get("archive_org")
     source_url = src.get_download_url(archive_identifier, file_name)
 
@@ -105,6 +111,10 @@ async def approve_download(
     download_id: int,
     session: Session = Depends(get_session),
 ):
+    if _get_setting(session, "rom_folder_readonly", "false") == "true":
+        return HTMLResponse(
+            '<p class="text-red-400 text-xs px-4 py-2">ROM folder is read-only. Disable it in Settings to approve downloads.</p>'
+        )
     download = session.get(Download, download_id)
     if not download or not download.file_path:
         return HTMLResponse("")
@@ -180,6 +190,14 @@ async def approve_all_verified(
     session: Session = Depends(get_session),
 ):
     """Approve all hash-verified pending items at once."""
+    if _get_setting(session, "rom_folder_readonly", "false") == "true":
+        all_downloads = session.exec(select(Download).order_by(Download.created_at.desc())).all()
+        pending_list = [d for d in all_downloads if d.status == DownloadStatus.pending_approval]
+        active_list = [d for d in all_downloads if d.status != DownloadStatus.pending_approval]
+        return templates.TemplateResponse(
+            request, "downloads.html",
+            {"pending": pending_list, "active": active_list, "readonly_error": True},
+        )
     pending = session.exec(
         select(Download).where(Download.status == DownloadStatus.pending_approval)
     ).all()

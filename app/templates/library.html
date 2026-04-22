@@ -2,8 +2,19 @@
 {% block title %}Library — ROM Finder{% endblock %}
 {% block content %}
 <div class="p-4 sm:p-6 max-w-5xl mx-auto">
-    <h1 class="text-xl font-semibold text-white mb-1">Library</h1>
-    <p class="text-gray-500 text-sm mb-6">ROMs you have downloaded and verified.</p>
+    <div class="flex items-center justify-between mb-1">
+        <h1 class="text-xl font-semibold text-white">Library</h1>
+        <button
+            hx-post="/library/scan"
+            hx-target="#scan-result"
+            hx-swap="innerHTML"
+            class="bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs px-3 py-2 rounded-lg transition-colors"
+        >&#8635; Scan ROM folder</button>
+    </div>
+    <div class="flex items-center gap-4 mb-6">
+        <p class="text-gray-500 text-sm">ROMs you have downloaded and verified.</p>
+        <div id="scan-result"></div>
+    </div>
 
     <!-- Filters -->
     <div class="flex flex-col sm:flex-row gap-3 mb-6">
