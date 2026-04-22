@@ -1,4 +1,5 @@
 import json
+import re
 from fastapi import APIRouter, Request, Form, Depends, Query
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -16,6 +17,13 @@ templates = Jinja2Templates(directory="app/templates")
 
 # All known system names from RA, sorted for dropdowns
 KNOWN_SYSTEMS = sorted(SYSTEMS.values())
+
+# Build a reverse lookup: folder name (lowercase) -> system name for auto-mapping
+_FOLDER_LOWER_TO_SYSTEM: dict[str, str] = {}
+for _sys, _folder in DEFAULT_FOLDER_MAP.items():
+    _FOLDER_LOWER_TO_SYSTEM[_folder.lower()] = _sys
+for _sys_name in SYSTEMS.values():
+    _FOLDER_LOWER_TO_SYSTEM[_sys_name.lower()] = _sys_name
 
 
 def get_setting(session: Session, key: str, default: str = "") -> str:
@@ -40,6 +48,27 @@ def _scan_folders(path_str: str) -> list[str]:
         return []
 
 
+def _automap_folder(folder_name: str) -> str:
+    """Return best-match RA system name for a folder name, or '' if no match."""
+    normalized = folder_name.lower().strip()
+
+    # Exact match
+    if normalized in _FOLDER_LOWER_TO_SYSTEM:
+        return _FOLDER_LOWER_TO_SYSTEM[normalized]
+
+    # Strip common noise words and retry
+    stripped = re.sub(r"[_\-\.]", " ", normalized).strip()
+    if stripped in _FOLDER_LOWER_TO_SYSTEM:
+        return _FOLDER_LOWER_TO_SYSTEM[stripped]
+
+    # Substring match — folder contains or is contained by a known name
+    for key, sys_name in _FOLDER_LOWER_TO_SYSTEM.items():
+        if key in normalized or normalized in key:
+            return sys_name
+
+    return ""
+
+
 @router.get("", response_class=HTMLResponse)
 async def settings_page(request: Request, session: Session = Depends(get_session)):
     applog.log_navigation("settings")
@@ -54,7 +83,9 @@ async def settings_page(request: Request, session: Session = Depends(get_session
         "ra_username": get_setting(session, "ra_username"),
         "ra_api_key": get_setting(session, "ra_api_key"),
         "verbose_logging": get_setting(session, "verbose_logging", "false"),
-        "rom_folder_readonly": get_setting(session, "rom_folder_readonly", "false"),
+        "download_dir_readonly": get_setting(session, "download_dir_readonly", "false"),
+        "check_dir_readonly": get_setting(session, "check_dir_readonly", "false"),
+        "covers_dir_readonly": get_setting(session, "covers_dir_readonly", "false"),
     }
     all_srcs = source_registry.all_sources()
     src_enabled = {
@@ -88,7 +119,6 @@ async def save_settings(
     set_setting(session, "download_dir", download_dir)
     set_setting(session, "check_dir", check_dir)
     set_setting(session, "covers_dir", covers_dir)
-    # Ensure the new covers directory exists immediately
     from pathlib import Path as _Path
     _Path(covers_dir).mkdir(parents=True, exist_ok=True)
     set_setting(session, "ra_username", ra_username)
@@ -96,36 +126,31 @@ async def save_settings(
 
     form_data = await request.form()
 
-    # ra_enabled checkbox
     ra_enabled = "true" if form_data.get("ra_enabled") == "true" else "false"
     set_setting(session, "ra_enabled", ra_enabled)
 
-    # Verbose logging toggle
     verbose_logging = "true" if form_data.get("verbose_logging") == "true" else "false"
     set_setting(session, "verbose_logging", verbose_logging)
 
-    # Read-only ROM folder toggle
-    rom_folder_readonly = "true" if form_data.get("rom_folder_readonly") == "true" else "false"
-    set_setting(session, "rom_folder_readonly", rom_folder_readonly)
+    # Per-directory read-only toggles
+    for key in ("download_dir_readonly", "check_dir_readonly", "covers_dir_readonly"):
+        set_setting(session, key, "true" if form_data.get(key) == "true" else "false")
 
-    # Source toggles
     for src in source_registry.all_sources():
         key = f"source_{src.source_id}_enabled"
         value = "true" if form_data.get(key) == "true" else "false"
         set_setting(session, key, value)
 
-    # Folder mapping — parallel arrays folder_names[] + folder_systems[]
     folder_names = form_data.getlist("folder_names[]")
     folder_systems = form_data.getlist("folder_systems[]")
     folder_map: dict[str, str] = {}
     for fname, fsys in zip(folder_names, folder_systems):
-        if fsys:  # skip unmapped rows
+        if fsys:
             folder_map[fsys] = fname
     set_setting(session, "folder_map", json.dumps(folder_map))
 
     session.commit()
 
-    # Determine enabled sources for audit log (never log ra_api_key)
     enabled_srcs = [
         src.source_id for src in source_registry.all_sources()
         if form_data.get(f"source_{src.source_id}_enabled") == "true"
@@ -174,12 +199,44 @@ async def folder_scan(
     scan_path = path or get_setting(session, "download_dir", "")
     folder_map = json.loads(get_setting(session, "folder_map", "{}"))
     folders = _scan_folders(scan_path)
+    rows = _build_folder_rows(folders, folder_map)
+    return HTMLResponse(rows)
+
+
+@router.get("/folder-automap", response_class=HTMLResponse)
+async def folder_automap(
+    path: str = Query(default=""),
+    session: Session = Depends(get_session),
+):
+    """Auto-suggest system mappings for each folder based on name matching."""
+    scan_path = path or get_setting(session, "download_dir", "")
+    folder_map = json.loads(get_setting(session, "folder_map", "{}"))
+    folders = _scan_folders(scan_path)
+
+    # Apply auto-mapping: prefer existing user map, then auto-detect
+    suggested: dict[str, str] = {}
+    for folder in folders:
+        existing = next((sys for sys, f in folder_map.items() if f == folder), "")
+        suggested[folder] = existing or _automap_folder(folder)
+
+    rows = _build_folder_rows(folders, {sys: f for f, sys in suggested.items() if sys}, suggested)
+    return HTMLResponse(rows)
+
+
+def _build_folder_rows(
+    folders: list[str],
+    folder_map: dict[str, str],
+    suggested: dict[str, str] | None = None,
+) -> str:
+    """Build HTML table rows for the folder mapping table."""
     rows = ""
     for folder in folders:
         assigned = next((sys for sys, f in folder_map.items() if f == folder), "")
+        if suggested is not None:
+            assigned = suggested.get(folder, assigned)
         options = '<option value="">— Not mapped —</option>'
         for sys in KNOWN_SYSTEMS:
-            sel = 'selected' if sys == assigned else ''
+            sel = "selected" if sys == assigned else ""
             options += f'<option value="{sys}" {sel}>{sys}</option>'
         rows += (
             f'<tr class="border-t border-gray-800">'
@@ -193,4 +250,4 @@ async def folder_scan(
         )
     if not rows:
         rows = '<tr><td colspan="2" class="py-4 text-gray-600 text-sm text-center">No subfolders found at that path.</td></tr>'
-    return HTMLResponse(rows)
+    return rows
