@@ -54,6 +54,7 @@ async def settings_page(request: Request, session: Session = Depends(get_session
         "ra_username": get_setting(session, "ra_username"),
         "ra_api_key": get_setting(session, "ra_api_key"),
         "verbose_logging": get_setting(session, "verbose_logging", "false"),
+        "rom_folder_readonly": get_setting(session, "rom_folder_readonly", "false"),
     }
     all_srcs = source_registry.all_sources()
     src_enabled = {
@@ -102,6 +103,10 @@ async def save_settings(
     # Verbose logging toggle
     verbose_logging = "true" if form_data.get("verbose_logging") == "true" else "false"
     set_setting(session, "verbose_logging", verbose_logging)
+
+    # Read-only ROM folder toggle
+    rom_folder_readonly = "true" if form_data.get("rom_folder_readonly") == "true" else "false"
+    set_setting(session, "rom_folder_readonly", rom_folder_readonly)
 
     # Source toggles
     for src in source_registry.all_sources():

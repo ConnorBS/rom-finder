@@ -51,6 +51,19 @@
                     >
                     <p class="text-gray-600 text-xs mt-1">Where game cover art is saved. Use an absolute path to store outside the container.</p>
                 </div>
+                <div class="border-t border-gray-800 pt-4">
+                    <label class="flex items-center gap-3 cursor-pointer select-none">
+                        <input
+                            type="checkbox"
+                            name="rom_folder_readonly"
+                            value="true"
+                            {% if settings.rom_folder_readonly == "true" %}checked{% endif %}
+                            class="w-4 h-4 rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-blue-500 focus:ring-offset-gray-900"
+                        >
+                        <span class="text-sm text-gray-300">Read-only ROM folder</span>
+                    </label>
+                    <p class="text-gray-600 text-xs mt-1.5 ml-7">Prevent the app from writing new files to the ROMs directory. Use the Library scan to populate from existing ROMs.</p>
+                </div>
             </div>
         </section>
 
