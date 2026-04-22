@@ -28,6 +28,7 @@ SYSTEMS: dict[int, str] = {
     15: "Game Gear",
     17: "Atari Jaguar",
     18: "Nintendo DS",
+    20: "Wii",
     21: "PlayStation 2",
     23: "Magnavox Odyssey 2",
     24: "Pokemon Mini",
