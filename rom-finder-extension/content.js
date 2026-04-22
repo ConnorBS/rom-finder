@@ -61,15 +61,26 @@
     return { name: '', id: null };
   }
 
-  const gameTitle  = getGameTitle();
-  const { name: systemName, id: systemId } = getSystemInfo();
+  // RA uses client-side rendering — title/system elements may not exist yet.
+  // On SPA navigation the script is re-injected before React swaps the DOM,
+  // so whatever is in the DOM right now may belong to the previous game.
+  // Snapshot the stale values so the poller knows to keep waiting past them.
+  const staleTitle  = getGameTitle();
+  const staleSystem = getSystemInfo().name;
+
+  let gameTitle  = staleTitle;
+  let systemName = '';
+  let systemId   = null;
+  ({ name: systemName, id: systemId } = getSystemInfo());
 
   // -------------------------------------------------------------------------
   // Build the floating panel (all inline styles for isolation)
   // -------------------------------------------------------------------------
 
   const PANEL_ID = 'rf-panel-root';
-  if (document.getElementById(PANEL_ID)) return; // already injected
+  // Remove stale panel from a previous game page (SPA navigation re-injects this script)
+  const stale = document.getElementById(PANEL_ID);
+  if (stale) stale.remove();
 
   const root = document.createElement('div');
   root.id = PANEL_ID;
@@ -261,6 +272,35 @@
   root.appendChild(panel);
   root.appendChild(toggleBtn);
   document.body.appendChild(root);
+
+  // RA is a SPA — the game title and system may not be in the DOM yet.
+  // Poll for up to 4 seconds and update the panel once they appear.
+  (function waitForContent(attempts) {
+    if (attempts <= 0) return;
+    const resolvedTitle = getGameTitle();
+    const resolvedSys   = getSystemInfo();
+    const gotTitle  = resolvedTitle && resolvedTitle !== `Game #${gameId}` && resolvedTitle !== staleTitle;
+    const gotSystem = resolvedSys.name && resolvedSys.name !== staleSystem;
+    if (gotTitle || gotSystem) {
+      if (gotTitle) {
+        gameTitle = resolvedTitle;
+        titleEl.textContent = resolvedTitle;
+        if (!searchInput.value || searchInput.value === `Game #${gameId}`) {
+          searchInput.value = resolvedTitle;
+        }
+      }
+      if (gotSystem) {
+        systemName = resolvedSys.name;
+        systemId   = resolvedSys.id;
+        systemEl.textContent = resolvedSys.name;
+      }
+      if (!gotTitle || !gotSystem) {
+        setTimeout(() => waitForContent(attempts - 1), 200);
+      }
+    } else {
+      setTimeout(() => waitForContent(attempts - 1), 200);
+    }
+  })(20);
 
   // -------------------------------------------------------------------------
   // Toggle logic

@@ -34,6 +34,7 @@ _SYSTEM_MAP: dict[str, str] = {
     "Nintendo DS": "DS",
     "Nintendo DSi": "DS",
     "GameCube": "GameCube",
+    "Wii": "Wii",
     "Sega Genesis / Mega Drive": "Genesis",
     "Sega CD": "SegaCD",
     "Sega 32X": "32X",
@@ -121,10 +122,18 @@ class VimmSource(RomSource):
                 "source_id": self.source_id,
             })
 
-        # If system filter returned nothing, retry without it so partial title
-        # matches still surface (e.g. multi-disc sets labelled differently).
+        # If system filter returned nothing, retry without it.
         if not results and vimm_sys:
             return await self.search(query, "")
+
+        # If still nothing and query has multiple words, progressively drop the
+        # last word (handles long subtitles like "Freddi Fish: The Case of ...").
+        if not results:
+            words = query.split()
+            if len(words) > 1:
+                shorter = " ".join(words[:-1])
+                if len(shorter) >= 3:
+                    return await self.search(shorter, system)
 
         return results
 

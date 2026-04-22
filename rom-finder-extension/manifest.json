@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "ROM Finder",
-  "version": "1.1.0",
+  "version": "1.3.0",
   "description": "Add RetroAchievements games to your ROM Finder wanted list and search sources directly in the browser.",
-  "permissions": ["storage"],
+  "permissions": ["storage", "webNavigation", "scripting"],
   "background": {
     "service_worker": "background.js"
   },

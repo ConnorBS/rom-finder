@@ -1,9 +1,12 @@
 #!/bin/sh
-# Pulls the latest rom-finder image and restarts the container on Unraid.
+# Pulls the specified rom-finder image tag and restarts the container on Unraid.
 # Exact volume/env config is mirrored from the live Unraid Docker template.
+#
+# Usage: redeploy.sh [tag]   — defaults to "latest"
 set -e
 
-IMAGE="ghcr.io/connorbs/rom-finder:latest"
+TAG="${1:-latest}"
+IMAGE="ghcr.io/connorbs/rom-finder:${TAG}"
 
 echo "[$(date)] Pulling $IMAGE ..."
 docker pull "$IMAGE"
@@ -36,4 +39,4 @@ docker run -d \
   --label "net.unraid.docker.webui=http://[IP]:[PORT:19846]/" \
   "$IMAGE"
 
-echo "[$(date)] Redeploy complete."
+echo "[$(date)] Redeploy complete. Tag: $TAG"
