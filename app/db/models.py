@@ -7,6 +7,7 @@ from enum import Enum
 class DownloadStatus(str, Enum):
     pending = "pending"
     downloading = "downloading"
+    hashing = "hashing"          # download done, computing hash + RA lookup
     completed = "completed"
     failed = "failed"
     verified = "verified"

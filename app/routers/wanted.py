@@ -5,8 +5,6 @@ from sqlmodel import Session, select
 from pathlib import Path
 from datetime import datetime
 
-import httpx
-
 from app.db.database import get_session
 from app.db.models import AppSetting, WantedGame, HuntStatus
 from app.services import sources as source_registry
@@ -16,8 +14,6 @@ from app.services import logger as applog
 
 router = APIRouter(prefix="/wanted")
 templates = Jinja2Templates(directory="app/templates")
-
-RA_MEDIA_BASE = "https://media.retroachievements.org"
 
 
 def _get_setting(session: Session, key: str, default: str = "") -> str:
@@ -94,11 +90,7 @@ async def add_wanted(
         "game": game_title, "system": system, "ra_game_id": ra_game_id, "id": game.id,
     })
 
-    # Grab RA credentials for the background cover task
-    username = _get_setting(session, "ra_username")
-    api_key = _get_setting(session, "ra_api_key")
-    if username and api_key:
-        background_tasks.add_task(_fetch_cover, game.id, ra_game_id, username, api_key)
+    background_tasks.add_task(_fetch_cover, game.id, ra_game_id, game_title, system)
 
     return templates.TemplateResponse(
         request, "partials/wanted_added.html",
@@ -244,44 +236,77 @@ async def wanted_source_results(
 # Background tasks
 # ---------------------------------------------------------------------------
 
-async def _fetch_cover(wanted_id: int, ra_game_id: int, username: str, api_key: str) -> None:
-    """Download cover art from RA media CDN and save to the configured covers_dir."""
+async def _fetch_cover(wanted_id: int, ra_game_id: int, game_title: str, system: str) -> None:
+    """Try each enabled cover source in priority order; save the first image found."""
+    import json as _json
     from app.db.database import engine
     from sqlmodel import Session as SyncSession
     from app.db.models import AppSetting
+    from app.services import cover_sources as cover_source_registry
+    from app.services import activity as activity_store
 
-    try:
-        ra = RAClient(username, api_key)
-        info = await ra.get_game_info(ra_game_id)
-        icon = info.get("ImageIcon", "")
-        if not icon:
+    task_id = f"cover-{wanted_id}"
+    activity_store.start(task_id, f"Cover art: {game_title}")
+
+    with SyncSession(engine) as s:
+        def _gs(key: str, default: str = "") -> str:
+            setting = s.get(AppSetting, key)
+            return setting.value if setting else default
+
+        covers_dir = Path(_gs("covers_dir", "static/covers"))
+        if _gs("covers_dir_readonly", "false") == "true":
+            activity_store.finish(task_id)
             return
 
-        cover_url = f"{RA_MEDIA_BASE}{icon}"
+        config: dict = {
+            "ra_username": _gs("ra_username"),
+            "ra_api_key": _gs("ra_api_key"),
+        }
+        for src in cover_source_registry.all_sources():
+            if src.requires_api_key:
+                k = f"cover_source_{src.source_id}_api_key"
+                config[k] = _gs(k)
 
-        with SyncSession(engine) as s:
-            setting = s.get(AppSetting, "covers_dir")
-            covers_dir = Path(setting.value if setting else "static/covers")
-            readonly = s.get(AppSetting, "covers_dir_readonly")
-            if readonly and readonly.value == "true":
-                return
+        order_raw = _gs("cover_sources_order", "")
+        all_srcs = cover_source_registry.all_sources()
+        if order_raw:
+            try:
+                order = _json.loads(order_raw)
+                src_map = {s.source_id: s for s in all_srcs}
+                ordered = [src_map[sid] for sid in order if sid in src_map]
+                ordered_ids = {s.source_id for s in ordered}
+                ordered += [s for s in all_srcs if s.source_id not in ordered_ids]
+            except (ValueError, KeyError):
+                ordered = all_srcs
+        else:
+            ordered = all_srcs
 
-        covers_dir.mkdir(parents=True, exist_ok=True)
-        cover_file = covers_dir / f"{ra_game_id}.png"
+        enabled_srcs = [
+            s for s in ordered
+            if _gs(f"cover_source_{s.source_id}_enabled", "false") == "true"
+        ]
 
-        async with httpx.AsyncClient(follow_redirects=True, timeout=15) as client:
-            resp = await client.get(cover_url)
-            if resp.status_code == 200:
-                cover_file.write_bytes(resp.content)
-            else:
-                return
-    except Exception:
-        return
+    covers_dir.mkdir(parents=True, exist_ok=True)
 
-    with SyncSession(engine) as session:
-        game = session.get(WantedGame, wanted_id)
-        if game:
-            game.cover_path = f"covers/{ra_game_id}.png"
-            game.updated_at = datetime.utcnow()
-            session.add(game)
-            session.commit()
+    image_bytes: bytes | None = None
+    for src in enabled_srcs:
+        try:
+            image_bytes = await src.fetch_cover(ra_game_id, game_title, system, config)
+            if image_bytes:
+                break
+        except Exception:
+            continue
+
+    try:
+        if image_bytes:
+            cover_file = covers_dir / f"{ra_game_id}.png"
+            cover_file.write_bytes(image_bytes)
+            with SyncSession(engine) as session:
+                game = session.get(WantedGame, wanted_id)
+                if game:
+                    game.cover_path = f"covers/{ra_game_id}.png"
+                    game.updated_at = datetime.utcnow()
+                    session.add(game)
+                    session.commit()
+    finally:
+        activity_store.finish(task_id)

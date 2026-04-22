@@ -225,7 +225,58 @@
             </div>
         </section>
 
-        <!-- Sources -->
+        <!-- Cover Art Sources -->
+        <section>
+            <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-1">Cover Art Sources</h2>
+            <p class="text-gray-500 text-xs mb-4">Drag to set priority. The first enabled source with a result is used.</p>
+            <div id="cover-sources-list" class="bg-gray-900 border border-gray-800 rounded-lg divide-y divide-gray-800">
+                {% for src in cover_sources %}
+                <div class="cover-source-item flex items-center gap-3 px-5 py-4"
+                     data-source-id="{{ src.source_id }}">
+                    <!-- Drag handle -->
+                    <div class="text-gray-600 cursor-grab active:cursor-grabbing flex-shrink-0 select-none">
+                        <svg class="w-4 h-4" viewBox="0 0 16 16" fill="currentColor">
+                            <circle cx="5" cy="4" r="1.2"/><circle cx="11" cy="4" r="1.2"/>
+                            <circle cx="5" cy="8" r="1.2"/><circle cx="11" cy="8" r="1.2"/>
+                            <circle cx="5" cy="12" r="1.2"/><circle cx="11" cy="12" r="1.2"/>
+                        </svg>
+                    </div>
+                    <!-- Hidden order input — dragged along with the row -->
+                    <input type="hidden" name="cover_source_order[]" value="{{ src.source_id }}">
+                    <!-- Info -->
+                    <div class="min-w-0 flex-1">
+                        <p class="text-sm text-gray-200 font-medium">{{ src.name }}</p>
+                        <p class="text-xs text-gray-600 mt-0.5">{{ src.description }}</p>
+                    </div>
+                    <!-- Controls -->
+                    <div class="flex items-center gap-3 flex-shrink-0">
+                        {% if src.requires_api_key %}
+                        <input
+                            type="password"
+                            name="cover_source_{{ src.source_id }}_api_key"
+                            value="{{ cover_source_api_keys.get(src.source_id, '') }}"
+                            placeholder="API key"
+                            autocomplete="new-password"
+                            class="w-36 bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500"
+                        >
+                        {% endif %}
+                        <label class="flex items-center gap-2 flex-shrink-0">
+                            <input
+                                type="checkbox"
+                                name="cover_source_{{ src.source_id }}_enabled"
+                                value="true"
+                                {% if cover_source_enabled[src.source_id] %}checked{% endif %}
+                                class="w-4 h-4 rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-blue-500 focus:ring-offset-gray-900"
+                            >
+                            <span class="text-xs text-gray-400">Enabled</span>
+                        </label>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+
+        <!-- ROM Sources -->
         <section>
             <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">ROM Sources</h2>
             <div class="bg-gray-900 border border-gray-800 rounded-lg divide-y divide-gray-800">
@@ -295,14 +346,21 @@
     </form>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
 <script>
-// Show/hide the read-only warning note when each checkbox toggles
-document.querySelectorAll('input[name$="_readonly"]').forEach(function(cb) {
-    cb.addEventListener('change', function() {
-        var prefix = this.name.replace('_readonly', '').replace('download_dir', 'dl').replace('check_dir', 'check').replace('covers_dir', 'covers');
-        var note = document.getElementById(prefix + '-readonly-note');
-        if (note) note.classList.toggle('hidden', !this.checked);
+    Sortable.create(document.getElementById('cover-sources-list'), {
+        animation: 150,
+        handle: '.cover-source-item',
+        ghostClass: 'opacity-40',
     });
-});
+
+    // Show/hide the read-only warning note when each checkbox toggles
+    document.querySelectorAll('input[name$="_readonly"]').forEach(function(cb) {
+        cb.addEventListener('change', function() {
+            var prefix = this.name.replace('_readonly', '').replace('download_dir', 'dl').replace('check_dir', 'check').replace('covers_dir', 'covers');
+            var note = document.getElementById(prefix + '-readonly-note');
+            if (note) note.classList.toggle('hidden', !this.checked);
+        });
+    });
 </script>
 {% endblock %}

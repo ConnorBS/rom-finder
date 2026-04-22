@@ -305,6 +305,13 @@ async def _run_download(download_id: int) -> None:
             src = source_registry.get(download.source_id) or source_registry.get("archive_org")
             await src.download_file(download.source_url, dest, on_progress)
 
+            # Transition to hashing so the UI can show a spinner while we compute
+            download.status = DownloadStatus.hashing
+            download.updated_at = datetime.utcnow()
+            session.add(download)
+            session.commit()
+            session.refresh(download)
+
             rom_path = dest
             if dest.suffix.lower() == ".zip":
                 rom_path = extract_rom_from_zip(dest)

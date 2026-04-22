@@ -41,6 +41,7 @@ DEFAULT_FOLDER_MAP: dict[str, str] = {
 }
 
 # System ID -> display name mapping
+# IDs match RetroAchievements console IDs from API_GetConsoleIDs.php
 SYSTEMS: dict[int, str] = {
     1: "Sega Genesis / Mega Drive",
     2: "Nintendo 64",
@@ -83,9 +84,14 @@ SYSTEMS: dict[int, str] = {
     53: "WonderSwan",
     56: "Fairchild Channel F",
     57: "Philips CD-i",
+    63: "Watara Supervision",
+    69: "Mega Duck",
+    71: "Arduboy",
+    72: "WASM-4",
     76: "PC Engine CD",
     78: "Nintendo DSi",
     80: "GameCube",
+    89: "Uzebox",
 }
 
 

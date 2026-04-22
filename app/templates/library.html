@@ -73,9 +73,16 @@
                     </td>
                     <td class="px-4 py-3">
                         {% if entry.ra_matched %}
-                        <span class="text-green-400 text-xs font-medium">Verified</span>
-                        {% elif entry.hash_verified %}
-                        <span class="text-yellow-400 text-xs font-medium">Hashed</span>
+                        <span class="inline-flex items-center gap-1 bg-green-900/40 border border-green-800 text-green-400 text-xs font-medium px-2 py-0.5 rounded-full" title="Hash matched in RetroAchievements">
+                            <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
+                            </svg>
+                            RA
+                        </span>
+                        {% elif entry.file_hash %}
+                        <span class="inline-flex items-center gap-1 bg-gray-800 border border-gray-700 text-gray-400 text-xs font-medium px-2 py-0.5 rounded-full" title="Hash computed but not found in RetroAchievements">
+                            ? No RA
+                        </span>
                         {% else %}
                         <span class="text-gray-600 text-xs">—</span>
                         {% endif %}

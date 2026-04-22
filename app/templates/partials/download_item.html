@@ -1,7 +1,7 @@
 <div
     id="download-{{ download.id }}"
     class="bg-gray-900 border border-gray-800 rounded-lg p-4"
-    {% if download.status.value in ['pending', 'downloading'] %}
+    {% if download.status.value in ['pending', 'downloading', 'hashing'] %}
     hx-get="/downloads/{{ download.id }}/status"
     hx-trigger="every 2s"
     hx-swap="outerHTML"
@@ -22,6 +22,16 @@
             <p class="text-gray-600 text-xs mt-1">{{ (download.progress * 100) | int }}%</p>
             {% endif %}
 
+            {% if download.status.value == 'hashing' %}
+            <div class="flex items-center gap-2 mt-2">
+                <svg class="animate-spin w-3 h-3 text-purple-400 flex-shrink-0" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                </svg>
+                <p class="text-purple-400 text-xs">Verifying hash…</p>
+            </div>
+            {% endif %}
+
             {% if download.error_message %}
             <p class="text-red-400 text-xs mt-1">{{ download.error_message }}</p>
             {% endif %}
@@ -30,9 +40,11 @@
         <div class="flex items-center gap-2 flex-shrink-0">
             <!-- Status badge -->
             {% if download.status.value == 'pending' %}
-            <span class="text-yellow-500 text-xs">Pending</span>
+            <span class="text-yellow-500 text-xs">Queued</span>
             {% elif download.status.value == 'downloading' %}
             <span class="text-blue-400 text-xs">Downloading</span>
+            {% elif download.status.value == 'hashing' %}
+            <span class="text-purple-400 text-xs">Hashing</span>
             {% elif download.status.value == 'completed' %}
             <span class="text-green-400 text-xs">Complete</span>
             {% elif download.status.value == 'verified' %}
@@ -41,9 +53,18 @@
             <span class="text-red-400 text-xs">Failed</span>
             {% elif download.status.value == 'pending_approval' %}
                 {% if download.hash_verified %}
-                <span class="text-green-400 text-xs font-medium">&#10003; Hash verified</span>
+                <span class="inline-flex items-center gap-1 bg-green-900/40 border border-green-800 text-green-400 text-xs font-medium px-2 py-0.5 rounded-full">
+                    <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
+                    </svg>
+                    RA
+                </span>
+                {% elif download.file_hash %}
+                <span class="inline-flex items-center gap-1 bg-gray-800 border border-gray-700 text-gray-400 text-xs font-medium px-2 py-0.5 rounded-full" title="Hash computed but not found in RetroAchievements">
+                    ? No RA
+                </span>
                 {% else %}
-                <span class="text-yellow-500 text-xs">Awaiting review</span>
+                <span class="text-gray-500 text-xs">Awaiting review</span>
                 {% endif %}
             {% endif %}
 
@@ -65,7 +86,7 @@
             >Reject</button>
             {% endif %}
 
-            <!-- Remove button for non-active states -->
+            <!-- Remove button for terminal states -->
             {% if download.status.value in ['completed', 'verified', 'failed'] %}
             <button
                 hx-delete="/downloads/{{ download.id }}"

@@ -9,6 +9,7 @@ from pathlib import Path
 from app.db.database import get_session
 from app.db.models import AppSetting
 from app.services import sources as source_registry
+from app.services import cover_sources as cover_source_registry
 from app.services.ra_client import SYSTEMS, DEFAULT_FOLDER_MAP
 from app.services import logger as applog
 
@@ -92,6 +93,30 @@ async def settings_page(request: Request, session: Session = Depends(get_session
         src.source_id: get_setting(session, f"source_{src.source_id}_enabled", "false") == "true"
         for src in all_srcs
     }
+
+    # Cover sources — reorder by saved priority
+    all_cover_srcs = cover_source_registry.all_sources()
+    order_raw = get_setting(session, "cover_sources_order", "")
+    if order_raw:
+        try:
+            order = json.loads(order_raw)
+            src_map = {s.source_id: s for s in all_cover_srcs}
+            ordered = [src_map[sid] for sid in order if sid in src_map]
+            ordered_ids = {s.source_id for s in ordered}
+            ordered += [s for s in all_cover_srcs if s.source_id not in ordered_ids]
+            all_cover_srcs = ordered
+        except (ValueError, KeyError):
+            pass
+    cover_src_enabled = {
+        src.source_id: get_setting(session, f"cover_source_{src.source_id}_enabled", "false") == "true"
+        for src in all_cover_srcs
+    }
+    cover_src_api_keys = {
+        src.source_id: get_setting(session, f"cover_source_{src.source_id}_api_key", "")
+        for src in all_cover_srcs
+        if src.requires_api_key
+    }
+
     roms_folders = _scan_folders(download_dir)
     return templates.TemplateResponse(
         request, "settings.html",
@@ -99,6 +124,9 @@ async def settings_page(request: Request, session: Session = Depends(get_session
             "settings": current,
             "sources": all_srcs,
             "source_enabled": src_enabled,
+            "cover_sources": all_cover_srcs,
+            "cover_source_enabled": cover_src_enabled,
+            "cover_source_api_keys": cover_src_api_keys,
             "roms_folders": roms_folders,
             "folder_map": folder_map,
             "known_systems": KNOWN_SYSTEMS,
@@ -136,11 +164,24 @@ async def save_settings(
     for key in ("download_dir_readonly", "check_dir_readonly", "covers_dir_readonly"):
         set_setting(session, key, "true" if form_data.get(key) == "true" else "false")
 
+    # ROM source toggles
     for src in source_registry.all_sources():
         key = f"source_{src.source_id}_enabled"
         value = "true" if form_data.get(key) == "true" else "false"
         set_setting(session, key, value)
 
+    # Cover art source order + toggles + API keys
+    cover_order = form_data.getlist("cover_source_order[]")
+    if cover_order:
+        set_setting(session, "cover_sources_order", json.dumps(cover_order))
+    for src in cover_source_registry.all_sources():
+        enabled_key = f"cover_source_{src.source_id}_enabled"
+        set_setting(session, enabled_key, "true" if form_data.get(enabled_key) == "true" else "false")
+        if src.requires_api_key:
+            api_key_val = form_data.get(f"cover_source_{src.source_id}_api_key", "")
+            set_setting(session, f"cover_source_{src.source_id}_api_key", str(api_key_val))
+
+    # Folder mapping — parallel arrays folder_names[] + folder_systems[]
     folder_names = form_data.getlist("folder_names[]")
     folder_systems = form_data.getlist("folder_systems[]")
     folder_map: dict[str, str] = {}

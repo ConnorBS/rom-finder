@@ -8,7 +8,7 @@ from sqlmodel import SQLModel, Session, text
 
 from app.db.database import engine
 from app.db.models import AppSetting, WantedGame, AppLog  # noqa: F401 — registers tables
-from app.routers import games, downloads, library, settings_router, wanted, api, logs, collection
+from app.routers import games, downloads, library, settings_router, wanted, api, logs, collection, activity
 
 
 # (table, column, sql_type, default_expr or None for nullable)
@@ -55,6 +55,11 @@ DEFAULT_SETTINGS = {
     "download_dir_readonly": "false",
     "check_dir_readonly": "false",
     "covers_dir_readonly": "false",
+    # Cover art sources — RA on by default, SteamGridDB opt-in
+    "cover_sources_order": '["retroachievements", "steamgriddb"]',
+    "cover_source_retroachievements_enabled": "true",
+    "cover_source_steamgriddb_enabled": "false",
+    "cover_source_steamgriddb_api_key": "",
 }
 
 
@@ -98,3 +103,4 @@ app.include_router(wanted.router)
 app.include_router(collection.router)
 app.include_router(api.router)
 app.include_router(logs.router)
+app.include_router(activity.router)
