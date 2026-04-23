@@ -181,14 +181,9 @@ async def bulk_fetch_covers(
     background_tasks: BackgroundTasks,
     session: Session = Depends(get_session),
 ):
-    """Queue cover fetches for all wanted games that have an ra_game_id but no cover."""
+    """Queue cover fetches for all wanted games that have no cover yet."""
     if _get_setting(session, "covers_dir_readonly", "false") == "true":
         return HTMLResponse('<span class="text-red-400 text-xs">Covers directory is read-only. Disable it in Settings first.</span>')
-
-    username = _get_setting(session, "ra_username")
-    api_key = _get_setting(session, "ra_api_key")
-    if not username or not api_key:
-        return HTMLResponse('<span class="text-yellow-400 text-xs">Add RetroAchievements credentials in Settings to fetch covers.</span>')
 
     games_needing_cover = session.exec(
         select(WantedGame).where(WantedGame.cover_path == "")
@@ -197,7 +192,7 @@ async def bulk_fetch_covers(
     from app.routers.wanted import _fetch_cover
     queued = 0
     for game in games_needing_cover:
-        background_tasks.add_task(_fetch_cover, game.id, game.ra_game_id, username, api_key)
+        background_tasks.add_task(_fetch_cover, game.id, game.ra_game_id, game.game_title, game.system)
         queued += 1
 
     applog.log_action("bulk_fetch_covers", {"queued": queued})
