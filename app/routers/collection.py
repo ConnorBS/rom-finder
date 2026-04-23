@@ -69,7 +69,7 @@ def _build_collection(session: Session) -> list[dict]:
                 "game_title": e.game_title,
                 "system": e.system,
                 "status": "library",
-                "cover_path": "",
+                "cover_path": e.cover_path or "",
                 "file_hash": e.file_hash,
                 "ra_matched": e.ra_matched,
                 "ra_game_id": e.ra_game_id,
@@ -195,6 +195,16 @@ async def bulk_fetch_covers(
         background_tasks.add_task(_fetch_cover, game.id, game.ra_game_id, game.game_title, game.system)
         queued += 1
 
+    library_needing_cover = session.exec(
+        select(LibraryEntry).where(
+            LibraryEntry.cover_path == "",
+            LibraryEntry.ra_game_id.is_not(None),
+        )
+    ).all()
+    for entry in library_needing_cover:
+        background_tasks.add_task(_fetch_cover_for_library, entry.id, entry.ra_game_id, entry.game_title, entry.system)
+        queued += 1
+
     applog.log_action("bulk_fetch_covers", {"queued": queued})
     if queued:
         return HTMLResponse(f'<span class="text-green-400 text-xs">&#10003; Fetching covers for {queued} game{"s" if queued != 1 else ""}…</span>')
@@ -253,10 +263,12 @@ async def bulk_verify(
 # ---------------------------------------------------------------------------
 
 async def _do_rehash(entry_ids: list[int]) -> None:
+    import asyncio
     from app.services.hasher import hash_rom
     from app.services.rahasher import compute_ra_hash
     from pathlib import Path
 
+    loop = asyncio.get_event_loop()
     with Session(engine) as session:
         for eid in entry_ids:
             entry = session.get(LibraryEntry, eid)
@@ -267,7 +279,9 @@ async def _do_rehash(entry_ids: list[int]) -> None:
                 continue
             try:
                 result = await compute_ra_hash(p, entry.system)
-                entry.file_hash = result if result is not None else hash_rom(p, entry.system)
+                if result is None:
+                    result = await loop.run_in_executor(None, hash_rom, p, entry.system)
+                entry.file_hash = result
                 entry.hash_verified = False
                 entry.ra_matched = False
                 session.add(entry)
@@ -275,6 +289,92 @@ async def _do_rehash(entry_ids: list[int]) -> None:
                 applog.warning("hash", f"Rehash failed for {entry.file_name}: {exc}")
         session.commit()
     applog.log_action("bulk_rehash_done", {"count": len(entry_ids)})
+
+
+async def _fetch_cover_for_library(library_id: int, ra_game_id: int, game_title: str, system: str) -> None:
+    """Fetch cover art for a library-only entry (no WantedGame record)."""
+    import json as _json
+    from datetime import datetime as _dt
+    from app.services import cover_sources as cover_source_registry
+    from app.services import activity as activity_store
+    from app.db.models import AppSetting
+
+    task_id = f"cover-lib-{library_id}"
+    activity_store.start(task_id, f"Cover art: {game_title}")
+
+    with Session(engine) as s:
+        def _gs(key: str, default: str = "") -> str:
+            setting = s.get(AppSetting, key)
+            return setting.value if setting else default
+
+        from pathlib import Path
+        covers_dir = Path(_gs("covers_dir", "static/covers"))
+        if _gs("covers_dir_readonly", "false") == "true":
+            activity_store.finish(task_id)
+            return
+
+        config: dict = {
+            "ra_username": _gs("ra_username"),
+            "ra_api_key": _gs("ra_api_key"),
+        }
+        for src in cover_source_registry.all_sources():
+            if src.requires_api_key:
+                k = f"cover_source_{src.source_id}_api_key"
+                config[k] = _gs(k)
+
+        order_raw = _gs("cover_sources_order", "")
+        all_srcs = cover_source_registry.all_sources()
+        if order_raw:
+            try:
+                order = _json.loads(order_raw)
+                src_map = {s.source_id: s for s in all_srcs}
+                ordered = [src_map[sid] for sid in order if sid in src_map]
+                ordered_ids = {s.source_id for s in ordered}
+                ordered += [s for s in all_srcs if s.source_id not in ordered_ids]
+            except (ValueError, KeyError):
+                ordered = all_srcs
+        else:
+            ordered = all_srcs
+
+        enabled_srcs = [
+            s for s in ordered
+            if _gs(f"cover_source_{s.source_id}_enabled", "false") == "true"
+        ]
+
+    covers_dir.mkdir(parents=True, exist_ok=True)
+    cover_file = covers_dir / f"{ra_game_id}.png"
+
+    # Reuse an already-downloaded cover without a network round-trip
+    if cover_file.exists():
+        with Session(engine) as session:
+            entry = session.get(LibraryEntry, library_id)
+            if entry:
+                entry.cover_path = f"covers/{ra_game_id}.png"
+                session.add(entry)
+                session.commit()
+        activity_store.finish(task_id)
+        return
+
+    image_bytes: bytes | None = None
+    for src in enabled_srcs:
+        try:
+            image_bytes = await src.fetch_cover(ra_game_id, game_title, system, config)
+            if image_bytes:
+                break
+        except Exception:
+            continue
+
+    try:
+        if image_bytes:
+            cover_file.write_bytes(image_bytes)
+            with Session(engine) as session:
+                entry = session.get(LibraryEntry, library_id)
+                if entry:
+                    entry.cover_path = f"covers/{ra_game_id}.png"
+                    session.add(entry)
+                    session.commit()
+    finally:
+        activity_store.finish(task_id)
 
 
 async def _do_verify(entry_ids: list[int], username: str, api_key: str) -> None:

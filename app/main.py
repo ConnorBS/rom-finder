@@ -15,6 +15,7 @@ from app.routers import games, downloads, library, settings_router, wanted, api,
 _MIGRATIONS = [
     ("download", "source_id", "VARCHAR", "'archive_org'"),
     ("download", "ra_game_id", "INTEGER", None),
+    ("library", "cover_path", "VARCHAR", "''"),
 ]
 
 
