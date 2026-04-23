@@ -196,10 +196,7 @@ async def bulk_fetch_covers(
         queued += 1
 
     library_needing_cover = session.exec(
-        select(LibraryEntry).where(
-            LibraryEntry.cover_path == "",
-            LibraryEntry.ra_game_id.is_not(None),
-        )
+        select(LibraryEntry).where(LibraryEntry.cover_path == "")
     ).all()
     for entry in library_needing_cover:
         background_tasks.add_task(_fetch_cover_for_library, entry.id, entry.ra_game_id, entry.game_title, entry.system)
@@ -342,14 +339,15 @@ async def _fetch_cover_for_library(library_id: int, ra_game_id: int, game_title:
         ]
 
     covers_dir.mkdir(parents=True, exist_ok=True)
-    cover_file = covers_dir / f"{ra_game_id}.png"
+    cover_filename = f"{ra_game_id}.png" if ra_game_id else f"lib_{library_id}.png"
+    cover_file = covers_dir / cover_filename
 
     # Reuse an already-downloaded cover without a network round-trip
     if cover_file.exists():
         with Session(engine) as session:
             entry = session.get(LibraryEntry, library_id)
             if entry:
-                entry.cover_path = f"covers/{ra_game_id}.png"
+                entry.cover_path = f"covers/{cover_filename}"
                 session.add(entry)
                 session.commit()
         activity_store.finish(task_id)
@@ -370,7 +368,7 @@ async def _fetch_cover_for_library(library_id: int, ra_game_id: int, game_title:
             with Session(engine) as session:
                 entry = session.get(LibraryEntry, library_id)
                 if entry:
-                    entry.cover_path = f"covers/{ra_game_id}.png"
+                    entry.cover_path = f"covers/{cover_filename}"
                     session.add(entry)
                     session.commit()
     finally:

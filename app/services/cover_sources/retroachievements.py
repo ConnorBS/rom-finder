@@ -13,6 +13,8 @@ class RetroAchievementsCoverSource(CoverSource):
     requires_api_key = False
 
     async def fetch_cover(self, ra_game_id: int, game_title: str, system: str, config: dict) -> bytes | None:
+        if not ra_game_id:
+            return None
         username = config.get("ra_username", "")
         api_key = config.get("ra_api_key", "")
         if not username or not api_key:
