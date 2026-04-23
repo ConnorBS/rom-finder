@@ -16,6 +16,7 @@ from sqlmodel import Session, select
 from app.db.database import engine, get_session
 from app.db.models import AppSetting, LibraryEntry, WantedGame, HuntStatus
 from app.services import logger as applog
+from app.services import cover_sources as cover_source_registry
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -109,6 +110,12 @@ async def collection_page(
         "q": q, "system": system, "status": status, "view": view,
     })
 
+    covers_enabled = any(
+        session.get(AppSetting, f"cover_source_{src.source_id}_enabled") and
+        session.get(AppSetting, f"cover_source_{src.source_id}_enabled").value == "true"
+        for src in cover_source_registry.all_sources()
+    )
+
     return templates.TemplateResponse(
         request, "collection.html",
         {
@@ -118,6 +125,7 @@ async def collection_page(
             "selected_system": system,
             "selected_status": status,
             "view": view,
+            "covers_enabled": covers_enabled,
             "counts": {
                 "total": len(all_items),
                 "library": sum(1 for i in all_items if i["status"] == "library"),
@@ -219,21 +227,25 @@ async def bulk_fetch_covers(
 async def bulk_rehash(
     background_tasks: BackgroundTasks,
     library_ids: str = Query(default=""),
+    unhashed_only: bool = Query(default=False),
     session: Session = Depends(get_session),
 ):
-    """Re-hash library entries. If library_ids is provided, hash only those; otherwise all."""
+    """Re-hash library entries. library_ids scopes to a subset; unhashed_only skips already-hashed."""
     stmt = select(LibraryEntry)
     if library_ids:
         ids = [int(x) for x in library_ids.split(",") if x.strip().isdigit()]
         stmt = stmt.where(LibraryEntry.id.in_(ids))
+    if unhashed_only:
+        stmt = stmt.where(LibraryEntry.file_hash.is_(None))
     entries = session.exec(stmt).all()
 
     if not entries:
-        return HTMLResponse('<span class="text-gray-400 text-xs">No entries to rehash.</span>')
+        return HTMLResponse('<span class="text-gray-400 text-xs">No matching entries to hash.</span>')
 
     background_tasks.add_task(_do_rehash, [e.id for e in entries])
-    applog.log_action("bulk_rehash", {"count": len(entries)})
-    return HTMLResponse(f'<span class="text-blue-400 text-xs">&#8635; Rehashing {len(entries)} ROM{"s" if len(entries) != 1 else ""}…</span>')
+    applog.log_action("bulk_rehash", {"count": len(entries), "unhashed_only": unhashed_only})
+    label = "un-hashed" if unhashed_only else ""
+    return HTMLResponse(f'<span class="text-blue-400 text-xs">&#8635; Hashing {len(entries)} {label} ROM{"s" if len(entries) != 1 else ""}…</span>')
 
 
 @router.post("/collection/bulk/verify", response_class=HTMLResponse)
@@ -274,7 +286,11 @@ async def _do_rehash(entry_ids: list[int]) -> None:
     from pathlib import Path
 
     batch_id = "rehash-batch"
-    activity_store.start_batch(batch_id, f"Rehashing {len(entry_ids)} ROM{'s' if len(entry_ids) != 1 else ''}", len(entry_ids), "rehash")
+    activity_store.start_batch(
+        batch_id,
+        f"Hashing {len(entry_ids)} ROM{'s' if len(entry_ids) != 1 else ''}",
+        len(entry_ids), "rehash", entry_ids=entry_ids,
+    )
 
     loop = asyncio.get_event_loop()
     with Session(engine) as session:
@@ -292,6 +308,7 @@ async def _do_rehash(entry_ids: list[int]) -> None:
                 if result is None:
                     result = await loop.run_in_executor(None, hash_rom, p, entry.system)
                 entry.file_hash = result
+                entry.hashed_at = datetime.utcnow()
                 entry.hash_verified = False
                 entry.ra_matched = False
                 session.add(entry)
@@ -398,7 +415,11 @@ async def _do_verify(entry_ids: list[int], username: str, api_key: str) -> None:
     from app.services import activity as activity_store
 
     batch_id = "verify-batch"
-    activity_store.start_batch(batch_id, f"Verifying {len(entry_ids)} hash{'es' if len(entry_ids) != 1 else ''}", len(entry_ids), "verify")
+    activity_store.start_batch(
+        batch_id,
+        f"Verifying {len(entry_ids)} hash{'es' if len(entry_ids) != 1 else ''}",
+        len(entry_ids), "verify", entry_ids=entry_ids,
+    )
 
     ra = RAClient(username, api_key)
     matched = 0

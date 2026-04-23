@@ -4,13 +4,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
-from datetime import datetime
 from pathlib import Path
 from sqlmodel import SQLModel, Session, text
 
 from app.db.database import engine
 from app.db.models import AppSetting, WantedGame, AppLog  # noqa: F401 — registers tables
-from app.routers import games, downloads, library, settings_router, wanted, api, logs, collection, activity
+from app.routers import games, downloads, library, settings_router, wanted, api, logs, collection, activity, scheduler
 
 
 # (table, column, sql_type, default_expr or None for nullable)
@@ -18,6 +17,7 @@ _MIGRATIONS = [
     ("download", "source_id", "VARCHAR", "'archive_org'"),
     ("download", "ra_game_id", "INTEGER", None),
     ("library", "cover_path", "VARCHAR", "''"),
+    ("library", "hashed_at", "TIMESTAMP", None),
 ]
 
 
@@ -66,38 +66,17 @@ DEFAULT_SETTINGS = {
     # Autodiscover — periodically add newly-released RA games to Wanted pool
     "ra_autodiscover_enabled": "false",
     "ra_autodiscover_last_checked": "",
+    # Scheduler — daily task schedule (local time HH:MM)
+    "sched_scan_enabled": "true",
+    "sched_scan_time": "04:00",
+    "sched_scan_last_run": "",
+    "sched_hash_enabled": "true",
+    "sched_hash_time": "04:00",
+    "sched_hash_last_run": "",
+    "sched_autodiscover_enabled": "true",
+    "sched_autodiscover_time": "04:00",
+    "sched_autodiscover_last_run": "",
 }
-
-
-async def _autodiscover_loop() -> None:
-    """Wake up every hour; run autodiscover when enabled and the interval has elapsed."""
-    while True:
-        await asyncio.sleep(3600)
-        with Session(engine) as session:
-            enabled = session.get(AppSetting, "ra_autodiscover_enabled")
-            if not enabled or enabled.value != "true":
-                continue
-            last_setting = session.get(AppSetting, "ra_autodiscover_last_checked")
-            last_str = last_setting.value if last_setting else ""
-
-        should_run = False
-        if not last_str:
-            should_run = True
-        else:
-            try:
-                elapsed = (datetime.utcnow() - datetime.fromisoformat(last_str)).total_seconds()
-                if elapsed >= 86400:  # 24 hours
-                    should_run = True
-            except ValueError:
-                should_run = True
-
-        if should_run:
-            try:
-                from app.services.autodiscover import run_autodiscover
-                await run_autodiscover()
-            except Exception as exc:
-                from app.services import logger as _log
-                _log.warning("autodiscover", f"Loop error: {exc}")
 
 
 @asynccontextmanager
@@ -116,9 +95,10 @@ async def lifespan(app: FastAPI):
         Path(covers_path).mkdir(parents=True, exist_ok=True)
     from app.services import logger as applog
     applog.info("system", "ROM Finder started")
-    task = asyncio.create_task(_autodiscover_loop())
+    from app.services.scheduler import scheduler_loop
+    sched_task = asyncio.create_task(scheduler_loop())
     yield
-    task.cancel()
+    sched_task.cancel()
 
 
 app = FastAPI(title="ROM Finder", lifespan=lifespan)
@@ -143,3 +123,4 @@ app.include_router(collection.router)
 app.include_router(api.router)
 app.include_router(logs.router)
 app.include_router(activity.router)
+app.include_router(scheduler.router)

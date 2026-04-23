@@ -101,4 +101,5 @@ class LibraryEntry(SQLModel, table=True):
     ra_game_id: Optional[int] = None
     ra_matched: bool = False
     cover_path: str = ""
+    hashed_at: Optional[datetime] = None
     added_at: datetime = Field(default_factory=datetime.utcnow)

@@ -160,56 +160,6 @@
             </div>
         </section>
 
-        <!-- Autodiscover -->
-        <section>
-            <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">Autodiscover</h2>
-            <div class="bg-gray-900 border border-gray-800 rounded-lg p-5 space-y-4">
-                <div class="flex items-center justify-between gap-4">
-                    <div class="min-w-0">
-                        <p class="text-sm text-gray-200 font-medium">Auto-add new RA games</p>
-                        <p class="text-xs text-gray-600 mt-0.5">Check RetroAchievements every 24 hours for newly-added achievement sets in your tracked systems and automatically add them to the Wanted pool.</p>
-                    </div>
-                    <label class="flex items-center gap-2 flex-shrink-0">
-                        <input
-                            type="checkbox"
-                            name="ra_autodiscover_enabled"
-                            value="true"
-                            {% if settings.ra_autodiscover_enabled == "true" %}checked{% endif %}
-                            class="w-4 h-4 rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-blue-500 focus:ring-offset-gray-900"
-                        >
-                        <span class="text-xs text-gray-400">Enabled</span>
-                    </label>
-                </div>
-                <div class="border-t border-gray-800 pt-4 flex items-center justify-between gap-4">
-                    <p class="text-xs text-gray-500">
-                        Last checked:
-                        {% if settings.ra_autodiscover_last_checked %}
-                        <span class="text-gray-400">{{ settings.ra_autodiscover_last_checked[:16].replace("T", " ") }} UTC</span>
-                        {% else %}
-                        <span class="text-gray-600">Never</span>
-                        {% endif %}
-                    </p>
-                    <div class="flex items-center gap-3 flex-shrink-0">
-                        <button
-                            type="button"
-                            hx-post="/settings/autodiscover/run-now"
-                            hx-target="#autodiscover-result"
-                            hx-swap="innerHTML"
-                            hx-indicator="#autodiscover-spinner"
-                            class="bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs px-3 py-2 rounded-lg transition-colors"
-                        >
-                            <span class="htmx-label">Check now</span>
-                            <svg id="autodiscover-spinner" class="htmx-indicator animate-spin w-3 h-3 text-blue-400 inline" fill="none" viewBox="0 0 24 24">
-                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-                            </svg>
-                        </button>
-                    </div>
-                </div>
-                <div id="autodiscover-result"></div>
-            </div>
-        </section>
-
         <!-- System Folder Mapping -->
         <section>
             <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">System Folder Mapping</h2>

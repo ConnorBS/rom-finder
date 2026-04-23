@@ -14,6 +14,7 @@ class ActivityTask:
     completed: int = 0
     started_at: datetime = field(default_factory=datetime.utcnow)
     finished_at: Optional[datetime] = None
+    entry_ids: set = field(default_factory=set)  # lib entry IDs for per-card overlay
 
     @property
     def percent(self) -> int:
@@ -30,9 +31,10 @@ def start(task_id: str, label: str, task_type: str = "task") -> None:
     _tasks[task_id] = ActivityTask(task_id=task_id, label=label, task_type=task_type)
 
 
-def start_batch(task_id: str, label: str, total: int, task_type: str = "task") -> None:
+def start_batch(task_id: str, label: str, total: int, task_type: str = "task", entry_ids=None) -> None:
     _tasks[task_id] = ActivityTask(
-        task_id=task_id, label=label, total=total, task_type=task_type
+        task_id=task_id, label=label, total=total, task_type=task_type,
+        entry_ids=set(entry_ids) if entry_ids else set(),
     )
 
 
@@ -78,8 +80,9 @@ def get_card_states() -> dict:
             card_states[f"lib-{tid[len('cover-lib-'):]}"] = "cover"
         elif tid.startswith("cover-") and "-batch" not in tid:
             card_states[f"wanted-{tid[len('cover-'):]}"] = "cover"
-        elif task.task_type in ("rehash", "verify") and task.total > 0:
-            if task.task_type not in batch_types:
-                batch_types.append(task.task_type)
+        elif task.task_type in ("rehash", "verify"):
+            # Per-card states from tracked entry IDs (avoids lighting up every card)
+            for eid in task.entry_ids:
+                card_states[f"lib-{eid}"] = task.task_type
 
     return {"states": card_states, "batch_types": batch_types}
