@@ -1,6 +1,6 @@
 import json
 import re
-from fastapi import APIRouter, Request, Form, Depends, Query
+from fastapi import APIRouter, Request, Form, Depends, Query, BackgroundTasks
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Session
@@ -87,6 +87,8 @@ async def settings_page(request: Request, session: Session = Depends(get_session
         "download_dir_readonly": get_setting(session, "download_dir_readonly", "false"),
         "check_dir_readonly": get_setting(session, "check_dir_readonly", "false"),
         "covers_dir_readonly": get_setting(session, "covers_dir_readonly", "false"),
+        "ra_autodiscover_enabled": get_setting(session, "ra_autodiscover_enabled", "false"),
+        "ra_autodiscover_last_checked": get_setting(session, "ra_autodiscover_last_checked", ""),
     }
     all_srcs = source_registry.all_sources()
     src_enabled = {
@@ -160,8 +162,8 @@ async def save_settings(
     verbose_logging = "true" if form_data.get("verbose_logging") == "true" else "false"
     set_setting(session, "verbose_logging", verbose_logging)
 
-    # Per-directory read-only toggles
-    for key in ("download_dir_readonly", "check_dir_readonly", "covers_dir_readonly"):
+    # Per-directory read-only toggles + autodiscover enable flag
+    for key in ("download_dir_readonly", "check_dir_readonly", "covers_dir_readonly", "ra_autodiscover_enabled"):
         set_setting(session, key, "true" if form_data.get(key) == "true" else "false")
 
     # ROM source toggles
@@ -262,6 +264,29 @@ async def folder_automap(
 
     rows = _build_folder_rows(folders, {sys: f for f, sys in suggested.items() if sys}, suggested)
     return HTMLResponse(rows)
+
+
+@router.post("/autodiscover/run-now", response_class=HTMLResponse)
+async def autodiscover_run_now(session: Session = Depends(get_session)):
+    """Immediately run one autodiscover pass and return a result summary."""
+    username = get_setting(session, "ra_username")
+    api_key = get_setting(session, "ra_api_key")
+    if not username or not api_key:
+        return HTMLResponse('<span class="text-yellow-400 text-xs">Configure RetroAchievements credentials first.</span>')
+    from app.services.autodiscover import run_autodiscover
+    result = await run_autodiscover()
+    if "error" in result:
+        return HTMLResponse(f'<span class="text-red-400 text-xs">&#10007; {result["error"]}</span>')
+    added = result.get("added", 0)
+    systems = result.get("systems_checked", 0)
+    if added > 0:
+        return HTMLResponse(
+            f'<span class="text-green-400 text-xs">&#10003; Added {added} game{"s" if added != 1 else ""}'
+            f' across {systems} system{"s" if systems != 1 else ""}.</span>'
+        )
+    return HTMLResponse(
+        f'<span class="text-gray-400 text-xs">No new games found across {systems} system{"s" if systems != 1 else ""}.</span>'
+    )
 
 
 def _build_folder_rows(

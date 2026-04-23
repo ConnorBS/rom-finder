@@ -1,8 +1,10 @@
+import asyncio
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 from sqlmodel import SQLModel, Session, text
 
@@ -61,7 +63,41 @@ DEFAULT_SETTINGS = {
     "cover_source_retroachievements_enabled": "true",
     "cover_source_steamgriddb_enabled": "false",
     "cover_source_steamgriddb_api_key": "",
+    # Autodiscover — periodically add newly-released RA games to Wanted pool
+    "ra_autodiscover_enabled": "false",
+    "ra_autodiscover_last_checked": "",
 }
+
+
+async def _autodiscover_loop() -> None:
+    """Wake up every hour; run autodiscover when enabled and the interval has elapsed."""
+    while True:
+        await asyncio.sleep(3600)
+        with Session(engine) as session:
+            enabled = session.get(AppSetting, "ra_autodiscover_enabled")
+            if not enabled or enabled.value != "true":
+                continue
+            last_setting = session.get(AppSetting, "ra_autodiscover_last_checked")
+            last_str = last_setting.value if last_setting else ""
+
+        should_run = False
+        if not last_str:
+            should_run = True
+        else:
+            try:
+                elapsed = (datetime.utcnow() - datetime.fromisoformat(last_str)).total_seconds()
+                if elapsed >= 86400:  # 24 hours
+                    should_run = True
+            except ValueError:
+                should_run = True
+
+        if should_run:
+            try:
+                from app.services.autodiscover import run_autodiscover
+                await run_autodiscover()
+            except Exception as exc:
+                from app.services import logger as _log
+                _log.warning("autodiscover", f"Loop error: {exc}")
 
 
 @asynccontextmanager
@@ -80,7 +116,9 @@ async def lifespan(app: FastAPI):
         Path(covers_path).mkdir(parents=True, exist_ok=True)
     from app.services import logger as applog
     applog.info("system", "ROM Finder started")
+    task = asyncio.create_task(_autodiscover_loop())
     yield
+    task.cancel()
 
 
 app = FastAPI(title="ROM Finder", lifespan=lifespan)
