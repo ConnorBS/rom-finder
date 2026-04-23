@@ -25,13 +25,13 @@
          class="fixed inset-0 bg-black/60 z-20 hidden md:hidden"
          onclick="closeSidebar()"></div>
 
-    <!-- Sidebar — fixed overlay on mobile, in-flow on md+ -->
+    <!-- Sidebar — always fixed, never in normal flow -->
     <aside id="sidebar"
-           class="fixed md:static inset-y-0 left-0 z-30
-                  w-52 flex-shrink-0 bg-gray-900 border-r border-gray-800 flex flex-col
+           class="fixed inset-y-0 left-0 z-30
+                  w-52 h-screen bg-gray-900 border-r border-gray-800 flex flex-col
                   -translate-x-full md:translate-x-0 transition-transform duration-200 ease-in-out">
 
-        <div class="h-14 flex items-center px-5 border-b border-gray-800">
+        <div class="flex-shrink-0 h-14 flex items-center px-5 border-b border-gray-800">
             <span class="font-bold text-white tracking-wide">ROM Finder</span>
             <!-- Close button — mobile only -->
             <button onclick="closeSidebar()"
@@ -42,7 +42,7 @@
             </button>
         </div>
 
-        <nav class="flex-1 p-3 space-y-0.5 text-sm">
+        <nav class="flex-1 min-h-0 overflow-y-auto p-3 space-y-0.5 text-sm">
             <a href="/collection" class="nav-item block px-3 py-2 rounded-md text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">Collection</a>
             <a href="/search"     class="nav-item block px-3 py-2 rounded-md text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">Search</a>
             <a href="/downloads"  class="nav-item block px-3 py-2 rounded-md text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">Downloads</a>
@@ -50,17 +50,19 @@
             <a href="/logs"       class="nav-item block px-3 py-2 rounded-md text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">Logs</a>
         </nav>
 
-        <!-- Activity tray — polls every 3s, invisible when idle -->
-        <div
-            id="activity-tray"
-            hx-get="/activity/tray"
-            hx-trigger="load, every 3s"
-            hx-swap="innerHTML"
-        ></div>
+        <!-- Activity tray — polls every 3s, capped height, independent scroll -->
+        <div class="flex-shrink-0 overflow-y-auto" style="max-height: 45vh">
+            <div
+                id="activity-tray"
+                hx-get="/activity/tray"
+                hx-trigger="load, every 3s"
+                hx-swap="innerHTML"
+            ></div>
+        </div>
     </aside>
 
-    <!-- Page wrapper (full width on mobile since sidebar is out of flow) -->
-    <div class="flex-1 flex flex-col min-w-0">
+    <!-- Page wrapper — offset by sidebar width on desktop -->
+    <div class="flex-1 flex flex-col min-w-0 md:ml-52">
 
         <!-- Mobile top bar with hamburger -->
         <header class="md:hidden h-14 flex items-center gap-3 px-4 bg-gray-900 border-b border-gray-800 flex-shrink-0">

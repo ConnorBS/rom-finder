@@ -236,7 +236,7 @@ async def wanted_source_results(
 # Background tasks
 # ---------------------------------------------------------------------------
 
-async def _fetch_cover(wanted_id: int, ra_game_id: int, game_title: str, system: str) -> None:
+async def _fetch_cover(wanted_id: int, ra_game_id: int, game_title: str, system: str, batch_id: str = "") -> None:
     """Try each enabled cover source in priority order; save the first image found."""
     import json as _json
     from app.db.database import engine
@@ -246,7 +246,7 @@ async def _fetch_cover(wanted_id: int, ra_game_id: int, game_title: str, system:
     from app.services import activity as activity_store
 
     task_id = f"cover-{wanted_id}"
-    activity_store.start(task_id, f"Cover art: {game_title}")
+    activity_store.start(task_id, f"Cover art: {game_title}", task_type="cover")
 
     with SyncSession(engine) as s:
         def _gs(key: str, default: str = "") -> str:
@@ -310,3 +310,5 @@ async def _fetch_cover(wanted_id: int, ra_game_id: int, game_title: str, system:
                     session.commit()
     finally:
         activity_store.finish(task_id)
+        if batch_id:
+            activity_store.increment(batch_id)

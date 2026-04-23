@@ -1,40 +1,83 @@
-{% if downloads or tasks %}
-<div class="border-t border-gray-800 px-3 pt-3 pb-2 space-y-1.5">
-    {% for d in downloads %}
-    <div class="flex items-center gap-2 rounded-md bg-gray-800/70 px-2.5 py-1.5 min-w-0">
-        {% if d.status.value == 'pending' %}
-        <span class="w-2 h-2 rounded-full bg-yellow-500 flex-shrink-0"></span>
-        {% elif d.status.value == 'downloading' %}
-        <svg class="animate-spin w-3 h-3 text-blue-400 flex-shrink-0" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-        </svg>
-        {% elif d.status.value == 'hashing' %}
-        <svg class="animate-spin w-3 h-3 text-purple-400 flex-shrink-0" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-        </svg>
+{% set active_count = (downloads | length)
+    + (1 if cover_batch and not cover_batch.done else 0)
+    + (individual_cover | selectattr('done', 'equalto', false) | list | length)
+    + (tasks | selectattr('done', 'equalto', false) | list | length) %}
+
+{% if downloads or cover_batch or individual_cover or tasks %}
+<div class="border-t border-gray-800">
+
+    <!-- Header -->
+    <div class="flex items-center gap-2 px-3 py-2">
+        <span class="text-gray-500 text-xs font-semibold uppercase tracking-wider flex-1">Activity</span>
+        {% if active_count > 0 %}
+        <span class="bg-blue-600 text-white text-xs rounded-full min-w-[1.25rem] h-5 flex items-center justify-center px-1.5 leading-none font-medium">{{ active_count }}</span>
         {% endif %}
-        <div class="min-w-0 flex-1">
-            <p class="text-gray-300 text-xs truncate">{{ d.game_title }}</p>
+    </div>
+
+    <div class="px-3 pb-3 space-y-2.5">
+
+    {# ── Active downloads ── #}
+    {% for d in downloads %}
+    <div class="space-y-1">
+        <div class="flex items-center gap-2 min-w-0">
             {% if d.status.value == 'pending' %}
-            <p class="text-yellow-500/70 text-xs leading-none mt-0.5">Queued</p>
-            {% elif d.status.value == 'downloading' %}
-            <div class="flex items-center gap-1.5 mt-1">
-                <div class="flex-1 bg-gray-700 rounded-full h-0.5">
-                    <div class="bg-blue-400 h-0.5 rounded-full transition-all" style="width: {{ (d.progress * 100)|int }}%"></div>
-                </div>
-                <span class="text-gray-500 text-xs flex-shrink-0">{{ (d.progress * 100)|int }}%</span>
-            </div>
+            <span class="w-2 h-2 rounded-full bg-yellow-500 flex-shrink-0"></span>
+            {% else %}
+            <svg class="animate-spin w-3 h-3 text-blue-400 flex-shrink-0" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+            </svg>
+            {% endif %}
+            <span class="text-gray-300 text-xs truncate flex-1">{{ d.game_title }}</span>
+            {% if d.status.value == 'downloading' %}
+            <span class="text-gray-500 text-xs flex-shrink-0">{{ (d.progress * 100)|int }}%</span>
+            {% elif d.status.value == 'pending' %}
+            <span class="text-yellow-500/70 text-xs flex-shrink-0">Queued</span>
             {% elif d.status.value == 'hashing' %}
-            <p class="text-purple-400/70 text-xs leading-none mt-0.5">Verifying hash…</p>
+            <span class="text-purple-400/70 text-xs flex-shrink-0">Hashing</span>
             {% endif %}
         </div>
+        {% if d.status.value == 'downloading' %}
+        <div class="flex items-center gap-1.5">
+            <div class="flex-1 bg-gray-700 rounded-full h-1">
+                <div class="bg-blue-400 h-1 rounded-full transition-all duration-300" style="width: {{ (d.progress * 100)|int }}%"></div>
+            </div>
+        </div>
+        {% endif %}
     </div>
     {% endfor %}
 
-    {% for task in tasks %}
-    <div class="flex items-center gap-2 rounded-md bg-gray-800/70 px-2.5 py-1.5 min-w-0">
+    {# ── Cover fetch batch ── #}
+    {% if cover_batch %}
+    <div class="space-y-1">
+        <div class="flex items-center gap-2 min-w-0">
+            {% if cover_batch.done %}
+            <svg class="w-3 h-3 text-green-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
+            </svg>
+            {% else %}
+            <svg class="animate-spin w-3 h-3 text-blue-400 flex-shrink-0" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+            </svg>
+            {% endif %}
+            <span class="text-gray-300 text-xs truncate flex-1">Fetching covers</span>
+            <span class="text-gray-500 text-xs flex-shrink-0">{{ cover_batch.completed }} / {{ cover_batch.total }}</span>
+        </div>
+        {% if not cover_batch.done %}
+        <div class="flex items-center gap-1.5">
+            <div class="flex-1 bg-gray-700 rounded-full h-1">
+                <div class="bg-blue-400 h-1 rounded-full transition-all duration-300" style="width: {{ cover_batch.percent }}%"></div>
+            </div>
+            <span class="text-gray-600 text-xs flex-shrink-0 w-6 text-right">{{ cover_batch.percent }}%</span>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {# ── Individual cover tasks (single-game adds, no batch) ── #}
+    {% for task in individual_cover %}
+    <div class="flex items-center gap-2 min-w-0">
         {% if task.done %}
         <svg class="w-3 h-3 text-green-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
@@ -45,8 +88,55 @@
             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
         </svg>
         {% endif %}
-        <p class="text-gray-300 text-xs truncate min-w-0">{{ task.label }}</p>
+        <span class="text-gray-300 text-xs truncate flex-1">{{ task.label }}</span>
     </div>
     {% endfor %}
+
+    {# ── Batch tasks (rehash, verify, etc.) ── #}
+    {% for task in tasks %}
+    {% set color = 'purple' if task.task_type == 'rehash' else ('yellow' if task.task_type == 'verify' else 'blue') %}
+    <div class="space-y-1">
+        <div class="flex items-center gap-2 min-w-0">
+            {% if task.done %}
+            <svg class="w-3 h-3 text-green-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
+            </svg>
+            {% elif task.task_type == 'rehash' %}
+            <svg class="animate-spin w-3 h-3 text-purple-400 flex-shrink-0" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+            </svg>
+            {% elif task.task_type == 'verify' %}
+            <svg class="animate-spin w-3 h-3 text-yellow-400 flex-shrink-0" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+            </svg>
+            {% else %}
+            <svg class="animate-spin w-3 h-3 text-blue-400 flex-shrink-0" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+            </svg>
+            {% endif %}
+            <span class="text-gray-300 text-xs truncate flex-1">{{ task.label }}</span>
+            {% if task.total > 0 %}
+            <span class="text-gray-500 text-xs flex-shrink-0">{{ task.completed }} / {{ task.total }}</span>
+            {% endif %}
+        </div>
+        {% if task.total > 0 and not task.done %}
+        <div class="flex items-center gap-1.5">
+            <div class="flex-1 bg-gray-700 rounded-full h-1">
+                <div class="h-1 rounded-full transition-all duration-300
+                    {% if task.task_type == 'rehash' %}bg-purple-400
+                    {% elif task.task_type == 'verify' %}bg-yellow-400
+                    {% else %}bg-blue-400{% endif %}"
+                    style="width: {{ task.percent }}%"></div>
+            </div>
+            <span class="text-gray-600 text-xs flex-shrink-0 w-6 text-right">{{ task.percent }}%</span>
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+
+    </div>
 </div>
 {% endif %}

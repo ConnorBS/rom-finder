@@ -192,15 +192,22 @@ async def bulk_fetch_covers(
     from app.routers.wanted import _fetch_cover
     queued = 0
     for game in games_needing_cover:
-        background_tasks.add_task(_fetch_cover, game.id, game.ra_game_id, game.game_title, game.system)
         queued += 1
-
     library_needing_cover = session.exec(
         select(LibraryEntry).where(LibraryEntry.cover_path == "")
     ).all()
+    queued += len(library_needing_cover)
+
+    if queued:
+        from app.services import activity as activity_store
+        activity_store.start_batch("cover-batch", "Fetching covers", queued, "cover")
+
+    count = 0
+    for game in games_needing_cover:
+        background_tasks.add_task(_fetch_cover, game.id, game.ra_game_id, game.game_title, game.system, "cover-batch")
+        count += 1
     for entry in library_needing_cover:
-        background_tasks.add_task(_fetch_cover_for_library, entry.id, entry.ra_game_id, entry.game_title, entry.system)
-        queued += 1
+        background_tasks.add_task(_fetch_cover_for_library, entry.id, entry.ra_game_id, entry.game_title, entry.system, "cover-batch")
 
     applog.log_action("bulk_fetch_covers", {"queued": queued})
     if queued:
@@ -263,16 +270,22 @@ async def _do_rehash(entry_ids: list[int]) -> None:
     import asyncio
     from app.services.hasher import hash_rom
     from app.services.rahasher import compute_ra_hash
+    from app.services import activity as activity_store
     from pathlib import Path
+
+    batch_id = "rehash-batch"
+    activity_store.start_batch(batch_id, f"Rehashing {len(entry_ids)} ROM{'s' if len(entry_ids) != 1 else ''}", len(entry_ids), "rehash")
 
     loop = asyncio.get_event_loop()
     with Session(engine) as session:
         for eid in entry_ids:
             entry = session.get(LibraryEntry, eid)
             if not entry:
+                activity_store.increment(batch_id)
                 continue
             p = Path(entry.file_path)
             if not p.exists():
+                activity_store.increment(batch_id)
                 continue
             try:
                 result = await compute_ra_hash(p, entry.system)
@@ -284,11 +297,12 @@ async def _do_rehash(entry_ids: list[int]) -> None:
                 session.add(entry)
             except Exception as exc:
                 applog.warning("hash", f"Rehash failed for {entry.file_name}: {exc}")
+            activity_store.increment(batch_id)
         session.commit()
     applog.log_action("bulk_rehash_done", {"count": len(entry_ids)})
 
 
-async def _fetch_cover_for_library(library_id: int, ra_game_id: int, game_title: str, system: str) -> None:
+async def _fetch_cover_for_library(library_id: int, ra_game_id: int, game_title: str, system: str, batch_id: str = "") -> None:
     """Fetch cover art for a library-only entry (no WantedGame record)."""
     import json as _json
     from datetime import datetime as _dt
@@ -297,7 +311,7 @@ async def _fetch_cover_for_library(library_id: int, ra_game_id: int, game_title:
     from app.db.models import AppSetting
 
     task_id = f"cover-lib-{library_id}"
-    activity_store.start(task_id, f"Cover art: {game_title}")
+    activity_store.start(task_id, f"Cover art: {game_title}", task_type="cover")
 
     with Session(engine) as s:
         def _gs(key: str, default: str = "") -> str:
@@ -351,6 +365,8 @@ async def _fetch_cover_for_library(library_id: int, ra_game_id: int, game_title:
                 session.add(entry)
                 session.commit()
         activity_store.finish(task_id)
+        if batch_id:
+            activity_store.increment(batch_id)
         return
 
     image_bytes: bytes | None = None
@@ -373,10 +389,16 @@ async def _fetch_cover_for_library(library_id: int, ra_game_id: int, game_title:
                     session.commit()
     finally:
         activity_store.finish(task_id)
+        if batch_id:
+            activity_store.increment(batch_id)
 
 
 async def _do_verify(entry_ids: list[int], username: str, api_key: str) -> None:
     from app.services.ra_client import RAClient
+    from app.services import activity as activity_store
+
+    batch_id = "verify-batch"
+    activity_store.start_batch(batch_id, f"Verifying {len(entry_ids)} hash{'es' if len(entry_ids) != 1 else ''}", len(entry_ids), "verify")
 
     ra = RAClient(username, api_key)
     matched = 0
@@ -385,6 +407,7 @@ async def _do_verify(entry_ids: list[int], username: str, api_key: str) -> None:
         for eid in entry_ids:
             entry = session.get(LibraryEntry, eid)
             if not entry or not entry.file_hash:
+                activity_store.increment(batch_id)
                 continue
             try:
                 match = await ra.lookup_hash(entry.file_hash)
@@ -396,5 +419,6 @@ async def _do_verify(entry_ids: list[int], username: str, api_key: str) -> None:
                     session.add(entry)
             except Exception as exc:
                 applog.warning("hash", f"RA verify failed for {entry.file_name}: {exc}")
+            activity_store.increment(batch_id)
         session.commit()
     applog.log_action("bulk_verify_done", {"checked": len(entry_ids), "matched": matched})

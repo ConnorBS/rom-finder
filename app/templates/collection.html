@@ -149,7 +149,9 @@
     <!-- Card grid -->
     <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
         {% for item in items %}
-        <div class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden flex flex-col group">
+        <div class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden flex flex-col group"
+             data-lib-id="{{ item.library_id or '' }}"
+             data-wanted-id="{{ item.wanted_id or '' }}">
 
             <!-- Cover -->
             <div class="relative bg-gray-800 aspect-[3/4] overflow-hidden">
@@ -164,6 +166,13 @@
                     <span class="text-gray-600 text-3xl font-bold select-none">{{ item.game_title[0] | upper }}</span>
                 </div>
                 {% endif %}
+
+                <!-- Per-card activity overlay (shown by JS when a task is active) -->
+                <div class="card-activity pointer-events-none absolute inset-0 hidden items-center justify-center flex-col gap-1.5 bg-gray-900/70">
+                    <!-- icon injected by JS -->
+                    <div class="card-activity-icon"></div>
+                    <span class="card-activity-label text-xs font-medium"></span>
+                </div>
 
                 <!-- Status badge -->
                 {% if item.status == 'verified' %}
@@ -280,4 +289,75 @@
     <div id="source-panel" class="mt-6"></div>
 
 </div>
+
+<script>
+const _ICONS = {
+    cover: {
+        svg: `<svg class="animate-spin w-6 h-6 text-blue-400" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+              </svg>`,
+        label: 'Fetching cover',
+        labelClass: 'text-blue-300',
+    },
+    rehash: {
+        svg: `<svg class="animate-spin w-6 h-6 text-purple-400" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+              </svg>`,
+        label: 'Hashing',
+        labelClass: 'text-purple-300',
+    },
+    verify: {
+        svg: `<svg class="animate-spin w-6 h-6 text-yellow-400" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+              </svg>`,
+        label: 'Verifying',
+        labelClass: 'text-yellow-300',
+    },
+};
+
+async function updateCardStates() {
+    let data;
+    try {
+        const resp = await fetch('/activity/card-states');
+        data = await resp.json();
+    } catch { return; }
+
+    const { states, batch_types } = data;
+    const hasRehash = batch_types.includes('rehash');
+    const hasVerify = batch_types.includes('verify');
+
+    document.querySelectorAll('[data-lib-id], [data-wanted-id]').forEach(card => {
+        const libId  = card.dataset.libId;
+        const wantedId = card.dataset.wantedId;
+        const overlay = card.querySelector('.card-activity');
+        if (!overlay) return;
+
+        let state = null;
+        if (libId   && states[`lib-${libId}`])    state = states[`lib-${libId}`];
+        if (wantedId && states[`wanted-${wantedId}`]) state = states[`wanted-${wantedId}`];
+        if (!state && libId && hasRehash) state = 'rehash';
+        if (!state && libId && hasVerify) state = 'verify';
+
+        if (state && _ICONS[state]) {
+            const { svg, label, labelClass } = _ICONS[state];
+            overlay.querySelector('.card-activity-icon').innerHTML = svg;
+            const lbl = overlay.querySelector('.card-activity-label');
+            lbl.textContent = label;
+            lbl.className = `card-activity-label text-xs font-medium ${labelClass}`;
+            overlay.classList.remove('hidden');
+            overlay.classList.add('flex');
+        } else {
+            overlay.classList.add('hidden');
+            overlay.classList.remove('flex');
+        }
+    });
+}
+
+updateCardStates();
+const _cardPoll = setInterval(updateCardStates, 2000);
+document.addEventListener('htmx:afterSwap', () => { updateCardStates(); });
+</script>
 {% endblock %}
