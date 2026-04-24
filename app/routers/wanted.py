@@ -98,6 +98,39 @@ async def add_wanted(
     )
 
 
+@router.post("/{wanted_id}/refresh-cover", response_class=HTMLResponse)
+async def refresh_wanted_cover(
+    wanted_id: int,
+    background_tasks: BackgroundTasks,
+    session: Session = Depends(get_session),
+):
+    """Delete existing cover and re-fetch from enabled sources."""
+    if _get_setting(session, "covers_dir_readonly", "false") == "true":
+        return HTMLResponse(
+            '<button disabled class="absolute bottom-2 left-2 bg-red-900/50 border border-red-800 '
+            'rounded-full px-1.5 py-0.5 text-xs text-red-300" title="Covers directory is read-only">Read-only</button>'
+        )
+    game = session.get(WantedGame, wanted_id)
+    if not game:
+        return HTMLResponse("")
+
+    if game.cover_path:
+        covers_dir = Path(_get_setting(session, "covers_dir", "static/covers"))
+        cover_file = covers_dir / Path(game.cover_path).name
+        cover_file.unlink(missing_ok=True)
+        game.cover_path = ""
+        game.updated_at = datetime.utcnow()
+        session.add(game)
+        session.commit()
+
+    background_tasks.add_task(_fetch_cover, wanted_id, game.ra_game_id, game.game_title, game.system)
+    applog.log_action("refresh_cover_wanted", {"id": wanted_id, "game": game.game_title})
+    return HTMLResponse(
+        '<button disabled class="absolute bottom-2 left-2 bg-blue-900/50 border border-blue-800 '
+        'rounded-full px-1.5 py-0.5 text-xs text-blue-300">Fetching…</button>'
+    )
+
+
 @router.delete("/{game_id}", response_class=HTMLResponse)
 async def remove_wanted(game_id: int, session: Session = Depends(get_session)):
     game = session.get(WantedGame, game_id)

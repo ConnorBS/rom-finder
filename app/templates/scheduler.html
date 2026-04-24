@@ -47,22 +47,30 @@
 
                     <span class="text-gray-700 text-xs hidden sm:inline">·</span>
 
-                    <p class="text-xs text-gray-600">
+                    <div id="last-run-{{ task.id }}" class="text-xs text-gray-600">
                         Last run:
                         {% if task.last_run %}
                         <span class="text-gray-500">{{ task.last_run[:16].replace("T", " ") }} UTC</span>
                         {% else %}
                         <span class="text-gray-700">Never</span>
                         {% endif %}
-                    </p>
+                    </div>
 
                     <button
                         type="button"
                         hx-post="/scheduler/run/{{ task.id }}"
                         hx-target="#run-result-{{ task.id }}"
                         hx-swap="innerHTML"
-                        class="ml-auto bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs px-3 py-1.5 rounded-lg transition-colors flex-shrink-0"
-                    >Run now</button>
+                        hx-indicator="#run-spin-{{ task.id }}"
+                        hx-disabled-elt="this"
+                        class="ml-auto bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed text-gray-300 text-xs px-3 py-1.5 rounded-lg transition-colors flex-shrink-0 flex items-center gap-1.5"
+                    >
+                        <svg id="run-spin-{{ task.id }}" class="htmx-indicator animate-spin w-3 h-3" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                        </svg>
+                        Run now
+                    </button>
                 </div>
 
                 <div id="run-result-{{ task.id }}" class="text-xs"></div>

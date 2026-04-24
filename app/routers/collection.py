@@ -92,8 +92,10 @@ async def collection_page(
     view: str = Query(default="cards"),
     session: Session = Depends(get_session),
 ):
-    items = _build_collection(session)
+    all_items = _build_collection(session)
+    systems = sorted({i["system"] for i in all_items if i["system"]})
 
+    items = all_items
     if q:
         ql = q.lower()
         items = [i for i in items if ql in i["game_title"].lower()]
@@ -101,9 +103,6 @@ async def collection_page(
         items = [i for i in items if i["system"] == system]
     if status:
         items = [i for i in items if i["status"] == status]
-
-    all_items = _build_collection(session)
-    systems = sorted({i["system"] for i in all_items if i["system"]})
 
     applog.log_navigation("collection", {
         "total": len(all_items), "filtered": len(items),
@@ -272,6 +271,45 @@ async def bulk_verify(
     background_tasks.add_task(_do_verify, [e.id for e in unverified], username, api_key)
     applog.log_action("bulk_verify", {"count": len(unverified)})
     return HTMLResponse(f'<span class="text-blue-400 text-xs">&#10003; Checking {len(unverified)} hash{"es" if len(unverified) != 1 else ""} against RetroAchievements…</span>')
+
+
+# ---------------------------------------------------------------------------
+# Per-entry cover refresh
+# ---------------------------------------------------------------------------
+
+@router.post("/library/{library_id}/refresh-cover", response_class=HTMLResponse)
+async def refresh_library_cover(
+    library_id: int,
+    background_tasks: BackgroundTasks,
+    session: Session = Depends(get_session),
+):
+    """Delete existing cover for a library entry and re-fetch from enabled sources."""
+    if _get_setting(session, "covers_dir_readonly", "false") == "true":
+        return HTMLResponse(
+            '<button disabled class="absolute bottom-2 left-2 bg-red-900/50 border border-red-800 '
+            'rounded-full px-1.5 py-0.5 text-xs text-red-300" title="Covers directory is read-only">Read-only</button>'
+        )
+    from pathlib import Path
+    entry = session.get(LibraryEntry, library_id)
+    if not entry:
+        return HTMLResponse("")
+
+    if entry.cover_path:
+        covers_dir = Path(_get_setting(session, "covers_dir", "static/covers"))
+        cover_file = covers_dir / Path(entry.cover_path).name
+        cover_file.unlink(missing_ok=True)
+        entry.cover_path = ""
+        session.add(entry)
+        session.commit()
+
+    background_tasks.add_task(
+        _fetch_cover_for_library, library_id, entry.ra_game_id, entry.game_title, entry.system
+    )
+    applog.log_action("refresh_cover_library", {"id": library_id, "game": entry.game_title})
+    return HTMLResponse(
+        '<button disabled class="absolute bottom-2 left-2 bg-blue-900/50 border border-blue-800 '
+        'rounded-full px-1.5 py-0.5 text-xs text-blue-300">Fetching…</button>'
+    )
 
 
 # ---------------------------------------------------------------------------

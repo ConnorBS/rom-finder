@@ -47,6 +47,15 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
             </svg>
         </button>
+
+        <!-- Refresh cover button (visible on hover) -->
+        <button
+            hx-post="/wanted/{{ game.id }}/refresh-cover"
+            hx-target="this"
+            hx-swap="outerHTML"
+            class="absolute bottom-2 left-2 bg-gray-900/80 hover:bg-blue-900/80 border border-gray-700 hover:border-blue-700 rounded-full px-1.5 py-0.5 opacity-0 group-hover:opacity-100 transition-opacity text-xs text-gray-400 hover:text-blue-200"
+            title="Refresh cover art"
+        >↻</button>
     </div>
 
     <!-- Info -->

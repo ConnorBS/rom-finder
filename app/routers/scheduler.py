@@ -1,3 +1,4 @@
+from datetime import datetime
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -71,6 +72,16 @@ async def save_schedule(request: Request, session: Session = Depends(get_session
     return HTMLResponse('<span class="text-green-400 text-xs">&#10003; Schedule saved.</span>')
 
 
+def _oob_last_run(task_id: str) -> str:
+    """Return an HTMX OOB element that refreshes the 'Last run' display for a task."""
+    now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+    return (
+        f'<div id="last-run-{task_id}" hx-swap-oob="true" class="text-xs text-gray-600">'
+        f'Last run: <span class="text-gray-500">{now_str} UTC</span>'
+        f'</div>'
+    )
+
+
 @router.post("/run/{task_id}", response_class=HTMLResponse)
 async def run_task_now(task_id: str):
     from app.services.scheduler import run_scan, run_hash_check, run_autodiscover
@@ -80,18 +91,20 @@ async def run_task_now(task_id: str):
         return HTMLResponse('<span class="text-red-400 text-xs">Unknown task.</span>')
     try:
         result = await fn()
+        oob = _oob_last_run(task_id)
+
         if "error" in result:
-            return HTMLResponse(f'<span class="text-red-400 text-xs">&#10007; {result["error"]}</span>')
+            return HTMLResponse(f'<span class="text-red-400 text-xs">&#10007; {result["error"]}</span>{oob}')
 
         if task_id == "scan":
             added = result.get("added", 0)
             if added == 0:
                 msg = "Library up to date — no new ROMs found."
-                return HTMLResponse(f'<span class="text-gray-400 text-xs">{msg}</span>')
+                return HTMLResponse(f'<span class="text-gray-400 text-xs">{msg}</span>{oob}')
             parts = [f"{added} new ROM{'s' if added != 1 else ''} imported"]
             if result.get("hashed"):    parts.append(f"{result['hashed']} hashed")
             if result.get("verified"):  parts.append(f"{result['verified']} RA matched")
-            return HTMLResponse(f'<span class="text-green-400 text-xs">&#10003; {", ".join(parts)}.</span>')
+            return HTMLResponse(f'<span class="text-green-400 text-xs">&#10003; {", ".join(parts)}.</span>{oob}')
 
         if task_id == "hash":
             backfilled = result.get("backfilled", 0)
@@ -104,17 +117,17 @@ async def run_task_now(task_id: str):
             if backfilled: parts.append(f"{backfilled} timestamps backfilled")
             if skipped:    parts.append(f"{skipped} files not found")
             if parts:
-                return HTMLResponse(f'<span class="text-green-400 text-xs">&#10003; {", ".join(parts)}.</span>')
+                return HTMLResponse(f'<span class="text-green-400 text-xs">&#10003; {", ".join(parts)}.</span>{oob}')
             note = " (files not accessible)" if skipped else ""
-            return HTMLResponse(f'<span class="text-gray-400 text-xs">All ROMs already hashed — nothing to do{note}.</span>')
+            return HTMLResponse(f'<span class="text-gray-400 text-xs">All ROMs already hashed — nothing to do{note}.</span>{oob}')
 
         if task_id == "autodiscover":
             added   = result.get("added", 0)
             systems = result.get("systems_checked", 0)
             if added:
-                return HTMLResponse(f'<span class="text-green-400 text-xs">&#10003; {added} new game{"s" if added != 1 else ""} added from {systems} system{"s" if systems != 1 else ""}.</span>')
-            return HTMLResponse(f'<span class="text-gray-400 text-xs">No new games found across {systems} system{"s" if systems != 1 else ""}.</span>')
+                return HTMLResponse(f'<span class="text-green-400 text-xs">&#10003; {added} new game{"s" if added != 1 else ""} added from {systems} system{"s" if systems != 1 else ""}.</span>{oob}')
+            return HTMLResponse(f'<span class="text-gray-400 text-xs">No new games found across {systems} system{"s" if systems != 1 else ""}.</span>{oob}')
 
-        return HTMLResponse('<span class="text-green-400 text-xs">&#10003; Done.</span>')
+        return HTMLResponse(f'<span class="text-green-400 text-xs">&#10003; Done.</span>{oob}')
     except Exception as exc:
         return HTMLResponse(f'<span class="text-red-400 text-xs">&#10007; {exc}</span>')

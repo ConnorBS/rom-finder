@@ -319,3 +319,30 @@ This pattern is duplicated across routers — do not consolidate into a shared i
 - **Bulk RA verify after hash**: After hash-check runs, auto-verify any newly-hashed entries against RA
 - **Import from existing collection**: Point at a folder of already-owned ROMs and bulk-import + hash + match in one pass
 - **Notification on autodiscover**: Alert when new games are added to the Wanted pool by the scheduler
+
+## Cover Refresh
+
+Per-card "↻" hover button on collection cards and wanted cards lets users replace a wrong cover without touching the DB.
+
+- `POST /wanted/{id}/refresh-cover` — deletes existing file, clears `WantedGame.cover_path`, queues re-fetch
+- `POST /library/{id}/refresh-cover` — same for `LibraryEntry`
+- Both endpoints live in `wanted.py` and `collection.py` respectively
+- Response replaces the button with a disabled "Fetching…" indicator; the card-states overlay system shows progress; page reload reveals the new cover
+- Button only renders when `covers_enabled` is True (at least one source configured)
+
+## Scheduler "Run Now" Behaviour
+
+`POST /scheduler/run/{task_id}` is **synchronous** — the HTTP response is held until the task completes. This is intentional for self-hosted use (no proxy timeouts). The UI shows:
+- Spinner inside the button (via `hx-indicator`) + button disabled while running
+- After completion, the "Last run" timestamp updates in-place via HTMX OOB swap (`hx-swap-oob`) — no page reload needed
+
+## Sidebar Navigation
+
+Nav links (in order): Collection, **Wanted**, Search, Downloads, Settings, Scheduler, Logs.
+
+Active-link detection uses exact-match for `/collection`, `/wanted`, `/search`, `/logs`; `startsWith` for all others (e.g. `/settings`, `/scheduler`, `/downloads`).
+
+## Remeber to'Same
+
+- If changes occur, updated CLAUDE.md to ensure file is up to date.
+- All work should be done to a high quality, with the idea that people will want it to just work, so if a new feature is added, all the variations and edge cases should be reviewed and handled in the first push, instead of user feedback.

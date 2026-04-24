@@ -216,6 +216,27 @@
                     <span class="card-activity-label text-xs font-medium"></span>
                 </div>
 
+                <!-- Refresh cover button (visible on hover, only when a cover source is enabled) -->
+                {% if covers_enabled %}
+                {% if item.wanted_id %}
+                <button
+                    hx-post="/wanted/{{ item.wanted_id }}/refresh-cover"
+                    hx-target="this"
+                    hx-swap="outerHTML"
+                    class="absolute bottom-2 left-2 bg-gray-900/80 hover:bg-blue-900/80 border border-gray-700 hover:border-blue-700 rounded-full px-1.5 py-0.5 opacity-0 group-hover:opacity-100 transition-opacity text-xs text-gray-400 hover:text-blue-200"
+                    title="Refresh cover art"
+                >↻</button>
+                {% elif item.library_id %}
+                <button
+                    hx-post="/library/{{ item.library_id }}/refresh-cover"
+                    hx-target="this"
+                    hx-swap="outerHTML"
+                    class="absolute bottom-2 left-2 bg-gray-900/80 hover:bg-blue-900/80 border border-gray-700 hover:border-blue-700 rounded-full px-1.5 py-0.5 opacity-0 group-hover:opacity-100 transition-opacity text-xs text-gray-400 hover:text-blue-200"
+                    title="Refresh cover art"
+                >↻</button>
+                {% endif %}
+                {% endif %}
+
                 <!-- Status badge -->
                 {% if item.status == 'verified' %}
                 <div class="absolute top-2 right-2 bg-green-600 rounded-full p-1" title="Hash verified">

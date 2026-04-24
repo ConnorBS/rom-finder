@@ -44,6 +44,7 @@
 
         <nav class="flex-1 min-h-0 overflow-y-auto p-3 space-y-0.5 text-sm">
             <a href="/collection" class="nav-item block px-3 py-2 rounded-md text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">Collection</a>
+            <a href="/wanted"     class="nav-item block px-3 py-2 rounded-md text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">Wanted</a>
             <a href="/search"     class="nav-item block px-3 py-2 rounded-md text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">Search</a>
             <a href="/downloads"  class="nav-item block px-3 py-2 rounded-md text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">Downloads</a>
             <a href="/settings"   class="nav-item block px-3 py-2 rounded-md text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">Settings</a>
@@ -94,7 +95,8 @@
         document.querySelectorAll('.nav-item').forEach(function(link) {
             var href = link.getAttribute('href');
             var path = window.location.pathname;
-            var match = path === href || (href !== '/collection' && href !== '/search' && path.startsWith(href));
+            var exact = ['/collection', '/wanted', '/search', '/logs'];
+            var match = path === href || (!exact.includes(href) && path.startsWith(href));
             if (match) {
                 link.classList.add('bg-gray-800', 'text-white');
                 link.classList.remove('text-gray-400');
