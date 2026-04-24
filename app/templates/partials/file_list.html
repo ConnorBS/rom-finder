@@ -4,16 +4,26 @@
 </div>
 
 {% else %}
+{% set is_vimm = (source_id == 'vimm') %}
 <div class="bg-gray-900 border border-gray-800 rounded-lg mt-2 overflow-hidden">
     <div class="flex items-center justify-between px-4 py-2.5 border-b border-gray-800 bg-gray-800/50">
         <div class="flex items-center gap-3 min-w-0">
             <span class="text-gray-400 text-xs font-medium font-mono truncate">{{ identifier }}</span>
+            {% if is_vimm %}
+            <a href="https://vimm.net/vault/{{ identifier }}/"
+               target="_blank"
+               class="text-blue-500 hover:text-blue-400 text-xs flex-shrink-0">
+                vimm.net ↗
+            </a>
+            {% else %}
             <a href="https://archive.org/details/{{ identifier }}"
                target="_blank"
                class="text-blue-500 hover:text-blue-400 text-xs flex-shrink-0">
                 archive.org ↗
             </a>
+            {% endif %}
         </div>
+        {% if not is_vimm %}
         <input
             type="search"
             placeholder="Filter files..."
@@ -26,6 +36,7 @@
             name="q"
             value="{{ query }}"
         >
+        {% endif %}
     </div>
 
     {% if files %}
@@ -64,12 +75,21 @@
     </ul>
     {% else %}
     <div class="px-4 py-4 flex items-center justify-between">
+        {% if is_vimm %}
+        <p class="text-gray-500 text-xs">No download available — game may have been removed from Vimm (DMCA).</p>
+        <a href="https://vimm.net/vault/{{ identifier }}/"
+           target="_blank"
+           class="text-blue-500 hover:text-blue-400 text-xs flex-shrink-0 ml-4">
+            Check on vimm.net ↗
+        </a>
+        {% else %}
         <p class="text-gray-500 text-xs">No downloadable ROM files found in this collection.</p>
         <a href="https://archive.org/details/{{ identifier }}"
            target="_blank"
            class="text-blue-500 hover:text-blue-400 text-xs flex-shrink-0 ml-4">
             Check on archive.org ↗
         </a>
+        {% endif %}
     </div>
     {% endif %}
 </div>

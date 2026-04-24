@@ -313,8 +313,16 @@ async def _run_download(download_id: int) -> None:
             session.refresh(download)
 
             rom_path = dest
-            if dest.suffix.lower() == ".zip":
-                rom_path = extract_rom_from_zip(dest)
+            if dest.suffix.lower() in (".zip", ".7z"):
+                import zipfile as _zf
+                try:
+                    rom_path = extract_rom_from_zip(dest)
+                except _zf.BadZipFile:
+                    # The downloaded file is not actually a ZIP (e.g. Vimm served
+                    # a raw CHD/ISO). Strip the false extension and keep as-is.
+                    real_path = dest.with_suffix("")
+                    dest.rename(real_path)
+                    rom_path = real_path
 
             # Compute RA hash — try RAHasher binary first, fall back to Python
             ra_hash_result = await compute_ra_hash(rom_path, download.system)

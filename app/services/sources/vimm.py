@@ -1,17 +1,21 @@
 """VIMM's Lair ROM source.
 
 Scrapes vimm.net search and game pages.
-Downloads use the vimm.net download endpoint with a Referer header.
+Downloads POST to Vimm's download CDN with a mediaId and Referer header.
 """
 
 import re
 import httpx
 from bs4 import BeautifulSoup
+from pathlib import Path
 
 from .base import RomSource
 
 VIMM_BASE = "https://vimm.net"
-VIMM_DOWNLOAD_BASE = "https://download3.vimm.net/download"
+
+# Fallback download server — the vault page's dl_form action is preferred when
+# the game is actually available (parsed dynamically in download_file).
+VIMM_DOWNLOAD_FALLBACK = "https://download2.vimm.net/"
 
 _HEADERS = {
     "User-Agent": (
@@ -89,9 +93,6 @@ class VimmSource(RomSource):
         results: list[dict] = []
         seen_ids: set[str] = set()
 
-        # Vimm search results are a div/list layout.
-        # Each game entry contains an <a href="/vault/{id}/..."> link and
-        # a flag image at /images/flags/{country}.png with the region as alt text.
         for a in soup.find_all("a", href=_VAULT_ID_RE):
             m = _VAULT_ID_RE.search(a["href"])
             if not m:
@@ -105,7 +106,6 @@ class VimmSource(RomSource):
             if not title:
                 continue
 
-            # Region: flag image in the same row/container as the link
             region = ""
             container = a.parent
             if container:
@@ -151,6 +151,12 @@ class VimmSource(RomSource):
         h2 = soup.find("h2")
         game_title = h2.get_text(strip=True) if h2 else f"VIMM {identifier}"
 
+        # Check if download is available by looking for the download form
+        dl_form = soup.find("form", {"name": "dl_form"}) or soup.find("form", {"id": "dl_form"})
+        if not dl_form:
+            # No download form — game is unavailable (DMCA or not yet uploaded)
+            return []
+
         size = 0
         for text in soup.stripped_strings:
             if "MB" in text or "GB" in text:
@@ -164,8 +170,13 @@ class VimmSource(RomSource):
         safe_title = game_title.replace(":", " -").replace("/", "-")
         filename = f"{safe_title}.zip"
 
-        if name_filter and name_filter.lower() not in filename.lower():
-            return []
+        # Stem-based bidirectional match: the Vimm filename is typically a clean
+        # title without region codes, while the RA name may include "(USA)" etc.
+        if name_filter:
+            filter_stem = Path(name_filter).stem.lower()
+            file_stem = Path(filename).stem.lower()
+            if filter_stem not in file_stem and file_stem not in filter_stem:
+                return []
 
         return [{
             "name": filename,
@@ -176,10 +187,96 @@ class VimmSource(RomSource):
         }]
 
     def get_download_url(self, identifier: str, filename: str) -> str:
-        return f"{VIMM_DOWNLOAD_BASE}/?mediaId={identifier}"
+        # Encodes the mediaId so download_file() can extract it.
+        # Actual download uses POST — see download_file() override.
+        return f"{VIMM_DOWNLOAD_FALLBACK}?mediaId={identifier}"
 
     def get_extra_headers(self) -> dict:
         return {
             "Referer": f"{VIMM_BASE}/",
             **_HEADERS,
         }
+
+    async def download_file(
+        self,
+        url: str,
+        dest: Path,
+        progress_callback=None,
+    ) -> None:
+        """Download from Vimm by:
+        1. Visiting the vault page to acquire session cookies and the real
+           download form action URL (which may vary by CDN node).
+        2. POSTing mediaId + alt=0 to that action URL with a Referer header.
+        """
+        from urllib.parse import urlparse, parse_qs
+
+        parsed = urlparse(url)
+        params = parse_qs(parsed.query)
+        media_id = params.get("mediaId", [None])[0]
+        if not media_id:
+            raise ValueError(f"Cannot extract mediaId from Vimm URL: {url}")
+
+        vault_url = f"{VIMM_BASE}/vault/{media_id}/"
+        download_action = VIMM_DOWNLOAD_FALLBACK
+
+        dest.parent.mkdir(parents=True, exist_ok=True)
+
+        async with httpx.AsyncClient(follow_redirects=True, timeout=None) as client:
+            # Visit vault page to get cookies AND extract the real form action.
+            try:
+                vault_resp = await client.get(vault_url, headers=_HEADERS, timeout=20)
+                soup = BeautifulSoup(vault_resp.text, "html.parser")
+                form = (
+                    soup.find("form", {"name": "dl_form"})
+                    or soup.find("form", {"id": "dl_form"})
+                )
+                if form and form.get("action"):
+                    action = form["action"]
+                    if action.startswith("//"):
+                        action = "https:" + action
+                    elif not action.startswith("http"):
+                        action = "https:" + action
+                    download_action = action
+                elif form is None:
+                    raise ValueError(
+                        f"No download form found for vault ID {media_id}. "
+                        "The game may be unavailable or removed due to a takedown request."
+                    )
+            except ValueError:
+                raise
+            except Exception:
+                pass  # network error visiting vault page — try download anyway
+
+            post_headers = {
+                **_HEADERS,
+                "Referer": vault_url,
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Origin": VIMM_BASE,
+            }
+            post_data = {"mediaId": media_id, "alt": "0"}
+
+            async with client.stream(
+                "POST",
+                download_action,
+                data=post_data,
+                headers=post_headers,
+            ) as resp:
+                resp.raise_for_status()
+
+                content_type = resp.headers.get("content-type", "")
+                if "text/html" in content_type:
+                    # Vimm returned an error/login page instead of the file
+                    body = await resp.aread()
+                    raise ValueError(
+                        "Vimm returned an HTML page instead of the ROM file. "
+                        "The game may be unavailable, rate-limited, or require login."
+                    )
+
+                total = int(resp.headers.get("content-length", 0))
+                downloaded = 0
+                with open(dest, "wb") as fh:
+                    async for chunk in resp.aiter_bytes(chunk_size=65536):
+                        fh.write(chunk)
+                        downloaded += len(chunk)
+                        if progress_callback and total:
+                            await progress_callback(downloaded / total)
