@@ -27,7 +27,7 @@ def _task_list(session: Session) -> list[dict]:
         {
             "id": "scan",
             "name": "Library scan",
-            "description": "Walk the ROMs directory and import any files that aren't tracked in the library yet.",
+            "description": "Walk the ROMs directory and import any untracked files. Each new ROM is then hashed, cover art is fetched, and its hash is checked against RetroAchievements.",
             "enabled": _get(session, "sched_scan_enabled", "true"),
             "time": _get(session, "sched_scan_time", "04:00"),
             "last_run": _get(session, "sched_scan_last_run", ""),
@@ -35,7 +35,7 @@ def _task_list(session: Session) -> list[dict]:
         {
             "id": "hash",
             "name": "Hash check",
-            "description": "Hash all un-hashed ROMs. If a file has changed since it was last hashed, the old hash is cleared and the file is re-hashed.",
+            "description": "Hash all un-hashed ROMs. Backfills missing timestamps on existing hashes, then clears and re-hashes any file whose modification time is newer than when it was last hashed.",
             "enabled": _get(session, "sched_hash_enabled", "true"),
             "time": _get(session, "sched_hash_time", "04:00"),
             "last_run": _get(session, "sched_hash_last_run", ""),
@@ -82,13 +82,39 @@ async def run_task_now(task_id: str):
         result = await fn()
         if "error" in result:
             return HTMLResponse(f'<span class="text-red-400 text-xs">&#10007; {result["error"]}</span>')
-        parts = []
-        if result.get("added"):     parts.append(f"{result['added']} added")
-        if result.get("cleared"):   parts.append(f"{result['cleared']} stale cleared")
-        if result.get("hashed"):    parts.append(f"{result['hashed']} hashed")
-        if result.get("systems_checked") is not None:
-            parts.append(f"{result['systems_checked']} systems checked")
-        summary = ", ".join(parts) if parts else "nothing to do"
-        return HTMLResponse(f'<span class="text-green-400 text-xs">&#10003; {summary}.</span>')
+
+        if task_id == "scan":
+            added = result.get("added", 0)
+            if added == 0:
+                msg = "Library up to date — no new ROMs found."
+                return HTMLResponse(f'<span class="text-gray-400 text-xs">{msg}</span>')
+            parts = [f"{added} new ROM{'s' if added != 1 else ''} imported"]
+            if result.get("hashed"):    parts.append(f"{result['hashed']} hashed")
+            if result.get("verified"):  parts.append(f"{result['verified']} RA matched")
+            return HTMLResponse(f'<span class="text-green-400 text-xs">&#10003; {", ".join(parts)}.</span>')
+
+        if task_id == "hash":
+            backfilled = result.get("backfilled", 0)
+            cleared    = result.get("cleared", 0)
+            hashed     = result.get("hashed", 0)
+            skipped    = result.get("skipped", 0)
+            parts = []
+            if hashed:     parts.append(f"{hashed} hashed")
+            if cleared:    parts.append(f"{cleared} stale cleared")
+            if backfilled: parts.append(f"{backfilled} timestamps backfilled")
+            if skipped:    parts.append(f"{skipped} files not found")
+            if parts:
+                return HTMLResponse(f'<span class="text-green-400 text-xs">&#10003; {", ".join(parts)}.</span>')
+            note = " (files not accessible)" if skipped else ""
+            return HTMLResponse(f'<span class="text-gray-400 text-xs">All ROMs already hashed — nothing to do{note}.</span>')
+
+        if task_id == "autodiscover":
+            added   = result.get("added", 0)
+            systems = result.get("systems_checked", 0)
+            if added:
+                return HTMLResponse(f'<span class="text-green-400 text-xs">&#10003; {added} new game{"s" if added != 1 else ""} added from {systems} system{"s" if systems != 1 else ""}.</span>')
+            return HTMLResponse(f'<span class="text-gray-400 text-xs">No new games found across {systems} system{"s" if systems != 1 else ""}.</span>')
+
+        return HTMLResponse('<span class="text-green-400 text-xs">&#10003; Done.</span>')
     except Exception as exc:
         return HTMLResponse(f'<span class="text-red-400 text-xs">&#10007; {exc}</span>')
