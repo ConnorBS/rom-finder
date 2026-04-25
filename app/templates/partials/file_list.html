@@ -40,6 +40,12 @@
     </div>
 
     {% if files %}
+    {% if is_vimm %}
+    <div class="px-4 py-2 bg-amber-950/40 border-b border-amber-900/50 flex items-start gap-2">
+        <span class="text-amber-500 text-xs flex-shrink-0 mt-0.5">⚠</span>
+        <p class="text-amber-400/80 text-xs">Vimm requires browser interaction to download. If the queued download fails, use <strong>Open on Vimm</strong> to download manually, then use <strong>Scan folder</strong> on the Collection page to import it.</p>
+    </div>
+    {% endif %}
     <ul class="divide-y divide-gray-800 max-h-80 overflow-y-auto">
         {% for file in files %}
         <li class="flex items-center justify-between px-4 py-2.5 hover:bg-gray-800/40 gap-4">
@@ -49,27 +55,35 @@
                 <p class="text-gray-600 text-xs mt-0.5">{{ (file.size | int / 1048576) | round(1) }} MB</p>
                 {% endif %}
             </div>
-            <form
-                hx-post="/downloads/start"
-                hx-target="closest li"
-                hx-swap="outerHTML"
-                hx-indicator="find button"
-                class="flex-shrink-0"
-            >
-                <input type="hidden" name="game_title" value="{{ game_title or (file.name | replace('.zip','') | replace('.7z','') | replace('.rar','')) }}">
-                <input type="hidden" name="system" value="{{ system }}">
-                <input type="hidden" name="source_id" value="{{ source_id or file.source_id or 'archive_org' }}">
-                <input type="hidden" name="file_name" value="{{ file.name }}">
-                <input type="hidden" name="archive_identifier" value="{{ identifier }}">
-                {% if ra_game_id %}<input type="hidden" name="ra_game_id" value="{{ ra_game_id }}">{% endif %}
-                <button
-                    type="submit"
-                    class="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1.5 rounded-md transition-colors"
+            <div class="flex items-center gap-2 flex-shrink-0">
+                {% if is_vimm %}
+                <a href="https://vimm.net/vault/{{ identifier }}/"
+                   target="_blank"
+                   class="bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs px-3 py-1.5 rounded-md transition-colors whitespace-nowrap">
+                    Open on Vimm ↗
+                </a>
+                {% endif %}
+                <form
+                    hx-post="/downloads/start"
+                    hx-target="closest li"
+                    hx-swap="outerHTML"
+                    hx-indicator="find button[type=submit]"
                 >
-                    <span class="htmx-label">Download</span>
-                    <span class="htmx-indicator">Queuing...</span>
-                </button>
-            </form>
+                    <input type="hidden" name="game_title" value="{{ game_title or (file.name | replace('.zip','') | replace('.7z','') | replace('.rar','')) }}">
+                    <input type="hidden" name="system" value="{{ system }}">
+                    <input type="hidden" name="source_id" value="{{ source_id or file.source_id or 'archive_org' }}">
+                    <input type="hidden" name="file_name" value="{{ file.name }}">
+                    <input type="hidden" name="archive_identifier" value="{{ identifier }}">
+                    {% if ra_game_id %}<input type="hidden" name="ra_game_id" value="{{ ra_game_id }}">{% endif %}
+                    <button
+                        type="submit"
+                        class="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1.5 rounded-md transition-colors"
+                    >
+                        <span class="htmx-label">{% if is_vimm %}Try download{% else %}Download{% endif %}</span>
+                        <span class="htmx-indicator">Queuing...</span>
+                    </button>
+                </form>
+            </div>
         </li>
         {% endfor %}
     </ul>

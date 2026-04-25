@@ -15,7 +15,9 @@ VIMM_BASE = "https://vimm.net"
 
 # Fallback download server — the vault page's dl_form action is preferred when
 # the game is actually available (parsed dynamically in download_file).
-VIMM_DOWNLOAD_FALLBACK = "https://download2.vimm.net/"
+# dl3.vimm.net is the current CDN; different platforms may use different nodes
+# (e.g. download5 for GameCube), which is why we always prefer the form action.
+VIMM_DOWNLOAD_FALLBACK = "https://dl3.vimm.net/"
 
 _HEADERS = {
     "User-Agent": (
@@ -222,7 +224,9 @@ class VimmSource(RomSource):
         dest.parent.mkdir(parents=True, exist_ok=True)
 
         async with httpx.AsyncClient(follow_redirects=True, timeout=None) as client:
-            # Visit vault page to get cookies AND extract the real form action.
+            # Visit vault page to get cookies AND extract the real form action URL
+            # and the actual mediaId (which differs from the vault ID in the URL).
+            post_media_id = media_id  # vault ID fallback; form value overrides below
             try:
                 vault_resp = await client.get(vault_url, headers=_HEADERS, timeout=20)
                 soup = BeautifulSoup(vault_resp.text, "html.parser")
@@ -230,18 +234,25 @@ class VimmSource(RomSource):
                     soup.find("form", {"name": "dl_form"})
                     or soup.find("form", {"id": "dl_form"})
                 )
-                if form and form.get("action"):
+                if form is None:
+                    raise ValueError(
+                        f"No download form found for vault ID {media_id}. "
+                        "The game may be unavailable or removed due to a takedown request."
+                    )
+                if form.get("action"):
                     action = form["action"]
                     if action.startswith("//"):
                         action = "https:" + action
                     elif not action.startswith("http"):
                         action = "https:" + action
                     download_action = action
-                elif form is None:
-                    raise ValueError(
-                        f"No download form found for vault ID {media_id}. "
-                        "The game may be unavailable or removed due to a takedown request."
-                    )
+
+                # The form's mediaId is the actual file identifier — it is NOT the
+                # same as the vault ID in the page URL.
+                form_media_input = form.find("input", {"name": "mediaId"})
+                if form_media_input and form_media_input.get("value"):
+                    post_media_id = form_media_input["value"]
+
             except ValueError:
                 raise
             except Exception:
@@ -253,7 +264,7 @@ class VimmSource(RomSource):
                 "Content-Type": "application/x-www-form-urlencoded",
                 "Origin": VIMM_BASE,
             }
-            post_data = {"mediaId": media_id, "alt": "0"}
+            post_data = {"mediaId": post_media_id, "alt": "0"}
 
             async with client.stream(
                 "POST",
