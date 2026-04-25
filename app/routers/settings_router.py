@@ -84,6 +84,7 @@ async def settings_page(request: Request, session: Session = Depends(get_session
         "ra_username": get_setting(session, "ra_username"),
         "ra_api_key": get_setting(session, "ra_api_key"),
         "verbose_logging": get_setting(session, "verbose_logging", "false"),
+        "use_review_dir": get_setting(session, "use_review_dir", "true"),
         "download_dir_readonly": get_setting(session, "download_dir_readonly", "false"),
         "check_dir_readonly": get_setting(session, "check_dir_readonly", "false"),
         "covers_dir_readonly": get_setting(session, "covers_dir_readonly", "false"),
@@ -162,8 +163,8 @@ async def save_settings(
     verbose_logging = "true" if form_data.get("verbose_logging") == "true" else "false"
     set_setting(session, "verbose_logging", verbose_logging)
 
-    # Per-directory read-only toggles + autodiscover enable flag
-    for key in ("download_dir_readonly", "check_dir_readonly", "covers_dir_readonly", "ra_autodiscover_enabled"):
+    # Review directory toggle + per-directory read-only toggles + autodiscover enable flag
+    for key in ("use_review_dir", "download_dir_readonly", "check_dir_readonly", "covers_dir_readonly", "ra_autodiscover_enabled"):
         set_setting(session, key, "true" if form_data.get(key) == "true" else "false")
 
     # ROM source toggles

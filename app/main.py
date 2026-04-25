@@ -54,6 +54,9 @@ DEFAULT_SETTINGS = {
     "source_wowroms_enabled": "false",
     # Verbose logging captures every page load, button press, and navigation event
     "verbose_logging": "false",
+    # When true, downloads stage in check_dir for manual review before moving to download_dir.
+    # When false, downloads go directly to download_dir and are auto-imported.
+    "use_review_dir": "true",
     # Per-directory read-only locks — prevent any edits, deletes, or writes within the app
     "download_dir_readonly": "false",
     "check_dir_readonly": "false",

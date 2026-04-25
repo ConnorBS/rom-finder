@@ -8,7 +8,7 @@ from pathlib import Path
 from datetime import datetime
 
 from app.db.database import get_session
-from app.db.models import Download, DownloadStatus, AppSetting, LibraryEntry
+from app.db.models import Download, DownloadStatus, AppSetting, LibraryEntry, WantedGame, HuntStatus
 from app.services import sources as source_registry
 from app.services.hasher import hash_rom, extract_rom_from_zip, DISC_SYSTEMS
 from app.services.rahasher import compute_ra_hash
@@ -56,16 +56,17 @@ async def start_download(
     ra_game_id: int = Form(default=0),
     session: Session = Depends(get_session),
 ):
-    if _get_setting(session, "check_dir_readonly", "false") == "true":
+    use_review = _get_setting(session, "use_review_dir", "true") == "true"
+    if use_review and _get_setting(session, "check_dir_readonly", "false") == "true":
         return HTMLResponse(
             '<li class="flex items-center px-4 py-2.5 bg-red-900/20 border-l-2 border-red-600 gap-4">'
-            '<p class="text-red-400 text-xs">Review directory is read-only — the app cannot make edits, deletes, or writes to it. Disable this in Settings to download ROMs.</p>'
+            '<p class="text-red-400 text-xs">Review directory is read-only — disable the lock in Settings to download ROMs.</p>'
             '</li>'
         )
-    if _get_setting(session, "download_dir_readonly", "false") == "true":
+    if not use_review and _get_setting(session, "download_dir_readonly", "false") == "true":
         return HTMLResponse(
             '<li class="flex items-center px-4 py-2.5 bg-red-900/20 border-l-2 border-red-600 gap-4">'
-            '<p class="text-red-400 text-xs">ROMs directory is read-only — the app cannot make edits, deletes, or writes to it. Disable this in Settings to download ROMs.</p>'
+            '<p class="text-red-400 text-xs">ROMs directory is read-only — disable the lock in Settings to download ROMs.</p>'
             '</li>'
         )
     src = source_registry.get(source_id) or source_registry.get("archive_org")
@@ -151,7 +152,6 @@ async def approve_download(
 
     # Mark matching wanted game verified
     if download.ra_game_id:
-        from app.db.models import WantedGame, HuntStatus
         wanted = session.exec(
             select(WantedGame).where(WantedGame.ra_game_id == download.ra_game_id)
         ).first()
@@ -233,7 +233,6 @@ async def approve_all_verified(
         )
         session.add(entry)
         if download.ra_game_id:
-            from app.db.models import WantedGame, HuntStatus
             wanted = session.exec(
                 select(WantedGame).where(WantedGame.ra_game_id == download.ra_game_id)
             ).first()
@@ -280,10 +279,13 @@ async def _run_download(download_id: int) -> None:
         if not download:
             return
 
+        use_review = _get_setting(session, "use_review_dir", "true") == "true"
         check_dir = _get_setting(session, "check_dir", "/rom-check")
+        download_dir = _get_setting(session, "download_dir", "/roms")
         folder_map = json.loads(_get_setting(session, "folder_map", "{}"))
         folder_name = _resolve_folder(folder_map, download.system)
-        dest = Path(check_dir) / folder_name / download.file_name
+        base_dir = check_dir if use_review else download_dir
+        dest = Path(base_dir) / folder_name / download.file_name
         dest.parent.mkdir(parents=True, exist_ok=True)
 
         download.status = DownloadStatus.downloading
@@ -360,7 +362,30 @@ async def _run_download(download_id: int) -> None:
 
             applog.log_hash(rom_path.name, download.system, file_hash or "", hasher_used, ra_matched, ra_game_id_matched)
             applog.log_download(download.game_title, rom_path.name, download.source_url, "completed")
-            download.status = DownloadStatus.pending_approval
+
+            if use_review:
+                download.status = DownloadStatus.pending_approval
+            else:
+                download.status = DownloadStatus.completed
+                entry = LibraryEntry(
+                    game_title=download.game_title,
+                    system=download.system,
+                    file_name=rom_path.name,
+                    file_path=str(rom_path),
+                    file_hash=file_hash,
+                    hash_verified=download.hash_verified,
+                    ra_game_id=download.ra_game_id,
+                    ra_matched=download.hash_verified,
+                )
+                session.add(entry)
+                if download.ra_game_id:
+                    wanted = session.exec(
+                        select(WantedGame).where(WantedGame.ra_game_id == download.ra_game_id)
+                    ).first()
+                    if wanted and wanted.status != HuntStatus.verified:
+                        wanted.status = HuntStatus.verified
+                        wanted.updated_at = datetime.utcnow()
+                        session.add(wanted)
 
         except Exception as exc:
             applog.log_download(download.game_title, download.file_name, download.source_url, "failed", str(exc))

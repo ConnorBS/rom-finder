@@ -45,8 +45,28 @@
                     </p>
                 </div>
 
-                <!-- Review directory -->
-                <div>
+                <!-- Review directory toggle -->
+                <div class="flex items-start justify-between gap-4 border-t border-gray-800 pt-4">
+                    <div class="min-w-0">
+                        <p class="text-sm text-gray-300 font-medium">Use review directory</p>
+                        <p class="text-xs text-gray-600 mt-0.5">When enabled, downloaded ROMs stage here first and require manual approval before moving to the ROMs directory. When disabled, downloads go straight to the ROMs directory and are imported automatically.</p>
+                    </div>
+                    <label class="flex items-center gap-2 flex-shrink-0 mt-0.5">
+                        <input
+                            type="checkbox"
+                            name="use_review_dir"
+                            value="true"
+                            id="use-review-dir-toggle"
+                            {% if settings.use_review_dir != "false" %}checked{% endif %}
+                            onchange="toggleReviewDir(this.checked)"
+                            class="w-4 h-4 rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-blue-500 focus:ring-offset-gray-900"
+                        >
+                        <span class="text-xs text-gray-400 whitespace-nowrap">Enabled</span>
+                    </label>
+                </div>
+
+                <!-- Review directory path + readonly (greyed when disabled) -->
+                <div id="review-dir-section" class="{% if settings.use_review_dir == 'false' %}opacity-40 pointer-events-none{% endif %}">
                     <label class="block text-sm text-gray-300 mb-1.5" for="check_dir">Review directory</label>
                     <input
                         type="text"
@@ -353,6 +373,15 @@
         handle: '.cover-source-item',
         ghostClass: 'opacity-40',
     });
+
+    function toggleReviewDir(enabled) {
+        var section = document.getElementById('review-dir-section');
+        if (enabled) {
+            section.classList.remove('opacity-40', 'pointer-events-none');
+        } else {
+            section.classList.add('opacity-40', 'pointer-events-none');
+        }
+    }
 
     // Show/hide the read-only warning note when each checkbox toggles
     document.querySelectorAll('input[name$="_readonly"]').forEach(function(cb) {
