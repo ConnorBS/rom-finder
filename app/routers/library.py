@@ -6,7 +6,7 @@ from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select
 
 from app.db.database import get_session
-from app.db.models import AppSetting, LibraryEntry
+from app.db.models import AppSetting, LibraryEntry, WantedGame, HuntStatus
 from app.services.ra_client import DEFAULT_FOLDER_MAP
 from app.services import logger as applog
 
@@ -92,6 +92,69 @@ async def library_page(
         request, "library.html",
         {"entries": entries, "systems": systems, "selected_system": system, "query": q},
     )
+
+
+@router.post("/{library_id}/verify-ra", response_class=HTMLResponse)
+async def verify_ra_library_entry(
+    library_id: int,
+    session: Session = Depends(get_session),
+):
+    """Look up a library entry's hash against RetroAchievements and update ra_matched."""
+    from datetime import datetime
+    from app.services.ra_client import RAClient
+
+    entry = session.get(LibraryEntry, library_id)
+    if not entry or not entry.file_hash:
+        return HTMLResponse('<span class="text-gray-600 text-xs">No hash</span>')
+
+    ra_username = _get_setting(session, "ra_username")
+    ra_api_key = _get_setting(session, "ra_api_key")
+    if not ra_username or not ra_api_key:
+        return HTMLResponse(
+            '<span class="text-yellow-500 text-xs" title="Add RA credentials in Settings">No RA creds</span>'
+        )
+
+    ra = RAClient(ra_username, ra_api_key)
+    try:
+        match = await ra.lookup_hash(entry.file_hash)
+        if match:
+            entry.ra_matched = True
+            entry.hash_verified = True
+            entry.ra_game_id = entry.ra_game_id or match.get("ID")
+            session.add(entry)
+            if entry.ra_game_id:
+                wanted = session.exec(
+                    select(WantedGame).where(WantedGame.ra_game_id == entry.ra_game_id)
+                ).first()
+                if wanted and wanted.status != HuntStatus.verified:
+                    wanted.status = HuntStatus.verified
+                    wanted.updated_at = datetime.utcnow()
+                    session.add(wanted)
+            session.commit()
+            applog.log_action("library_verify_ra", {
+                "library_id": library_id, "hash": entry.file_hash, "ra_game_id": entry.ra_game_id,
+            })
+            if entry.ra_game_id:
+                return HTMLResponse(
+                    f'<a href="https://retroachievements.org/game/{entry.ra_game_id}" target="_blank" rel="noopener"'
+                    f' class="inline-flex items-center gap-1 text-green-400 text-xs hover:text-green-300 transition-colors"'
+                    f' title="View on RetroAchievements">'
+                    f'<svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">'
+                    f'<path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>'
+                    f'RA Match</a>'
+                )
+            return HTMLResponse(
+                '<span class="inline-flex items-center gap-1 text-green-400 text-xs">'
+                '<svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">'
+                '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>'
+                'RA Match</span>'
+            )
+        return HTMLResponse('<span class="text-gray-600 text-xs">Not in RA</span>')
+    except Exception as exc:
+        applog.warning("hash", f"Library RA verify failed: {exc}", {
+            "library_id": library_id, "hash": entry.file_hash,
+        })
+        return HTMLResponse('<span class="text-red-500 text-xs">RA error</span>')
 
 
 @router.post("/scan", response_class=HTMLResponse)

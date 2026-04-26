@@ -272,7 +272,13 @@
                     RA Match
                 </span>
                 {% elif item.file_hash %}
-                <span class="text-gray-600 text-xs">? No RA</span>
+                <button
+                    hx-post="/library/{{ item.library_id }}/verify-ra"
+                    hx-swap="outerHTML"
+                    hx-disabled-elt="this"
+                    class="text-gray-500 hover:text-blue-400 text-xs transition-colors disabled:opacity-40 text-left"
+                    title="Check against RetroAchievements"
+                >? No RA</button>
                 {% endif %}
                 {% if item.status == 'wanted' and item.wanted_id %}
                 <button
@@ -336,7 +342,13 @@
                             RA
                         </span>
                         {% elif item.file_hash %}
-                        <span class="inline-flex items-center gap-1 bg-gray-800 border border-gray-700 text-gray-400 text-xs font-medium px-2 py-0.5 rounded-full">? No RA</span>
+                        <button
+                            hx-post="/library/{{ item.library_id }}/verify-ra"
+                            hx-swap="outerHTML"
+                            hx-disabled-elt="this"
+                            class="inline-flex items-center gap-1 bg-gray-800 hover:bg-blue-900/30 border border-gray-700 hover:border-blue-700 text-gray-400 hover:text-blue-300 text-xs font-medium px-2 py-0.5 rounded-full transition-colors disabled:opacity-40"
+                            title="Check against RetroAchievements"
+                        >? No RA</button>
                         {% else %}
                         <span class="text-gray-700 text-xs">—</span>
                         {% endif %}
