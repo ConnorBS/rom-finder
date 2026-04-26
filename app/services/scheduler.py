@@ -44,7 +44,7 @@ def _should_run(last_run_str: str, time_str: str) -> bool:
 async def run_scan() -> dict:
     """Scan for new ROMs, then hash + fetch covers + RA-verify each newly-found file."""
     import json
-    from app.routers.library import ROM_EXTENSIONS, _build_folder_to_system_map
+    from app.routers.library import ROM_EXTENSIONS, _build_folder_to_system_map, _rom_title
     from app.services.hasher import hash_rom
     from app.services.rahasher import compute_ra_hash
     from app.services import activity as activity_store
@@ -79,7 +79,7 @@ async def run_scan() -> dict:
             fp = str(f)
             if fp in existing_paths:
                 continue
-            new_files.append((f.stem, system, f.name, fp))
+            new_files.append((_rom_title(f), system, f.name, fp))
             existing_paths.add(fp)
 
     if not new_files:

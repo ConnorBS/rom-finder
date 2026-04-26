@@ -143,7 +143,7 @@ async def collection_page(
 @router.post("/collection/bulk/scan", response_class=HTMLResponse)
 async def bulk_scan(session: Session = Depends(get_session)):
     """Scan the ROM directory and import untracked files into the library."""
-    from app.routers.library import ROM_EXTENSIONS, _build_folder_to_system_map
+    from app.routers.library import ROM_EXTENSIONS, _build_folder_to_system_map, _rom_title
 
     download_dir = _get_setting(session, "download_dir", "")
     if not download_dir:
@@ -170,7 +170,7 @@ async def bulk_scan(session: Session = Depends(get_session)):
             if fp in existing_paths:
                 continue
             session.add(LibraryEntry(
-                game_title=f.stem, system=system, file_name=f.name, file_path=fp,
+                game_title=_rom_title(f), system=system, file_name=f.name, file_path=fp,
             ))
             existing_paths.add(fp)
             added += 1

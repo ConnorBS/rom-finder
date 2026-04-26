@@ -34,7 +34,19 @@ ROM_EXTENSIONS = {
     ".chd",                                  # Compressed Hunks of Data
     ".cso", ".pbp",                          # PSP
     ".rom",                                  # Generic ROM
+    ".zip", ".7z",                           # Archives
 }
+
+
+ARCHIVE_EXTENSIONS = {".zip", ".7z"}
+
+
+def _rom_title(f: "Path") -> str:
+    """Strip archive suffix from title when a zip wraps a named ROM (e.g. game.nes.zip → game)."""
+    stem = f.stem
+    if f.suffix.lower() in ARCHIVE_EXTENSIONS and Path(stem).suffix.lower() in ROM_EXTENSIONS:
+        return Path(stem).stem
+    return stem
 
 
 def _get_setting(session: Session, key: str, default: str = "") -> str:
@@ -116,7 +128,7 @@ async def scan_rom_folder(session: Session = Depends(get_session)):
             if file_path_str in existing_paths:
                 continue
             entry = LibraryEntry(
-                game_title=f.stem,
+                game_title=_rom_title(f),
                 system=system,
                 file_name=f.name,
                 file_path=file_path_str,

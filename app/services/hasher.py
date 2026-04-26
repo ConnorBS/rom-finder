@@ -159,12 +159,44 @@ DISC_SYSTEMS = {
 }
 
 
+def _hash_from_archive(path: Path, system: str) -> str | None:
+    """Extract the largest ROM-like file from a .zip or .7z and hash it in a temp dir."""
+    import tempfile
+    suffix = path.suffix.lower()
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            if suffix == ".zip":
+                with zipfile.ZipFile(path, "r") as zf:
+                    zf.extractall(tmp)
+            elif suffix == ".7z":
+                import py7zr
+                with py7zr.SevenZipFile(path, mode="r") as zf:
+                    zf.extractall(path=tmp)
+            else:
+                return None
+            candidates = [f for f in tmp.rglob("*") if f.is_file()]
+            rom_candidates = [f for f in candidates if f.suffix.lower() in _ROM_EXTENSIONS]
+            targets = rom_candidates or candidates
+            if not targets:
+                return None
+            best = max(targets, key=lambda f: f.stat().st_size)
+            hasher = _SYSTEM_HASHERS.get(system, md5_file)
+            return hasher(best)
+    except Exception:
+        return None
+
+
 def hash_rom(path: Path, system: str = "") -> str:
     """Hash a ROM using the RA algorithm for its system.
 
     For disc-based systems this returns a plain MD5 which will NOT match RA's
     hash — rahasher.py should be tried first for those.
     """
+    if path.suffix.lower() in (".zip", ".7z"):
+        result = _hash_from_archive(path, system)
+        if result:
+            return result
     hasher = _SYSTEM_HASHERS.get(system, md5_file)
     return hasher(path)
 
