@@ -8,7 +8,7 @@ from pathlib import Path
 from sqlmodel import SQLModel, Session, text
 
 from app.db.database import engine
-from app.db.models import AppSetting, WantedGame, AppLog  # noqa: F401 — registers tables
+from app.db.models import AppSetting, WantedGame, AppLog, HuntAttempt  # noqa: F401 — registers tables
 from app.routers import games, downloads, library, settings_router, wanted, api, logs, collection, activity, scheduler
 
 
@@ -18,6 +18,7 @@ _MIGRATIONS = [
     ("download", "ra_game_id", "INTEGER", None),
     ("library", "cover_path", "VARCHAR", "''"),
     ("library", "hashed_at", "TIMESTAMP", None),
+    ("wanted_games", "last_hunt_at", "TIMESTAMP", None),
 ]
 
 

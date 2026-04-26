@@ -43,6 +43,11 @@ def increment(task_id: str) -> None:
         _tasks[task_id].completed += 1
 
 
+def update_label(task_id: str, label: str) -> None:
+    if task_id in _tasks:
+        _tasks[task_id].label = label
+
+
 def finish(task_id: str) -> None:
     if task_id in _tasks:
         _tasks[task_id].done = True

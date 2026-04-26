@@ -54,20 +54,22 @@ async def start_download(
     archive_identifier: str = Form(...),
     source_id: str = Form(default="archive_org"),
     ra_game_id: int = Form(default=0),
+    inline: str = Form(default="false"),
     session: Session = Depends(get_session),
 ):
+    tag = "div" if inline == "true" else "li"
     use_review = _get_setting(session, "use_review_dir", "true") == "true"
     if use_review and _get_setting(session, "check_dir_readonly", "false") == "true":
         return HTMLResponse(
-            '<li class="flex items-center px-4 py-2.5 bg-red-900/20 border-l-2 border-red-600 gap-4">'
+            f'<{tag} class="flex items-center px-4 py-2.5 bg-red-900/20 border-l-2 border-red-600 gap-4">'
             '<p class="text-red-400 text-xs">Review directory is read-only — disable the lock in Settings to download ROMs.</p>'
-            '</li>'
+            f'</{tag}>'
         )
     if not use_review and _get_setting(session, "download_dir_readonly", "false") == "true":
         return HTMLResponse(
-            '<li class="flex items-center px-4 py-2.5 bg-red-900/20 border-l-2 border-red-600 gap-4">'
+            f'<{tag} class="flex items-center px-4 py-2.5 bg-red-900/20 border-l-2 border-red-600 gap-4">'
             '<p class="text-red-400 text-xs">ROMs directory is read-only — disable the lock in Settings to download ROMs.</p>'
-            '</li>'
+            f'</{tag}>'
         )
     src = source_registry.get(source_id) or source_registry.get("archive_org")
     source_url = src.get_download_url(archive_identifier, file_name)
@@ -90,14 +92,14 @@ async def start_download(
 
     eid = f"queued-{download.id}"
     return HTMLResponse(
-        f'<li id="{eid}" class="flex items-center justify-between px-4 py-2.5 bg-green-900/20 border-l-2 border-green-600 gap-4">'
+        f'<{tag} id="{eid}" class="flex items-center justify-between px-4 py-2.5 bg-green-900/20 border-l-2 border-green-600 gap-4">'
         f'<div class="min-w-0">'
         f'<p class="text-green-400 text-xs font-medium">Queued</p>'
         f'<p class="text-gray-500 text-xs font-mono truncate">{download.file_name}</p>'
         f'</div>'
         f'<a href="/downloads" class="text-blue-400 text-xs hover:underline flex-shrink-0">View queue</a>'
         f'<script>setTimeout(function(){{var e=document.getElementById("{eid}");if(e)e.remove();}},4000);</script>'
-        f'</li>'
+        f'</{tag}>'
     )
 
 

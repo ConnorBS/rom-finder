@@ -1,13 +1,14 @@
 from fastapi import APIRouter, Request, Form, Depends, BackgroundTasks, Query
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
-from sqlmodel import Session, select
+from sqlmodel import Session, select, func
 from pathlib import Path
 from datetime import datetime
 
 from app.db.database import get_session
-from app.db.models import AppSetting, WantedGame, HuntStatus
+from app.db.models import AppSetting, WantedGame, HuntStatus, HuntAttempt
 from app.services import sources as source_registry
+from app.services import activity as activity_store
 from app.services.ra_client import SYSTEMS, RAClient
 from app.services.title_utils import search_variations, stem_from_rom_name
 from app.services import logger as applog
@@ -49,10 +50,27 @@ async def wanted_page(request: Request, session: Session = Depends(get_session))
     ).all()
     ra_configured = bool(_get_ra_client(session))
     system_list = sorted({g.system for g in games if g.system})
+
+    # Per-card hunt data
+    hunting_ids = {
+        int(t.task_id[len("hunt-"):])
+        for t in activity_store.get_active()
+        if t.task_id.startswith("hunt-") and not t.done
+    }
+    counts_raw = session.exec(
+        select(HuntAttempt.wanted_game_id, func.count(HuntAttempt.id))
+        .group_by(HuntAttempt.wanted_game_id)
+    ).all()
+    hunt_counts: dict[int, int] = dict(counts_raw)
+
     applog.log_navigation("wanted", {"game_count": len(games), "ra_configured": ra_configured})
     return templates.TemplateResponse(
         request, "wanted.html",
-        {"games": games, "systems": SYSTEMS, "ra_configured": ra_configured, "system_list": system_list},
+        {
+            "games": games, "systems": SYSTEMS, "ra_configured": ra_configured,
+            "system_list": system_list, "hunting_ids": hunting_ids,
+            "hunt_counts": hunt_counts,
+        },
     )
 
 
@@ -262,6 +280,87 @@ async def wanted_source_results(
             "wanted": wanted,
             "rom_names": [],
         },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Auto-hunt
+# ---------------------------------------------------------------------------
+
+def _is_hunting(game_id: int) -> bool:
+    """True if an auto-hunt background task is currently active for this game."""
+    task_id = f"hunt-{game_id}"
+    return any(t.task_id == task_id and not t.done for t in activity_store.get_active())
+
+
+def _hunt_attempt_count(session: Session, game_id: int) -> int:
+    return session.exec(
+        select(func.count(HuntAttempt.id)).where(HuntAttempt.wanted_game_id == game_id)
+    ).one()
+
+
+@router.post("/{game_id}/auto-hunt", response_class=HTMLResponse)
+async def start_auto_hunt(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    game_id: int,
+    session: Session = Depends(get_session),
+):
+    """Start (or restart) an auto-hunt for the given wanted game.
+
+    On retry (exhausted games): clears failed HuntAttempt records so all
+    sources are tried again. Already-verified attempts are preserved.
+    """
+    from app.services.hunter import auto_hunt
+
+    game = session.get(WantedGame, game_id)
+    if not game:
+        return HTMLResponse("")
+
+    # Reset exhausted → hunting and clear previous failures so sources are retried
+    if game.status == HuntStatus.exhausted:
+        failed = session.exec(
+            select(HuntAttempt)
+            .where(HuntAttempt.wanted_game_id == game_id)
+            .where(HuntAttempt.result != "verified")
+        ).all()
+        for a in failed:
+            session.delete(a)
+        game.status = HuntStatus.hunting
+        session.add(game)
+        session.commit()
+        session.refresh(game)
+
+    if not _is_hunting(game_id):
+        background_tasks.add_task(auto_hunt, game_id)
+
+    applog.log_action("auto_hunt_started", {
+        "game": game.game_title, "system": game.system, "id": game_id,
+    })
+    return templates.TemplateResponse(
+        request, "partials/wanted_card.html",
+        {"game": game, "is_hunting": True, "hunt_attempts": 0},
+    )
+
+
+@router.get("/{game_id}/hunt-status", response_class=HTMLResponse)
+async def hunt_status(
+    request: Request,
+    game_id: int,
+    session: Session = Depends(get_session),
+):
+    """Polled by the wanted card while a hunt is active. Returns the updated
+    card HTML; when the hunt finishes the returned card has no polling
+    attributes so the polling stops automatically."""
+    game = session.get(WantedGame, game_id)
+    if not game:
+        return HTMLResponse("")
+
+    is_active = _is_hunting(game_id)
+    attempt_count = _hunt_attempt_count(session, game_id)
+    return templates.TemplateResponse(
+        request, "partials/wanted_card.html",
+        {"game": game, "is_hunting": is_active, "hunt_attempts": attempt_count},
     )
 
 

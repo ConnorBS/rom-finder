@@ -45,6 +45,29 @@
                         {% endif %}
                     </div>
                 </div>
+                {% if item.source_id == 'vimm' %}
+                <form
+                    hx-post="/downloads/start"
+                    hx-target="#wsrc-item-{{ sid }}-{{ loop.index }}-{{ wanted.id }}"
+                    hx-swap="outerHTML"
+                    hx-indicator="find button[type=submit]"
+                >
+                    <input type="hidden" name="game_title" value="{{ wanted.game_title }}">
+                    <input type="hidden" name="system" value="{{ wanted.system }}">
+                    <input type="hidden" name="source_id" value="vimm">
+                    <input type="hidden" name="file_name" value="{{ item.title | replace(':', ' -') | replace('/', '-') }}.zip">
+                    <input type="hidden" name="archive_identifier" value="{{ item.identifier }}">
+                    <input type="hidden" name="inline" value="true">
+                    {% if wanted.ra_game_id %}<input type="hidden" name="ra_game_id" value="{{ wanted.ra_game_id }}">{% endif %}
+                    <button
+                        type="submit"
+                        class="flex-shrink-0 bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1.5 rounded-md transition-colors"
+                    >
+                        <span class="htmx-label">Download</span>
+                        <span class="htmx-indicator">Queuing...</span>
+                    </button>
+                </form>
+                {% else %}
                 <button
                     class="flex-shrink-0 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 hover:text-white text-xs px-3 py-1.5 rounded-md transition-colors"
                     hx-get="/games/{{ item.identifier }}/files?source_id={{ item.source_id or 'archive_org' }}&system={{ wanted.system | urlencode }}&game_title={{ wanted.game_title | urlencode }}&ra_game_id={{ wanted.ra_game_id }}{% if rom_names %}&q={{ rom_names[0].name | urlencode }}{% endif %}"
@@ -55,6 +78,7 @@
                     <span class="htmx-label">Browse files</span>
                     <span class="htmx-indicator">Loading...</span>
                 </button>
+                {% endif %}
             </div>
         </div>
         {% endfor %}

@@ -44,6 +44,7 @@ class Download(SQLModel, table=True):
 class HuntStatus(str, Enum):
     hunting = "hunting"
     verified = "verified"
+    exhausted = "exhausted"   # all sources tried, no verified dump found
 
 
 class WantedGame(SQLModel, table=True):
@@ -55,8 +56,22 @@ class WantedGame(SQLModel, table=True):
     ra_game_id: int = Field(index=True)
     cover_path: str = ""        # relative path under static/, e.g. "covers/1234.png"
     status: HuntStatus = HuntStatus.hunting
+    last_hunt_at: Optional[datetime] = None   # when auto-hunt last ran
     added_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class HuntAttempt(SQLModel, table=True):
+    """Records each auto-hunt download attempt so failures are not retried."""
+    __tablename__ = "hunt_attempts"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    wanted_game_id: int = Field(index=True)
+    source_id: str = ""
+    identifier: str = ""      # source-local key (vault ID, archive ID, etc.)
+    file_name: str = ""
+    file_hash: Optional[str] = None
+    result: str = ""          # "bad_hash" | "download_failed" | "verified"
+    tried_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class LogLevel(str, Enum):
