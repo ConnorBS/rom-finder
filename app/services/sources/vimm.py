@@ -1,9 +1,11 @@
 """VIMM's Lair ROM source.
 
 Scrapes vimm.net search and game pages.
-Downloads POST to Vimm's download CDN with a mediaId and Referer header.
+Downloads use a headless Chromium browser (Playwright) to solve Vimm's JS bot
+challenge. A module-level lock enforces Vimm's one-download-at-a-time policy.
 """
 
+import asyncio
 import re
 import httpx
 from bs4 import BeautifulSoup
@@ -11,12 +13,32 @@ from pathlib import Path
 
 from .base import RomSource
 
+# Lazy-initialised so the Lock is created inside the running event loop.
+_VIMM_LOCK: asyncio.Lock | None = None
+
+
+def _get_vimm_lock() -> asyncio.Lock:
+    global _VIMM_LOCK
+    if _VIMM_LOCK is None:
+        _VIMM_LOCK = asyncio.Lock()
+    return _VIMM_LOCK
+
+
+async def _progress_ticker(callback) -> None:
+    """Slowly bump reported progress toward 90% so the UI shows activity."""
+    pct = 0.02
+    while True:
+        await asyncio.sleep(5)
+        pct = min(0.90, pct + 0.04)
+        try:
+            await callback(pct)
+        except Exception:
+            pass
+
 VIMM_BASE = "https://vimm.net"
 
-# Fallback download server — the vault page's dl_form action is preferred when
-# the game is actually available (parsed dynamically in download_file).
-# dl3.vimm.net is the current CDN; different platforms may use different nodes
-# (e.g. download5 for GameCube), which is why we always prefer the form action.
+# Used only to encode the vault mediaId into a parseable URL for get_download_url().
+# The actual CDN host is handled by the browser — we never POST to it directly.
 VIMM_DOWNLOAD_FALLBACK = "https://dl3.vimm.net/"
 
 _HEADERS = {
@@ -189,15 +211,8 @@ class VimmSource(RomSource):
         }]
 
     def get_download_url(self, identifier: str, filename: str) -> str:
-        # Encodes the mediaId so download_file() can extract it.
-        # Actual download uses POST — see download_file() override.
+        # Encodes the vault/mediaId so _browser_download() can extract it.
         return f"{VIMM_DOWNLOAD_FALLBACK}?mediaId={identifier}"
-
-    def get_extra_headers(self) -> dict:
-        return {
-            "Referer": f"{VIMM_BASE}/",
-            **_HEADERS,
-        }
 
     async def download_file(
         self,
@@ -205,11 +220,28 @@ class VimmSource(RomSource):
         dest: Path,
         progress_callback=None,
     ) -> None:
-        """Download from Vimm by:
-        1. Visiting the vault page to acquire session cookies and the real
-           download form action URL (which may vary by CDN node).
-        2. POSTing mediaId + alt=0 to that action URL with a Referer header.
+        """Download from Vimm using a headless browser to pass the JS challenge.
+
+        Acquires a process-wide lock first — Vimm only permits one concurrent
+        download per IP, so all callers queue here.
         """
+        async with _get_vimm_lock():
+            await self._browser_download(url, dest, progress_callback)
+
+    async def _browser_download(
+        self,
+        url: str,
+        dest: Path,
+        progress_callback=None,
+    ) -> None:
+        try:
+            from playwright.async_api import async_playwright
+        except ImportError:
+            raise RuntimeError(
+                "Playwright is required for Vimm downloads. "
+                "Run: pip install playwright && playwright install chromium"
+            )
+
         from urllib.parse import urlparse, parse_qs
 
         parsed = urlparse(url)
@@ -219,75 +251,53 @@ class VimmSource(RomSource):
             raise ValueError(f"Cannot extract mediaId from Vimm URL: {url}")
 
         vault_url = f"{VIMM_BASE}/vault/{media_id}/"
-        download_action = VIMM_DOWNLOAD_FALLBACK
-
         dest.parent.mkdir(parents=True, exist_ok=True)
 
-        async with httpx.AsyncClient(follow_redirects=True, timeout=None) as client:
-            # Visit vault page to get cookies AND extract the real form action URL
-            # and the actual mediaId (which differs from the vault ID in the URL).
-            post_media_id = media_id  # vault ID fallback; form value overrides below
+        ticker: asyncio.Task | None = None
+        if progress_callback:
+            ticker = asyncio.create_task(_progress_ticker(progress_callback))
             try:
-                vault_resp = await client.get(vault_url, headers=_HEADERS, timeout=20)
-                soup = BeautifulSoup(vault_resp.text, "html.parser")
-                form = (
-                    soup.find("form", {"name": "dl_form"})
-                    or soup.find("form", {"id": "dl_form"})
-                )
-                if form is None:
-                    raise ValueError(
-                        f"No download form found for vault ID {media_id}. "
-                        "The game may be unavailable or removed due to a takedown request."
-                    )
-                if form.get("action"):
-                    action = form["action"]
-                    if action.startswith("//"):
-                        action = "https:" + action
-                    elif not action.startswith("http"):
-                        action = "https:" + action
-                    download_action = action
-
-                # The form's mediaId is the actual file identifier — it is NOT the
-                # same as the vault ID in the page URL.
-                form_media_input = form.find("input", {"name": "mediaId"})
-                if form_media_input and form_media_input.get("value"):
-                    post_media_id = form_media_input["value"]
-
-            except ValueError:
-                raise
+                await progress_callback(0.02)
             except Exception:
-                pass  # network error visiting vault page — try download anyway
+                pass
 
-            post_headers = {
-                **_HEADERS,
-                "Referer": vault_url,
-                "Content-Type": "application/x-www-form-urlencoded",
-                "Origin": VIMM_BASE,
-            }
-            post_data = {"mediaId": post_media_id, "alt": "0"}
+        try:
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                context = await browser.new_context(
+                    accept_downloads=True,
+                    user_agent=_HEADERS["User-Agent"],
+                )
+                page = await context.new_page()
+                try:
+                    await page.goto(vault_url, timeout=30000, wait_until="domcontentloaded")
 
-            async with client.stream(
-                "POST",
-                download_action,
-                data=post_data,
-                headers=post_headers,
-            ) as resp:
-                resp.raise_for_status()
+                    form = page.locator("form[name='dl_form'], form#dl_form")
+                    if await form.count() == 0:
+                        raise ValueError(
+                            f"No download form found for vault ID {media_id}. "
+                            "The game may be unavailable or removed due to DMCA."
+                        )
 
-                content_type = resp.headers.get("content-type", "")
-                if "text/html" in content_type:
-                    # Vimm returned an error/login page instead of the file
-                    body = await resp.aread()
-                    raise ValueError(
-                        "Vimm returned an HTML page instead of the ROM file. "
-                        "The game may be unavailable, rate-limited, or require login."
-                    )
+                    # expect_download timeout = time to START receiving the file (60s).
+                    # save_as waits indefinitely for the full download to complete.
+                    async with page.expect_download(timeout=60000) as dl_info:
+                        await form.locator(
+                            "input[type='submit'], button[type='submit']"
+                        ).first.click()
 
-                total = int(resp.headers.get("content-length", 0))
-                downloaded = 0
-                with open(dest, "wb") as fh:
-                    async for chunk in resp.aiter_bytes(chunk_size=65536):
-                        fh.write(chunk)
-                        downloaded += len(chunk)
-                        if progress_callback and total:
-                            await progress_callback(downloaded / total)
+                    download = await dl_info.value
+                    await download.save_as(str(dest))
+                finally:
+                    await context.close()
+                    await browser.close()
+
+            if ticker:
+                ticker.cancel()
+            if progress_callback:
+                await progress_callback(1.0)
+
+        except Exception:
+            if ticker:
+                ticker.cancel()
+            raise

@@ -15,7 +15,8 @@ RUN curl -fsSL \
     || echo "RAHasher download failed — Python fallback hashing will be used"
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt && \
+    playwright install --with-deps chromium
 
 COPY . .
 
