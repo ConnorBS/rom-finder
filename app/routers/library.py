@@ -109,7 +109,7 @@ async def scan_rom_folder(session: Session = Depends(get_session)):
         if not subdir.is_dir():
             continue
         system = folder_to_system.get(subdir.name, subdir.name)
-        for f in sorted(subdir.iterdir()):
+        for f in sorted(subdir.rglob('*')):
             if not f.is_file() or f.suffix.lower() not in ROM_EXTENSIONS:
                 continue
             file_path_str = str(f)
