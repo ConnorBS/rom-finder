@@ -367,7 +367,9 @@ async def _run_verify_ra(download_id: int) -> None:
             return
         ra_username = _get_setting(session, "ra_username")
         ra_api_key = _get_setting(session, "ra_api_key")
-        if ra_username and ra_api_key:
+        if not ra_username or not ra_api_key:
+            applog.warning("hash", "Manual RA verify skipped: no credentials configured", {"download_id": download_id})
+        else:
             from app.services.ra_client import RAClient
             ra = RAClient(ra_username, ra_api_key)
             try:
@@ -378,8 +380,12 @@ async def _run_verify_ra(download_id: int) -> None:
                     applog.log_action("manual_verify_ra", {
                         "game": download.game_title, "hash": download.file_hash, "ra_game_id": download.ra_game_id,
                     })
+                else:
+                    applog.info("hash", f"Manual RA verify: no match for {download.game_title}", {
+                        "hash": download.file_hash, "game": download.game_title,
+                    })
             except Exception as exc:
-                applog.warning("hash", f"Manual RA verify failed: {exc}", {"download_id": download_id})
+                applog.warning("hash", f"Manual RA verify failed: {exc}", {"download_id": download_id, "hash": download.file_hash})
         download.status = DownloadStatus.pending_approval
         download.updated_at = datetime.utcnow()
         session.add(download)
@@ -463,7 +469,9 @@ async def _run_download(download_id: int) -> None:
             ra_api_key = _get_setting(session, "ra_api_key")
             ra_matched = False
             ra_game_id_matched = None
-            if ra_username and ra_api_key:
+            if not ra_username or not ra_api_key:
+                applog.info("hash", f"RA verify skipped (no credentials): {rom_path.name}", {"hash": file_hash})
+            else:
                 download.status = DownloadStatus.verifying
                 download.updated_at = datetime.utcnow()
                 session.add(download)

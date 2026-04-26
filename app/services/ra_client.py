@@ -157,7 +157,14 @@ class RAClient:
             )
             resp.raise_for_status()
             data = resp.json()
-            return data if data.get("ID") else None
+            if not isinstance(data, dict):
+                return None
+            # Legacy endpoint uses "ID"; newer RA API docs show "GameID" — check both.
+            game_id = data.get("ID") or data.get("GameID")
+            if not game_id:
+                return None
+            data["ID"] = game_id  # normalise so all callers can rely on "ID"
+            return data
 
     async def test_credentials(self) -> tuple[bool, str]:
         """Test if credentials are valid. Returns (success, message)."""
