@@ -101,7 +101,9 @@ async def collection_page(
         items = [i for i in items if ql in i["game_title"].lower()]
     if system:
         items = [i for i in items if i["system"] == system]
-    if status:
+    if status == "no_ra":
+        items = [i for i in items if i.get("file_hash") and not i.get("ra_matched")]
+    elif status:
         items = [i for i in items if i["status"] == status]
 
     applog.log_navigation("collection", {
@@ -131,6 +133,7 @@ async def collection_page(
                 "wanted": sum(1 for i in all_items if i["status"] == "wanted"),
                 "found": sum(1 for i in all_items if i["status"] == "found"),
                 "verified": sum(1 for i in all_items if i["status"] == "verified"),
+                "no_ra": sum(1 for i in all_items if i.get("file_hash") and not i.get("ra_matched")),
             },
         },
     )

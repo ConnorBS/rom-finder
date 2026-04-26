@@ -155,16 +155,20 @@ class RAClient:
                 params=self._params({"m": md5}),
                 timeout=15,
             )
-            resp.raise_for_status()
-            data = resp.json()
-            if not isinstance(data, dict):
-                return None
-            # Legacy endpoint uses "ID"; newer RA API docs show "GameID" — check both.
-            game_id = data.get("ID") or data.get("GameID")
-            if not game_id:
-                return None
-            data["ID"] = game_id  # normalise so all callers can rely on "ID"
-            return data
+        if resp.status_code == 404:
+            return None  # hash not in RA's hash list — not an error
+        if resp.status_code == 429:
+            raise RuntimeError("RetroAchievements rate limit exceeded (429) — retry later")
+        resp.raise_for_status()
+        data = resp.json()
+        if not isinstance(data, dict):
+            return None
+        # Legacy endpoint uses "ID"; newer RA API docs show "GameID" — check both.
+        game_id = data.get("ID") or data.get("GameID")
+        if not game_id:
+            return None
+        data["ID"] = game_id  # normalise so all callers can rely on "ID"
+        return data
 
     async def test_credentials(self) -> tuple[bool, str]:
         """Test if credentials are valid. Returns (success, message)."""

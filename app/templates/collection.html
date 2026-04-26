@@ -13,6 +13,7 @@
                 {% if counts.found %}<span class="text-blue-400">{{ counts.found }} found</span>{% endif %}
                 {% if counts.library %}<span class="text-gray-400">{{ counts.library }} library only</span>{% endif %}
                 {% if counts.wanted %}<span class="text-yellow-500">{{ counts.wanted }} wanted</span>{% endif %}
+                {% if counts.no_ra %}<span class="text-orange-400">{{ counts.no_ra }} no RA match</span>{% endif %}
             </div>
         </div>
 
@@ -65,7 +66,7 @@
 
             <!-- Status pills -->
             <div class="flex gap-1 flex-wrap">
-                {% set statuses = [("", "All"), ("verified", "Verified"), ("found", "Found"), ("library", "Library"), ("wanted", "Wanted")] %}
+                {% set statuses = [("", "All"), ("verified", "Verified"), ("found", "Found"), ("library", "Library"), ("wanted", "Wanted"), ("no_ra", "No RA")] %}
                 {% for val, label in statuses %}
                 <a href="?q={{ q }}&system={{ selected_system }}&status={{ val }}&view={{ view }}"
                    id="col-status"
