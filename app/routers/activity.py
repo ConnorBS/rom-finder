@@ -10,7 +10,7 @@ from app.services import activity as activity_store
 router = APIRouter(prefix="/activity")
 templates = Jinja2Templates(directory="app/templates")
 
-_ACTIVE_STATUSES = {DownloadStatus.pending, DownloadStatus.downloading, DownloadStatus.hashing}
+_ACTIVE_STATUSES = {DownloadStatus.pending, DownloadStatus.downloading, DownloadStatus.hashing, DownloadStatus.verifying}
 
 
 @router.get("/tray", response_class=HTMLResponse)

@@ -109,7 +109,10 @@ Active/completed download queue entries.
 ```
 id, game_title, system, file_name, file_path
 source_url, source_id, archive_identifier
-status           — DownloadStatus enum (pending/downloading/hashing/completed/failed/verified/pending_approval)
+status           — DownloadStatus enum:
+                     pending | downloading | hashing | verifying | completed | failed | verified | pending_approval
+                   hashing  = file saved, computing hash
+                   verifying = hash done, querying RetroAchievements
 progress         — 0.0–1.0
 file_hash, hash_verified, ra_game_id
 error_message, created_at, updated_at
@@ -307,6 +310,8 @@ This pattern is duplicated across routers — do not consolidate into a shared i
 - **SQLite + async**: Sessions are sync. Never hold a session open across an `await`. Re-open after every async gap.
 - **Docker path**: ROM file paths are stored as they appear inside the container. The DB and covers persist at `/mnt/ssd_cache/appdata/rom-finder/` via Docker volume.
 - **`sched_autodiscover_*` vs `ra_autodiscover_*`**: The old `ra_autodiscover_*` settings still exist in the DB but are unused — the scheduler now uses `sched_autodiscover_*`. Don't remove the old keys; they're harmless.
+- **`verifying` status in `_ACTIVE_STATUSES`**: `activity.py` router must include `DownloadStatus.verifying` in `_ACTIVE_STATUSES` so the sidebar tray shows RA-lookup progress. If a new in-progress status is added to `DownloadStatus`, add it there too.
+- **`ra_configured` template context**: All endpoints that render `download_item.html` must pass `ra_configured = bool(ra_username and ra_api_key)`. Missing it silently hides the "Check RA" button.
 
 ---
 
@@ -319,6 +324,34 @@ This pattern is duplicated across routers — do not consolidate into a shared i
 - **Bulk RA verify after hash**: After hash-check runs, auto-verify any newly-hashed entries against RA
 - **Import from existing collection**: Point at a folder of already-owned ROMs and bulk-import + hash + match in one pass
 - **Notification on autodiscover**: Alert when new games are added to the Wanted pool by the scheduler
+
+## Downloads & Pending Approval Flow
+
+### Status lifecycle
+`pending` → `downloading` → `hashing` → `verifying` (if RA creds set) → `pending_approval` (if review dir on) or `completed`
+
+### Automatic pipeline (`_run_download`)
+1. File saved to `check_dir` or `download_dir`
+2. Status → `hashing`: RAHasher binary first, falls back to Python MD5
+3. Status → `verifying` (only if `ra_username` + `ra_api_key` configured): `RAClient.lookup_hash()` call
+4. Status → `pending_approval` or `completed`
+
+### Pending approval UI
+Each `pending_approval` card shows:
+- Truncated hash value (or "Not hashed" if missing)
+- "RA verified" link to `https://retroachievements.org/game/{id}` (if matched), or "Not in RA database"
+- **Hash button**: visible only when `file_hash is None` — triggers `POST /downloads/{id}/hash`
+- **Check RA button**: visible when `file_hash` exists + `not hash_verified` + `ra_configured` — triggers `POST /downloads/{id}/verify-ra`
+- Approve / Reject buttons as before
+
+### Manual hash endpoint (`POST /downloads/{id}/hash`)
+Sets status → `hashing`, kicks off `_run_hash()` background task, returns template with HTMX poll active. Task stores new hash, clears `hash_verified`, returns to `pending_approval`.
+
+### Manual RA verify endpoint (`POST /downloads/{id}/verify-ra`)
+Sets status → `verifying`, kicks off `_run_verify_ra()` background task. Task calls `lookup_hash()`, sets `hash_verified` + `ra_game_id` on match, returns to `pending_approval`. Returns a yellow warning card if RA creds are missing.
+
+### RA badge links
+Wherever an RA match badge is shown (`collection.html` card/list views, `library.html`, `download_item.html`), the badge is an `<a>` linking to `https://retroachievements.org/game/{ra_game_id}` when `ra_game_id` is known. Falls back to a plain `<span>` when ID is absent.
 
 ## Cover Refresh
 
@@ -342,7 +375,8 @@ Nav links (in order): Collection, **Wanted**, Search, Downloads, Settings, Sched
 
 Active-link detection uses exact-match for `/collection`, `/wanted`, `/search`, `/logs`; `startsWith` for all others (e.g. `/settings`, `/scheduler`, `/downloads`).
 
-## Remeber to'Same
+## Workflow Rules
 
-- If changes occur, updated CLAUDE.md to ensure file is up to date.
-- All work should be done to a high quality, with the idea that people will want it to just work, so if a new feature is added, all the variations and edge cases should be reviewed and handled in the first push, instead of user feedback.
+- **After every change**: update CLAUDE.md to reflect the new state, then commit and push to `main`. GitHub Actions builds the Docker image automatically.
+- **Quality bar**: all variations and edge cases must be handled in the first push — no follow-up PRs to fix obvious gaps.
+- **No Alembic**: schema changes go through `_MIGRATIONS` in `main.py` only.

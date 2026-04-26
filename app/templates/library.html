@@ -72,7 +72,15 @@
                         {% endif %}
                     </td>
                     <td class="px-4 py-3">
-                        {% if entry.ra_matched %}
+                        {% if entry.ra_matched and entry.ra_game_id %}
+                        <a href="https://retroachievements.org/game/{{ entry.ra_game_id }}" target="_blank" rel="noopener"
+                           class="inline-flex items-center gap-1 bg-green-900/40 border border-green-800 text-green-400 text-xs font-medium px-2 py-0.5 rounded-full hover:bg-green-900/60 transition-colors" title="View on RetroAchievements">
+                            <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
+                            </svg>
+                            RA
+                        </a>
+                        {% elif entry.ra_matched %}
                         <span class="inline-flex items-center gap-1 bg-green-900/40 border border-green-800 text-green-400 text-xs font-medium px-2 py-0.5 rounded-full" title="Hash matched in RetroAchievements">
                             <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>

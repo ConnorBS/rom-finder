@@ -35,6 +35,8 @@
             <span class="text-yellow-500/70 text-xs flex-shrink-0">Queued</span>
             {% elif d.status.value == 'hashing' %}
             <span class="text-purple-400/70 text-xs flex-shrink-0">Hashing</span>
+            {% elif d.status.value == 'verifying' %}
+            <span class="text-blue-400/70 text-xs flex-shrink-0">Verifying RA</span>
             {% endif %}
         </div>
         {% if d.status.value == 'downloading' %}

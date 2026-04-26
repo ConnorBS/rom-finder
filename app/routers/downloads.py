@@ -1,6 +1,6 @@
 import json
 import shutil
-from fastapi import APIRouter, Request, Form, Depends, BackgroundTasks
+from fastapi import APIRouter, Request, Form, Depends, BackgroundTasks, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select
@@ -37,10 +37,11 @@ async def downloads_page(request: Request, session: Session = Depends(get_sessio
     ).all()
     pending = [d for d in all_downloads if d.status == DownloadStatus.pending_approval]
     active = [d for d in all_downloads if d.status != DownloadStatus.pending_approval]
+    ra_configured = bool(_get_setting(session, "ra_username") and _get_setting(session, "ra_api_key"))
     applog.log_navigation("downloads", {"pending": len(pending), "active": len(active)})
     return templates.TemplateResponse(
         request, "downloads.html",
-        {"pending": pending, "active": active},
+        {"pending": pending, "active": active, "ra_configured": ra_configured},
     )
 
 
@@ -112,7 +113,8 @@ async def download_status(
     download = session.get(Download, download_id)
     if not download:
         return HTMLResponse('<p class="text-red-400 text-sm">Download not found.</p>')
-    return templates.TemplateResponse(request, "partials/download_item.html", {"download": download})
+    ra_configured = bool(_get_setting(session, "ra_username") and _get_setting(session, "ra_api_key"))
+    return templates.TemplateResponse(request, "partials/download_item.html", {"download": download, "ra_configured": ra_configured})
 
 
 @router.post("/{download_id}/approve", response_class=HTMLResponse)
@@ -202,9 +204,10 @@ async def approve_all_verified(
         all_downloads = session.exec(select(Download).order_by(Download.created_at.desc())).all()
         pending_list = [d for d in all_downloads if d.status == DownloadStatus.pending_approval]
         active_list = [d for d in all_downloads if d.status != DownloadStatus.pending_approval]
+        ra_configured = bool(_get_setting(session, "ra_username") and _get_setting(session, "ra_api_key"))
         return templates.TemplateResponse(
             request, "downloads.html",
-            {"pending": pending_list, "active": active_list, "readonly_error": True},
+            {"pending": pending_list, "active": active_list, "ra_configured": ra_configured, "readonly_error": True},
         )
     pending = session.exec(
         select(Download).where(Download.status == DownloadStatus.pending_approval)
@@ -251,9 +254,10 @@ async def approve_all_verified(
     all_downloads = session.exec(select(Download).order_by(Download.created_at.desc())).all()
     pending_list = [d for d in all_downloads if d.status == DownloadStatus.pending_approval]
     active_list = [d for d in all_downloads if d.status != DownloadStatus.pending_approval]
+    ra_configured = bool(_get_setting(session, "ra_username") and _get_setting(session, "ra_api_key"))
     return templates.TemplateResponse(
         request, "downloads.html",
-        {"pending": pending_list, "active": active_list},
+        {"pending": pending_list, "active": active_list, "ra_configured": ra_configured},
     )
 
 
@@ -270,6 +274,116 @@ async def delete_download(
         session.delete(download)
         session.commit()
     return HTMLResponse("")
+
+
+@router.post("/{download_id}/hash", response_class=HTMLResponse)
+async def hash_download(
+    request: Request,
+    download_id: int,
+    background_tasks: BackgroundTasks,
+    session: Session = Depends(get_session),
+):
+    download = session.get(Download, download_id)
+    if not download or not download.file_path:
+        return HTMLResponse("")
+    if not Path(download.file_path).exists():
+        return HTMLResponse(
+            f'<div id="download-{download_id}" class="bg-gray-900 border border-red-900 rounded-lg p-4">'
+            '<p class="text-red-400 text-xs">File not found on disk.</p></div>'
+        )
+    download.status = DownloadStatus.hashing
+    download.updated_at = datetime.utcnow()
+    session.add(download)
+    session.commit()
+    session.refresh(download)
+    ra_configured = bool(_get_setting(session, "ra_username") and _get_setting(session, "ra_api_key"))
+    background_tasks.add_task(_run_hash, download_id)
+    return templates.TemplateResponse(request, "partials/download_item.html", {"download": download, "ra_configured": ra_configured})
+
+
+@router.post("/{download_id}/verify-ra", response_class=HTMLResponse)
+async def verify_ra_download(
+    request: Request,
+    download_id: int,
+    background_tasks: BackgroundTasks,
+    session: Session = Depends(get_session),
+):
+    download = session.get(Download, download_id)
+    if not download or not download.file_hash:
+        return HTMLResponse("")
+    ra_username = _get_setting(session, "ra_username")
+    ra_api_key = _get_setting(session, "ra_api_key")
+    if not ra_username or not ra_api_key:
+        return HTMLResponse(
+            f'<div id="download-{download_id}" class="bg-gray-900 border border-yellow-900 rounded-lg p-4">'
+            '<p class="text-yellow-400 text-xs">RetroAchievements credentials not configured — add them in Settings.</p></div>'
+        )
+    download.status = DownloadStatus.verifying
+    download.updated_at = datetime.utcnow()
+    session.add(download)
+    session.commit()
+    session.refresh(download)
+    ra_configured = True
+    background_tasks.add_task(_run_verify_ra, download_id)
+    return templates.TemplateResponse(request, "partials/download_item.html", {"download": download, "ra_configured": ra_configured})
+
+
+async def _run_hash(download_id: int) -> None:
+    from app.db.database import engine
+    from sqlmodel import Session
+
+    with Session(engine) as session:
+        download = session.get(Download, download_id)
+        if not download or not download.file_path:
+            return
+        rom_path = Path(download.file_path)
+        if not rom_path.exists():
+            download.status = DownloadStatus.pending_approval
+            download.updated_at = datetime.utcnow()
+            session.add(download)
+            session.commit()
+            return
+        try:
+            ra_hash_result = await compute_ra_hash(rom_path, download.system)
+            file_hash = ra_hash_result if ra_hash_result is not None else hash_rom(rom_path, download.system)
+            download.file_hash = file_hash
+            download.hash_verified = False
+            applog.log_action("manual_hash", {"game": download.game_title, "file": rom_path.name, "hash": file_hash})
+        except Exception as exc:
+            applog.warning("hash", f"Manual hash failed: {exc}", {"download_id": download_id})
+        download.status = DownloadStatus.pending_approval
+        download.updated_at = datetime.utcnow()
+        session.add(download)
+        session.commit()
+
+
+async def _run_verify_ra(download_id: int) -> None:
+    from app.db.database import engine
+    from sqlmodel import Session
+
+    with Session(engine) as session:
+        download = session.get(Download, download_id)
+        if not download or not download.file_hash:
+            return
+        ra_username = _get_setting(session, "ra_username")
+        ra_api_key = _get_setting(session, "ra_api_key")
+        if ra_username and ra_api_key:
+            from app.services.ra_client import RAClient
+            ra = RAClient(ra_username, ra_api_key)
+            try:
+                match = await ra.lookup_hash(download.file_hash)
+                if match:
+                    download.hash_verified = True
+                    download.ra_game_id = download.ra_game_id or match.get("ID")
+                    applog.log_action("manual_verify_ra", {
+                        "game": download.game_title, "hash": download.file_hash, "ra_game_id": download.ra_game_id,
+                    })
+            except Exception as exc:
+                applog.warning("hash", f"Manual RA verify failed: {exc}", {"download_id": download_id})
+        download.status = DownloadStatus.pending_approval
+        download.updated_at = datetime.utcnow()
+        session.add(download)
+        session.commit()
 
 
 async def _run_download(download_id: int) -> None:
@@ -350,6 +464,11 @@ async def _run_download(download_id: int) -> None:
             ra_matched = False
             ra_game_id_matched = None
             if ra_username and ra_api_key:
+                download.status = DownloadStatus.verifying
+                download.updated_at = datetime.utcnow()
+                session.add(download)
+                session.commit()
+
                 from app.services.ra_client import RAClient
                 ra = RAClient(ra_username, ra_api_key)
                 try:
