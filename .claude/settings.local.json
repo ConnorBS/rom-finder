@@ -3,7 +3,32 @@
     "allow": [
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "WebFetch(domain:vimm.net)",
+      "WebFetch(domain:romsfun.com)",
+      "WebFetch(domain:www.wowroms.com)",
+      "mcp__ssh-sre__log",
+      "mcp__chrome-devtools__list_pages",
+      "mcp__chrome-devtools__navigate_page",
+      "Bash(gh run *)",
+      "mcp__ssh-sre__docker",
+      "mcp__ssh-sre__system",
+      "Bash(xargs grep *)",
+      "Bash(git pull *)",
+      "Bash(git stash *)",
+      "mcp__chrome-devtools__take_screenshot",
+      "Bash(git commit *)",
+      "WebFetch(domain:download3.vimm.net)",
+      "WebFetch(domain:dl.vimm.net)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(curl *)",
+      "Bash(ping -n 15 127.0.0.1)",
+      "Bash(python -m venv .venv)",
+      "Bash(.venv/Scripts/python.exe -c ' *)",
+      "Bash(docker exec rom-finder python -c ' *)",
+      "Bash(python -c ' *)"
     ]
   }
 }
