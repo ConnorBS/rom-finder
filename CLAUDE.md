@@ -51,8 +51,9 @@ Every ROM kept must be a hash-verified, RA-accepted dump — not just any ROM th
 2. **New setting?** Add to `DEFAULT_SETTINGS` in `main.py` — seeded automatically at startup
 3. **New router?** Register in `main.py::app.include_router(...)`. Add nav link in `base.html` if user-facing
 4. **New background task?** Use `activity_store.start_batch(..., entry_ids=[...])` for per-card overlays
-5. **New cover source?** Subclass `BaseCoverSource` → `app/services/cover_sources/` → register in `registry.py` → add settings to `DEFAULT_SETTINGS`
+5. **New cover source?** Subclass `CoverSource` → `app/services/cover_sources/` → register in `registry.py` → add settings to `DEFAULT_SETTINGS`
 6. **New ROM source?** Same pattern under `app/services/sources/`
+7. **New extension?** Create a `.py` in `extensions/` with `EXTENSION_INFO` + `SOURCE_CLASS` / `COVER_SOURCE_CLASS`. Add entry to `extensions/index.json`. Extensions install/remove at `/extensions`.
 
 ---
 
@@ -60,7 +61,7 @@ Every ROM kept must be a hash-verified, RA-accepted dump — not just any ROM th
 
 - **Hash export**: CSV/JSON of verified ROMs for emulator frontends
 - **Emulator integration**: Launch a game from the collection view
-- **More ROM sources**: Vimm, ROMsFun, WowROMs (stubs exist)
+- **More ROM sources**: Vimm, ROMsFun, WowROMs are now extensions in `extensions/` — install via `/extensions`
 - **RA progress tracking**: Achievement completion % per game
 - **Bulk RA verify after hash**: Auto-verify newly-hashed entries
 - **Import from existing collection**: Bulk-import + hash + match in one pass

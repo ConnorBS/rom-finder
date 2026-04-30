@@ -10,6 +10,10 @@ def register(source: "CoverSource") -> None:
     _registry[source.source_id] = source
 
 
+def unregister(source_id: str) -> None:
+    _registry.pop(source_id, None)
+
+
 def all_sources() -> list["CoverSource"]:
     return list(_registry.values())
 

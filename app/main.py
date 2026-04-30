@@ -8,8 +8,8 @@ from pathlib import Path
 from sqlmodel import SQLModel, Session, text
 
 from app.db.database import engine
-from app.db.models import AppSetting, WantedGame, AppLog, HuntAttempt  # noqa: F401 — registers tables
-from app.routers import games, downloads, library, settings_router, wanted, api, logs, collection, activity, scheduler
+from app.db.models import AppSetting, WantedGame, AppLog, HuntAttempt, InstalledExtension  # noqa: F401 — registers tables
+from app.routers import games, downloads, library, settings_router, wanted, api, logs, collection, activity, scheduler, extensions as extensions_router
 
 
 # (table, column, sql_type, default_expr or None for nullable)
@@ -48,11 +48,11 @@ DEFAULT_SETTINGS = {
     "ra_enabled": "false",
     "ra_username": "",
     "ra_api_key": "",
-    # Source enabled flags — archive.org on by default, others opt-in
+    # Source enabled flags — archive.org built-in; others are extensions
     "source_archive_org_enabled": "true",
-    "source_vimm_enabled": "false",
-    "source_romsfun_enabled": "false",
-    "source_wowroms_enabled": "false",
+    # Extension system
+    "extensions_dir": os.environ.get("EXTENSIONS_DIR", "extensions"),
+    "extension_repos": '["https://raw.githubusercontent.com/ConnorBS/rom-finder/main/extensions/index.json"]',
     # Verbose logging captures every page load, button press, and navigation event
     "verbose_logging": "false",
     # When true, downloads stage in check_dir for manual review before moving to download_dir.
@@ -97,6 +97,12 @@ async def lifespan(app: FastAPI):
         covers_setting = session.get(AppSetting, "covers_dir")
         covers_path = covers_setting.value if covers_setting else "static/covers"
         Path(covers_path).mkdir(parents=True, exist_ok=True)
+        # Load installed extensions
+        ext_setting = session.get(AppSetting, "extensions_dir")
+        ext_dir = ext_setting.value if ext_setting else "extensions"
+    Path(ext_dir).mkdir(parents=True, exist_ok=True)
+    from app.services.extension_loader import load_all_extensions
+    load_all_extensions(ext_dir)
     from app.services import logger as applog
     applog.info("system", "ROM Finder started")
     from app.services.scheduler import scheduler_loop
@@ -128,3 +134,4 @@ app.include_router(api.router)
 app.include_router(logs.router)
 app.include_router(activity.router)
 app.include_router(scheduler.router)
+app.include_router(extensions_router.router)

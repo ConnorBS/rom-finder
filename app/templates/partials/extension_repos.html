@@ -1,0 +1,14 @@
+{% for repo in repos %}
+<div class="flex items-center justify-between gap-3 bg-gray-900 border border-gray-800 rounded px-3 py-2">
+  <span class="text-sm text-gray-300 font-mono truncate">{{ repo }}</span>
+  <form hx-post="/extensions/repos/remove"
+        hx-target="#repos-list"
+        hx-swap="innerHTML"
+        class="flex-shrink-0">
+    <input type="hidden" name="url" value="{{ repo }}">
+    <button type="submit" class="text-xs text-red-400 hover:text-red-300 transition-colors">Remove</button>
+  </form>
+</div>
+{% else %}
+<p class="text-sm text-gray-500">No repositories configured.</p>
+{% endfor %}

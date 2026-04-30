@@ -13,6 +13,10 @@ def register(source: "RomSource") -> None:
     _registry[source.source_id] = source
 
 
+def unregister(source_id: str) -> None:
+    _registry.pop(source_id, None)
+
+
 def get(source_id: str) -> "RomSource | None":
     return _registry.get(source_id)
 

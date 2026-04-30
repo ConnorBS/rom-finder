@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block title %}Extensions — ROM Finder{% endblock %}
+
+{% block content %}
+<div class="p-6 max-w-4xl space-y-8">
+
+  <h1 class="text-2xl font-bold text-white">Extensions</h1>
+
+  <!-- Installed Extensions -->
+  <section class="space-y-3">
+    <h2 class="text-lg font-semibold text-gray-200">Installed</h2>
+    {% if installed %}
+      <div class="space-y-2">
+        {% for ext in installed %}
+        <div class="bg-gray-900 border border-gray-800 rounded-lg p-4">
+          <div class="flex items-start justify-between gap-4">
+            <div class="min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="font-medium text-white">{{ ext.name }}</span>
+                {% if ext.ext_type == "rom_source" %}
+                  <span class="text-xs px-2 py-0.5 rounded-full bg-blue-900/50 text-blue-300">ROM Source</span>
+                {% else %}
+                  <span class="text-xs px-2 py-0.5 rounded-full bg-purple-900/50 text-purple-300">Cover Source</span>
+                {% endif %}
+                <span class="text-xs text-gray-500">v{{ ext.version }}</span>
+                {% if ext.author %}<span class="text-xs text-gray-500">by {{ ext.author }}</span>{% endif %}
+                {% if not ext.enabled %}
+                  <span class="text-xs px-2 py-0.5 rounded-full bg-gray-800 text-gray-500">Disabled</span>
+                {% endif %}
+              </div>
+              {% if ext.description %}
+                <p class="text-sm text-gray-400 mt-1">{{ ext.description }}</p>
+              {% endif %}
+            </div>
+            <div class="flex items-center gap-2 flex-shrink-0">
+              <form hx-post="/extensions/{{ ext.ext_id }}/toggle"
+                    hx-target="body"
+                    hx-swap="outerHTML">
+                <button type="submit"
+                        class="text-xs px-3 py-1.5 rounded border transition-colors
+                               {% if ext.enabled %}border-gray-700 text-gray-400 hover:text-white hover:border-gray-500
+                               {% else %}border-blue-700 text-blue-400 hover:border-blue-500{% endif %}">
+                  {{ "Disable" if ext.enabled else "Enable" }}
+                </button>
+              </form>
+              <form hx-post="/extensions/{{ ext.ext_id }}/uninstall"
+                    hx-confirm="Remove {{ ext.name }}? You can reinstall it at any time."
+                    hx-target="body"
+                    hx-swap="outerHTML">
+                <button type="submit"
+                        class="text-xs px-3 py-1.5 rounded border border-red-900 text-red-400 hover:border-red-700 hover:text-red-300 transition-colors">
+                  Remove
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="text-sm text-gray-500">No extensions installed. Browse repositories below to install one.</p>
+    {% endif %}
+  </section>
+
+  <!-- Extension Repositories -->
+  <section class="space-y-3">
+    <h2 class="text-lg font-semibold text-gray-200">Extension Repositories</h2>
+    <p class="text-sm text-gray-500">
+      Repositories are JSON index files that list available extensions.
+      Host your own on GitHub — anyone can publish a repo.
+    </p>
+
+    <div id="repos-list" class="space-y-2">
+      {% include "partials/extension_repos.html" %}
+    </div>
+
+    <form hx-post="/extensions/repos/add"
+          hx-target="#repos-list"
+          hx-swap="innerHTML"
+          class="flex gap-2 mt-3">
+      <input type="text" name="url"
+             placeholder="https://raw.githubusercontent.com/user/repo/main/index.json"
+             class="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500">
+      <button type="submit"
+              class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded transition-colors flex-shrink-0">
+        Add Repo
+      </button>
+    </form>
+  </section>
+
+  <!-- Browse Available Extensions -->
+  <section class="space-y-3">
+    <div class="flex items-center gap-3">
+      <h2 class="text-lg font-semibold text-gray-200">Browse Available</h2>
+      <button hx-get="/extensions/fetch-available"
+              hx-target="#available-list"
+              hx-swap="innerHTML"
+              hx-indicator="#browse-spinner"
+              class="flex items-center gap-2 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-sm text-gray-300 hover:text-white rounded transition-colors">
+        <svg id="browse-spinner" class="htmx-indicator animate-spin h-4 w-4 text-blue-400"
+             xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        <span>Refresh</span>
+      </button>
+    </div>
+
+    <div id="available-list">
+      <p class="text-sm text-gray-500">Click Refresh to browse extensions from your configured repositories.</p>
+    </div>
+  </section>
+
+  <!-- Writing Extensions -->
+  <section class="space-y-2 border-t border-gray-800 pt-6">
+    <h2 class="text-lg font-semibold text-gray-200">Writing an Extension</h2>
+    <p class="text-sm text-gray-500">
+      Extensions are single <code class="text-gray-300">.py</code> files hosted on any URL.
+      A ROM source extension must export <code class="text-gray-300">EXTENSION_INFO</code> and <code class="text-gray-300">SOURCE_CLASS</code>;
+      a cover source exports <code class="text-gray-300">COVER_SOURCE_CLASS</code> instead.
+      Host an <code class="text-gray-300">index.json</code> alongside the files to make them browseable here.
+    </p>
+    <pre class="text-xs bg-gray-900 border border-gray-800 rounded p-4 text-gray-300 overflow-x-auto">EXTENSION_INFO = {
+    "id": "my_source",
+    "name": "My Source",
+    "version": "1.0.0",
+    "type": "rom_source",   # or "cover_source"
+    "author": "you",
+    "description": "A short description.",
+}
+
+from app.services.sources.base import RomSource
+
+class MySource(RomSource):
+    source_id = "my_source"
+    name = "My Source"
+    # ... implement search(), get_files(), get_download_url()
+
+SOURCE_CLASS = MySource</pre>
+  </section>
+
+</div>
+{% endblock %}

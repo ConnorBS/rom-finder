@@ -1,0 +1,56 @@
+{% if errors %}
+<div class="space-y-1 mb-4">
+  {% for err in errors %}
+    <p class="text-xs text-red-400">Failed to fetch: {{ err }}</p>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if available %}
+<div class="space-y-2">
+  {% for ext in available %}
+  <div class="bg-gray-900 border border-gray-800 rounded-lg p-4">
+    <div class="flex items-start justify-between gap-4">
+      <div class="min-w-0">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="font-medium text-white">{{ ext.name }}</span>
+          {% if ext.type == "rom_source" %}
+            <span class="text-xs px-2 py-0.5 rounded-full bg-blue-900/50 text-blue-300">ROM Source</span>
+          {% else %}
+            <span class="text-xs px-2 py-0.5 rounded-full bg-purple-900/50 text-purple-300">Cover Source</span>
+          {% endif %}
+          <span class="text-xs text-gray-500">v{{ ext.version }}</span>
+          {% if ext.author %}<span class="text-xs text-gray-500">by {{ ext.author }}</span>{% endif %}
+        </div>
+        {% if ext.description %}
+          <p class="text-sm text-gray-400 mt-1">{{ ext.description }}</p>
+        {% endif %}
+      </div>
+      <div class="flex-shrink-0">
+        {% if ext._installed %}
+          <span class="text-xs px-3 py-1.5 rounded border border-green-900 text-green-400">Installed</span>
+        {% else %}
+          <form hx-post="/extensions/install"
+                hx-target="body"
+                hx-swap="outerHTML">
+            <input type="hidden" name="ext_id"      value="{{ ext.id }}">
+            <input type="hidden" name="name"        value="{{ ext.name }}">
+            <input type="hidden" name="version"     value="{{ ext.version }}">
+            <input type="hidden" name="ext_type"    value="{{ ext.type }}">
+            <input type="hidden" name="author"      value="{{ ext.get('author', '') }}">
+            <input type="hidden" name="description" value="{{ ext.get('description', '') }}">
+            <input type="hidden" name="pkg_url"     value="{{ ext.pkg_url }}">
+            <button type="submit"
+                    class="text-xs px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-700 text-white transition-colors">
+              Install
+            </button>
+          </form>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<p class="text-sm text-gray-500">No extensions found in configured repositories.</p>
+{% endif %}

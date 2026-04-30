@@ -104,6 +104,23 @@ class AppLog(SQLModel, table=True):
     details: str = "{}"   # JSON payload
 
 
+class InstalledExtension(SQLModel, table=True):
+    """An extension installed from an external repository."""
+    __tablename__ = "installed_extensions"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ext_id: str = Field(index=True, unique=True)
+    name: str
+    version: str = "0.0.0"
+    ext_type: str = "rom_source"   # "rom_source" | "cover_source"
+    author: str = ""
+    description: str = ""
+    pkg_url: str = ""
+    file_name: str = ""
+    enabled: bool = True
+    installed_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class LibraryEntry(SQLModel, table=True):
     """ROMs that have been downloaded and are tracked locally."""
     __tablename__ = "library"

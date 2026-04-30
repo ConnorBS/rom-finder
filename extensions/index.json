@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "extensions": [
+    {
+      "id": "vimm",
+      "name": "Vimm's Lair",
+      "version": "1.1.0",
+      "type": "rom_source",
+      "author": "ConnorBS",
+      "description": "Downloads ROMs from Vimm's Lair. Uses headless Chromium (Playwright) to bypass the JS bot challenge. Enforces Vimm's one-download-at-a-time policy automatically.",
+      "pkg_url": "https://raw.githubusercontent.com/ConnorBS/rom-finder/main/extensions/vimm.py"
+    },
+    {
+      "id": "wowroms",
+      "name": "WowROMs",
+      "version": "1.0.0",
+      "type": "rom_source",
+      "author": "ConnorBS",
+      "description": "Searches WowROMs.com for ROMs. Results may vary depending on bot-protection state.",
+      "pkg_url": "https://raw.githubusercontent.com/ConnorBS/rom-finder/main/extensions/wowroms.py"
+    },
+    {
+      "id": "romsfun",
+      "name": "ROMsFun",
+      "version": "1.0.0",
+      "type": "rom_source",
+      "author": "ConnorBS",
+      "description": "Searches ROMsFun.com for ROMs. May be blocked by Cloudflare bot protection.",
+      "pkg_url": "https://raw.githubusercontent.com/ConnorBS/rom-finder/main/extensions/romsfun.py"
+    }
+  ]
+}
