@@ -21,6 +21,11 @@ Key methods:
 ### RA hash algorithm (`rahasher.py`)
 RA doesn't always use plain MD5 — many systems use platform-specific algorithms (NES strips iNES header, N64 uses specific byte range, etc.). `compute_ra_hash(path, system)` returns the correct hash or `None` if the system isn't handled. Caller falls back to `hash_rom()` (plain MD5).
 
+**RAHasher binary source**: RAHasher is **not** a standalone repo. It's distributed via `RALibretro` releases:
+`https://github.com/RetroAchievements/RALibretro/releases/latest` → `RAHasher-x64-Linux-{version}.zip`
+The Dockerfile downloads it at build time. Without it, disc-based systems (Saturn, PS1/2, Dreamcast, Sega CD, etc.) hash as plain MD5 of the image file and will never match RA's database.
+A startup `print()` in `main.py` logs RAHasher availability to Docker stdout on every boot.
+
 ### RA API gotchas
 
 **`API_GetGameInfoByMD5` response formats**: Three variants handled by `lookup_hash`:

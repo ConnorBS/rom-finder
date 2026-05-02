@@ -104,6 +104,13 @@ async def lifespan(app: FastAPI):
     from app.services.extension_loader import load_all_extensions
     load_all_extensions(ext_dir)
     from app.services import logger as applog
+    from app.services.rahasher import _rahasher_available, _RAHASHER_BIN
+    import shutil
+    rahasher_path = shutil.which(_RAHASHER_BIN)
+    if rahasher_path:
+        print(f"[startup] RAHasher available: {rahasher_path}", flush=True)
+    else:
+        print("[startup] WARNING: RAHasher not found — disc-based ROMs (Saturn, PS1/2, Dreamcast…) will hash incorrectly", flush=True)
     applog.info("system", "ROM Finder started")
     from app.services.scheduler import scheduler_loop
     sched_task = asyncio.create_task(scheduler_loop())
