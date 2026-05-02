@@ -149,6 +149,9 @@ async def verify_ra_library_entry(
                 '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>'
                 'RA Match</span>'
             )
+        applog.info("hash", f"Library RA verify: no match for {entry.file_name}", {
+            "hash": entry.file_hash, "library_id": library_id,
+        })
         return HTMLResponse('<span class="text-gray-600 text-xs">Not in RA</span>')
     except Exception as exc:
         applog.warning("hash", f"Library RA verify failed: {exc}", {

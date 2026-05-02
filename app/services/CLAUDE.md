@@ -23,15 +23,22 @@ RA doesn't always use plain MD5 — many systems use platform-specific algorithm
 
 ### RA API gotchas
 
-**`API_GetGameInfoByMD5` field names**: Legacy endpoint returns `"ID"`; newer docs say `"GameID"`. `lookup_hash` normalises both to `"ID"` — callers always use `match.get("ID")`.
+**`API_GetGameInfoByMD5` response formats**: Three variants handled by `lookup_hash`:
+1. Flat with `"ID"` — legacy format: `{"ID": 1234, "Title": "...", ...}`
+2. Flat with `"GameID"` — emulator-style: `{"Success": true, "GameID": 1234}`
+3. Wrapped in `"GameData"` — newer API format: `{"GameData": {"ID": 1234, ...}}`
 
-**Null response**: When no hash found, API returns JSON `null` (not `{}`). `lookup_hash` guards with `isinstance(data, dict)` before `.get()`.
+All are normalised to `payload["ID"]` before returning. Callers always use `match.get("ID")`.
+
+**Null response**: When hash not found, API returns JSON `null`. `lookup_hash` guards with `isinstance(data, dict)`.
 
 **HTTP 404**: Returned for "not found" — handled by returning `None`, not raising.
 
 **HTTP 429**: Raises `RuntimeError` with rate-limit message so caller's warning log is actionable.
 
-**RA hash not matching**: Usually means the dump isn't in RA's hash list (different No-Intro dump). Check `/logs` → category "hash" — exact hash is logged for manual lookup on retroachievements.org.
+**Non-JSON response** (e.g., Cloudflare challenge page): `lookup_hash` catches the parse error, logs a warning via Python `logging` (visible in Docker logs), and returns `None`.
+
+**RA hash not matching**: Usually means the dump isn't in RA's hash list (different No-Intro dump). Check `/logs` → category "hash" — exact hash is logged. If `lookup_hash` returns no game ID despite a valid-looking response, a `WARNING` is emitted to Docker stdout with the raw response body.
 
 ---
 

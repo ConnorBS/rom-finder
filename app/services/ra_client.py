@@ -4,8 +4,12 @@ API docs: https://api.docs.retroachievements.org/
 Requires a free account and API key from retroachievements.org/settings
 """
 
+import logging
+
 import httpx
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 RA_BASE_URL = "https://retroachievements.org/API"
 
@@ -148,27 +152,40 @@ class RAClient:
         return [g for g in games if q in g.get("Title", "").lower()]
 
     async def lookup_hash(self, md5: str) -> Optional[dict]:
-        """Look up a game by its ROM MD5 hash. Returns game info or None."""
+        """Look up a game by its ROM MD5 hash. Returns game info dict or None."""
         async with httpx.AsyncClient() as client:
             resp = await client.get(
                 f"{RA_BASE_URL}/API_GetGameInfoByMD5.php",
                 params=self._params({"m": md5}),
                 timeout=15,
             )
-        if resp.status_code == 404:
-            return None  # hash not in RA's hash list — not an error
-        if resp.status_code == 429:
-            raise RuntimeError("RetroAchievements rate limit exceeded (429) — retry later")
-        resp.raise_for_status()
-        data = resp.json()
+            if resp.status_code == 404:
+                return None  # hash not in RA's hash list — not an error
+            if resp.status_code == 429:
+                raise RuntimeError("RetroAchievements rate limit exceeded (429) — retry later")
+            resp.raise_for_status()
+            try:
+                data = resp.json()
+            except Exception:
+                logger.warning("RA API returned non-JSON for hash %s (HTTP %d): %.300s",
+                               md5, resp.status_code, resp.text)
+                return None
+
         if not isinstance(data, dict):
+            # API returns JSON null when hash is not in the database.
             return None
-        # Legacy endpoint uses "ID"; newer RA API docs show "GameID" — check both.
-        game_id = data.get("ID") or data.get("GameID")
+
+        # Newer RA API wraps game info under a "GameData" key; older format is flat.
+        payload = data.get("GameData") if isinstance(data.get("GameData"), dict) else data
+
+        # Flat format uses "ID"; emulator-style responses use "GameID" — accept both.
+        game_id = payload.get("ID") or payload.get("GameID")
         if not game_id:
+            logger.warning("RA hash lookup for %s returned no game ID — raw response: %s", md5, data)
             return None
-        data["ID"] = game_id  # normalise so all callers can rely on "ID"
-        return data
+
+        payload["ID"] = game_id  # normalise so all callers can rely on "ID"
+        return payload
 
     async def test_credentials(self) -> tuple[bool, str]:
         """Test if credentials are valid. Returns (success, message)."""
