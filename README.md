@@ -50,31 +50,41 @@ A companion **Chrome extension** lets you add games directly from any RetroAchie
 
 ## Screenshots
 
-> **Note:** Screenshots below show the Chrome extension. Drop app screenshots into `docs/screenshots/` — see the placeholder sections for the recommended filenames.
+### Collection — card grid with cover art, status badges, and bulk actions
 
-### Main Collection View
+![Collection](docs/screenshots/collection.png)
 
-<!-- Add a screenshot of the collection page (card/list view with cover art) -->
-<!-- Recommended: docs/screenshots/collection.png -->
-> _`docs/screenshots/collection.png` — card grid with cover art, status badges, and bulk-action toolbar_
+### Wanted list — hunt status per game, inline source search, Auto-Hunt
 
-### Wanted List & Source Search
+![Wanted](docs/screenshots/wanted.png)
 
-<!-- Add a screenshot of the Wanted page with per-game source search expanded -->
-<!-- Recommended: docs/screenshots/wanted.png -->
-> _`docs/screenshots/wanted.png` — wanted list showing hunt status and inline source results_
+### Library — full ROM table with system, file, hash, and RA match columns
 
-### Download Queue
+![Library](docs/screenshots/library.png)
 
-<!-- Add a screenshot of the Downloads page showing hashing/verifying progress -->
-<!-- Recommended: docs/screenshots/downloads.png -->
-> _`docs/screenshots/downloads.png` — download queue with real-time progress, hash, and RA verify steps_
+### Downloads — pending-approval staging with Check RA / Approve / Reject per file
 
-### Settings & Extensions
+![Downloads](docs/screenshots/downloads.png)
 
-<!-- Add a screenshot of the Extensions manager and/or Settings page -->
-<!-- Recommended: docs/screenshots/extensions.png -->
-> _`docs/screenshots/extensions.png` — extension browser showing available and installed sources_
+### Manual Search — query enabled sources directly by title and system
+
+![Search](docs/screenshots/search.png)
+
+### Scheduler — three background tasks with configurable daily times and Run Now
+
+![Scheduler](docs/screenshots/scheduler.png)
+
+### Settings — directories, RA credentials, source toggles, cover priority
+
+![Settings](docs/screenshots/settings.png)
+
+### Extensions — browse and install ROM/cover sources from external repos
+
+![Extensions](docs/screenshots/extensions.png)
+
+### Activity Log — structured log filterable by level and category
+
+![Logs](docs/screenshots/logs.png)
 
 ---
 
