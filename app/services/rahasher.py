@@ -155,12 +155,19 @@ async def compute_ra_hash(rom_path: Path, system_name: str) -> str | None:
             stderr=asyncio.subprocess.PIPE,
         )
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+        stderr_text = stderr.decode().strip()
         if proc.returncode != 0:
-            logger.warning("RAHasher exited %d for %s: %s", proc.returncode, rom_path.name, stderr.decode())
+            print(f"[rahasher] exit {proc.returncode} for {rom_path.name}: {stderr_text}", flush=True)
+            logger.warning("RAHasher exited %d for %s: %s", proc.returncode, rom_path.name, stderr_text)
             return None
+        if stderr_text:
+            # Log any stderr even on success — CHD/format warnings appear here
+            print(f"[rahasher] stderr for {rom_path.name}: {stderr_text}", flush=True)
         ra_hash = stdout.decode().strip()
+        print(f"[rahasher] stdout for {rom_path.name}: {ra_hash!r}", flush=True)
         if len(ra_hash) == 32:  # valid MD5-length hex string
             return ra_hash
+        print(f"[rahasher] unexpected output for {rom_path.name}: {ra_hash!r}", flush=True)
         logger.warning("RAHasher returned unexpected output for %s: %r", rom_path.name, ra_hash)
         return None
     except asyncio.TimeoutError:

@@ -36,6 +36,36 @@ async def activity_tray(request: Request, session: Session = Depends(get_session
     )
 
 
+@router.get("/tray-mobile", response_class=HTMLResponse)
+async def activity_tray_mobile(session: Session = Depends(get_session)):
+    """Compact activity indicator for the mobile top bar.
+
+    Returns a spinner + label when anything is active, empty string when idle.
+    """
+    downloads = session.exec(
+        select(Download).where(Download.status.in_([s.value for s in _ACTIVE_STATUSES]))
+    ).all()
+    tasks = activity_store.get_active()
+    total_active = len(downloads) + len(tasks)
+    if total_active == 0:
+        return HTMLResponse("")
+    # Pick the most descriptive label from running tasks
+    label = next((t.label for t in tasks if t.label), None)
+    if not label and downloads:
+        label = f"Downloading {downloads[0].game_title}"
+    if not label:
+        label = "Working…"
+    return HTMLResponse(
+        f'<span class="flex items-center gap-1.5 text-xs text-blue-400">'
+        f'<svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">'
+        f'<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>'
+        f'<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>'
+        f'</svg>'
+        f'<span class="truncate max-w-[140px]">{label}</span>'
+        f'</span>'
+    )
+
+
 @router.get("/card-states")
 async def card_states():
     return JSONResponse(activity_store.get_card_states())

@@ -75,6 +75,12 @@
                 </svg>
             </button>
             <span class="font-bold text-white tracking-wide">ROM Finder</span>
+            <!-- Mobile activity indicator — mirrors the sidebar tray, polls every 3s -->
+            <div id="mobile-activity"
+                 hx-get="/activity/tray-mobile"
+                 hx-trigger="load, every 3s"
+                 hx-swap="innerHTML"
+                 class="ml-auto flex items-center"></div>
         </header>
 
         <main class="flex-1 overflow-y-auto">
