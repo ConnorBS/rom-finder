@@ -345,9 +345,25 @@ async def _do_rehash(entry_ids: list[int]) -> None:
                 activity_store.increment(batch_id)
                 continue
             try:
+                old_hash = entry.file_hash
                 result = await compute_ra_hash(p, entry.system)
+                used_rahasher = result is not None
                 if result is None:
                     result = await loop.run_in_executor(None, hash_rom, p, entry.system)
+                print(
+                    f"[rehash] {entry.file_name} | system={entry.system} | "
+                    f"hasher={'RAHasher' if used_rahasher else 'Python MD5'} | "
+                    f"old={old_hash or 'none'} | new={result}",
+                    flush=True,
+                )
+                applog.log_action("rehash_entry", {
+                    "game": entry.game_title,
+                    "system": entry.system,
+                    "hasher": "rahasher" if used_rahasher else "python_md5",
+                    "old_hash": old_hash or "none",
+                    "new_hash": result,
+                    "hash_changed": old_hash != result,
+                })
                 entry.file_hash = result
                 entry.hashed_at = datetime.utcnow()
                 entry.hash_verified = False
