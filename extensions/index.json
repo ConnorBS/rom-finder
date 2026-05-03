@@ -22,10 +22,10 @@
     {
       "id": "wowroms",
       "name": "WowROMs",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "type": "rom_source",
       "author": "ConnorBS",
-      "description": "Searches WowROMs.com for ROMs. Results may vary depending on bot-protection state.",
+      "description": "Downloads ROMs from WowROMs.com. No Playwright required — search, browse, and stream directly.",
       "pkg_url": "https://raw.githubusercontent.com/ConnorBS/rom-finder/main/extensions/wowroms.py"
     },
     {
