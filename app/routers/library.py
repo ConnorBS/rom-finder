@@ -105,10 +105,12 @@ async def verify_ra_library_entry(
 
     entry = session.get(LibraryEntry, library_id)
     if not entry or not entry.file_hash:
+        print(f"[verify-ra] lib={library_id} — no hash stored", flush=True)
         return HTMLResponse('<span class="text-gray-600 text-xs">No hash</span>')
 
     ra_username = _get_setting(session, "ra_username")
     ra_api_key = _get_setting(session, "ra_api_key")
+    print(f"[verify-ra] lib={library_id} hash={entry.file_hash} creds={'ok' if ra_username and ra_api_key else 'MISSING'}", flush=True)
     if not ra_username or not ra_api_key:
         return HTMLResponse(
             '<span class="text-yellow-500 text-xs" title="Add RA credentials in Settings">No RA creds</span>'

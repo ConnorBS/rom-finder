@@ -160,6 +160,7 @@ class RAClient:
                 timeout=15,
             )
             if resp.status_code == 404:
+                print(f"[lookup_hash] 404 for hash {md5} — not in RA database", flush=True)
                 return None  # hash not in RA's hash list — not an error
             if resp.status_code == 429:
                 raise RuntimeError("RetroAchievements rate limit exceeded (429) — retry later")
