@@ -69,3 +69,9 @@ async def activity_tray_mobile(session: Session = Depends(get_session)):
 @router.get("/card-states")
 async def card_states():
     return JSONResponse(activity_store.get_card_states())
+
+
+@router.post("/activity/cancel/{task_id}", response_class=HTMLResponse)
+async def cancel_task(task_id: str):
+    activity_store.cancel(task_id)
+    return HTMLResponse("")

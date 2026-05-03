@@ -15,6 +15,7 @@ class ActivityTask:
     started_at: datetime = field(default_factory=datetime.utcnow)
     finished_at: Optional[datetime] = None
     entry_ids: set = field(default_factory=set)  # lib entry IDs for per-card overlay
+    cancelling: bool = False   # cancel requested; task will stop after current item
 
     @property
     def percent(self) -> int:
@@ -24,6 +25,7 @@ class ActivityTask:
 
 
 _tasks: dict[str, ActivityTask] = {}
+_cancelled: set[str] = set()
 _DONE_TTL = 5  # seconds to keep finished tasks visible
 
 
@@ -48,10 +50,21 @@ def update_label(task_id: str, label: str) -> None:
         _tasks[task_id].label = label
 
 
+def cancel(task_id: str) -> None:
+    _cancelled.add(task_id)
+    if task_id in _tasks:
+        _tasks[task_id].cancelling = True
+
+
+def is_cancelled(task_id: str) -> bool:
+    return task_id in _cancelled
+
+
 def finish(task_id: str) -> None:
     if task_id in _tasks:
         _tasks[task_id].done = True
         _tasks[task_id].finished_at = datetime.utcnow()
+    _cancelled.discard(task_id)
 
 
 def get_active() -> list[ActivityTask]:

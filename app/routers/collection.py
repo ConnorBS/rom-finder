@@ -386,8 +386,11 @@ async def _do_rehash(entry_ids: list[int]) -> None:
     )
 
     loop = asyncio.get_event_loop()
+    processed = 0
     with Session(engine) as session:
         for eid in entry_ids:
+            if activity_store.is_cancelled(batch_id):
+                break
             entry = session.get(LibraryEntry, eid)
             if not entry:
                 activity_store.increment(batch_id)
@@ -402,12 +405,6 @@ async def _do_rehash(entry_ids: list[int]) -> None:
                 used_rahasher = result is not None
                 if result is None:
                     result = await loop.run_in_executor(None, hash_rom, p, entry.system)
-                print(
-                    f"[rehash] {entry.file_name} | system={entry.system} | "
-                    f"hasher={'RAHasher' if used_rahasher else 'Python MD5'} | "
-                    f"old={old_hash or 'none'} | new={result}",
-                    flush=True,
-                )
                 applog.log_action("rehash_entry", {
                     "game": entry.game_title,
                     "system": entry.system,
@@ -421,11 +418,13 @@ async def _do_rehash(entry_ids: list[int]) -> None:
                 entry.hash_verified = False
                 entry.ra_matched = False
                 session.add(entry)
+                processed += 1
             except Exception as exc:
                 applog.warning("hash", f"Rehash failed for {entry.file_name}: {exc}")
             activity_store.increment(batch_id)
         session.commit()
-    applog.log_action("bulk_rehash_done", {"count": len(entry_ids)})
+    activity_store.finish(batch_id)
+    applog.log_action("bulk_rehash_done", {"count": processed, "cancelled": activity_store.is_cancelled(batch_id)})
 
 
 async def _fetch_cover_for_library(library_id: int, ra_game_id: int, game_title: str, system: str, batch_id: str = "") -> None:
@@ -532,9 +531,12 @@ async def _do_verify(entry_ids: list[int], username: str, api_key: str) -> None:
 
     ra = RAClient(username, api_key)
     matched = 0
+    checked = 0
 
     with Session(engine) as session:
         for eid in entry_ids:
+            if activity_store.is_cancelled(batch_id):
+                break
             entry = session.get(LibraryEntry, eid)
             if not entry or not entry.file_hash:
                 activity_store.increment(batch_id)
@@ -547,8 +549,10 @@ async def _do_verify(entry_ids: list[int], username: str, api_key: str) -> None:
                     entry.ra_game_id = entry.ra_game_id or match.get("ID")
                     matched += 1
                     session.add(entry)
+                checked += 1
             except Exception as exc:
                 applog.warning("hash", f"RA verify failed for {entry.file_name}: {exc}")
             activity_store.increment(batch_id)
         session.commit()
-    applog.log_action("bulk_verify_done", {"checked": len(entry_ids), "matched": matched})
+    activity_store.finish(batch_id)
+    applog.log_action("bulk_verify_done", {"checked": checked, "matched": matched})
