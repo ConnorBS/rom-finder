@@ -332,6 +332,58 @@
             </div>
         </section>
 
+        {% if ext_schemas %}
+        <!-- Extension Settings -->
+        <section>
+            <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">Extension Settings</h2>
+            <div class="space-y-4">
+                {% for ext_id, schema in ext_schemas.items() %}
+                <div class="bg-gray-900 border border-gray-800 rounded-lg p-5 space-y-4">
+                    <h3 class="text-sm font-semibold text-gray-200">{{ ext_names.get(ext_id, ext_id) }}</h3>
+                    {% for setting in schema %}
+                    <div>
+                        <label class="block text-sm text-gray-300 mb-1.5">{{ setting.label }}</label>
+                        {% if setting.type == "checkbox" %}
+                        <label class="flex items-center gap-2">
+                            <input
+                                type="checkbox"
+                                name="ext_{{ ext_id }}_{{ setting.key }}"
+                                value="true"
+                                {% if ext_values.get(ext_id, {}).get(setting.key) == "true" %}checked{% endif %}
+                                class="w-4 h-4 rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-blue-500 focus:ring-offset-gray-900"
+                            >
+                            <span class="text-xs text-gray-400">Enabled</span>
+                        </label>
+                        {% elif setting.type == "password" %}
+                        <input
+                            type="password"
+                            name="ext_{{ ext_id }}_{{ setting.key }}"
+                            value="{{ ext_values.get(ext_id, {}).get(setting.key, '') }}"
+                            autocomplete="new-password"
+                            class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+                        >
+                        {% else %}
+                        <input
+                            type="text"
+                            name="ext_{{ ext_id }}_{{ setting.key }}"
+                            value="{{ ext_values.get(ext_id, {}).get(setting.key, '') }}"
+                            class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+                        >
+                        {% endif %}
+                        {% if setting.description %}
+                        <p class="text-xs text-gray-600 mt-1">{{ setting.description }}</p>
+                        {% endif %}
+                        {% if setting.required %}
+                        <p class="text-xs text-amber-600 mt-0.5">Required</p>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+        {% endif %}
+
         <section>
             <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">Logging</h2>
             <div class="bg-gray-900 border border-gray-800 rounded-lg px-5 py-4">

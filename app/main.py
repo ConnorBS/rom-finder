@@ -50,7 +50,6 @@ DEFAULT_SETTINGS = {
     "ra_api_key": "",
     # Source enabled flags
     "source_archive_org_enabled": "true",
-    "source_cdromance_enabled": "false",
     # Extension system
     "extensions_dir": os.environ.get("EXTENSIONS_DIR", "extensions"),
     "extension_repos": '["https://raw.githubusercontent.com/ConnorBS/rom-finder/main/extensions/index.json"]',
@@ -101,9 +100,24 @@ async def lifespan(app: FastAPI):
         # Load installed extensions
         ext_setting = session.get(AppSetting, "extensions_dir")
         ext_dir = ext_setting.value if ext_setting else "extensions"
+        # Gather which extensions are enabled and their settings
+        from sqlmodel import select as _select
+        installed_exts = session.exec(_select(InstalledExtension)).all()
+        enabled_ext_ids = {e.ext_id for e in installed_exts if e.enabled}
+        all_settings_rows = session.exec(_select(AppSetting)).all()
+        all_settings_dict = {s.key: s.value for s in all_settings_rows}
+        ext_configs: dict[str, dict] = {}
+        for ext in installed_exts:
+            if ext.enabled:
+                prefix = f"ext_{ext.ext_id}_"
+                ext_configs[ext.ext_id] = {
+                    k[len(prefix):]: v
+                    for k, v in all_settings_dict.items()
+                    if k.startswith(prefix)
+                }
     Path(ext_dir).mkdir(parents=True, exist_ok=True)
     from app.services.extension_loader import load_all_extensions
-    load_all_extensions(ext_dir)
+    load_all_extensions(ext_dir, enabled_ids=enabled_ext_ids, configs=ext_configs)
     from app.services import logger as applog
     from app.services.rahasher import _rahasher_available, _RAHASHER_BIN
     import shutil

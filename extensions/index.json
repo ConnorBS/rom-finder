@@ -2,6 +2,15 @@
   "version": 1,
   "extensions": [
     {
+      "id": "cdromance",
+      "name": "CDRomance",
+      "version": "1.0.0",
+      "type": "rom_source",
+      "author": "ConnorBS",
+      "description": "Downloads ROMs and ISOs from CDRomance.org. No Playwright required — uses CDRomance's AJAX download endpoint directly.",
+      "pkg_url": "https://raw.githubusercontent.com/ConnorBS/rom-finder/main/extensions/cdromance.py"
+    },
+    {
       "id": "vimm",
       "name": "Vimm's Lair",
       "version": "1.1.0",

@@ -1,4 +1,4 @@
-"""Extension manager — browse, install, and remove ROM Finder extensions."""
+"""Extension manager — browse, install, remove, and update ROM Finder extensions."""
 
 import json
 from datetime import datetime
@@ -33,6 +33,21 @@ def _set_setting(session: Session, key: str, value: str) -> None:
     session.commit()
 
 
+def _build_ext_config(session: Session, ext_id: str) -> dict:
+    """Read ext_{ext_id}_* settings from DB into a config dict."""
+    prefix = f"ext_{ext_id}_"
+    all_settings = session.exec(select(AppSetting)).all()
+    return {s.key[len(prefix):]: s.value for s in all_settings if s.key.startswith(prefix)}
+
+
+def _version_gt(v1: str, v2: str) -> bool:
+    """True if v1 > v2 using simple numeric tuple comparison."""
+    try:
+        return tuple(int(x) for x in v1.split(".")) > tuple(int(x) for x in v2.split("."))
+    except (ValueError, AttributeError):
+        return False
+
+
 @router.get("", response_class=HTMLResponse)
 async def extensions_page(request: Request, session: Session = Depends(get_session)):
     installed = session.exec(select(InstalledExtension).order_by(InstalledExtension.installed_at)).all()
@@ -55,8 +70,8 @@ async def fetch_available(request: Request, session: Session = Depends(get_sessi
     except (ValueError, TypeError):
         repos = []
 
-    installed_ids = {
-        e.ext_id for e in session.exec(select(InstalledExtension)).all()
+    installed_map = {
+        e.ext_id: e for e in session.exec(select(InstalledExtension)).all()
     }
 
     available: list[dict] = []
@@ -69,7 +84,17 @@ async def fetch_available(request: Request, session: Session = Depends(get_sessi
                 resp.raise_for_status()
                 data = resp.json()
             for ext in data.get("extensions", []):
-                ext["_installed"] = ext.get("id", "") in installed_ids
+                ext_id = ext.get("id", "")
+                installed_ext = installed_map.get(ext_id)
+                ext["_installed"] = installed_ext is not None
+                if installed_ext:
+                    ext["_installed_version"] = installed_ext.version
+                    ext["_update_available"] = _version_gt(
+                        ext.get("version", ""), installed_ext.version
+                    )
+                else:
+                    ext["_installed_version"] = ""
+                    ext["_update_available"] = False
                 available.append(ext)
         except Exception as e:
             errors.append(f"{repo_url}: {e}")
@@ -165,6 +190,16 @@ async def install_extension(request: Request, session: Session = Depends(get_ses
             f'EXTENSION_INFO and SOURCE_CLASS / COVER_SOURCE_CLASS.</p>'
         )
 
+    # Seed default values for any extension settings
+    schemas = extension_loader.get_settings_schemas().get(ext_id, [])
+    for setting in schemas:
+        key = f"ext_{ext_id}_{setting['key']}"
+        if not session.get(AppSetting, key):
+            default = setting.get("default", "")
+            if isinstance(default, bool):
+                default = "true" if default else "false"
+            session.add(AppSetting(key=key, value=str(default)))
+
     existing = session.exec(
         select(InstalledExtension).where(InstalledExtension.ext_id == ext_id)
     ).first()
@@ -192,7 +227,6 @@ async def install_extension(request: Request, session: Session = Depends(get_ses
             enabled=True,
         ))
 
-    # Seed the source-enabled AppSetting so it appears in Settings
     enabled_key = f"source_{ext_id}_enabled" if ext_type == "rom_source" else f"cover_source_{ext_id}_enabled"
     _set_setting(session, enabled_key, "true")
     session.commit()
@@ -213,7 +247,60 @@ async def toggle_extension(ext_id: str, request: Request, session: Session = Dep
     session.add(ext)
 
     enabled_key = f"source_{ext_id}_enabled" if ext.ext_type == "rom_source" else f"cover_source_{ext_id}_enabled"
-    _set_setting(session, enabled_key, "true" if ext.enabled else "false")
+
+    if ext.enabled:
+        ext_dir = _get_setting(session, "extensions_dir", "extensions")
+        ext_path = Path(ext_dir) / ext.file_name
+        config = _build_ext_config(session, ext_id)
+        extension_loader.load_extension_file(ext_path, config or None)
+        _set_setting(session, enabled_key, "true")
+    else:
+        extension_loader.unload_extension(ext_id)
+        _set_setting(session, enabled_key, "false")
+
+    session.commit()
+    return HTMLResponse("", headers={"HX-Redirect": "/extensions"})
+
+
+@router.post("/{ext_id}/update", response_class=HTMLResponse)
+async def update_extension(ext_id: str, request: Request, session: Session = Depends(get_session)):
+    ext = session.exec(
+        select(InstalledExtension).where(InstalledExtension.ext_id == ext_id)
+    ).first()
+    if not ext:
+        return HTMLResponse("", headers={"HX-Redirect": "/extensions"})
+
+    ext_dir = _get_setting(session, "extensions_dir", "extensions")
+    ext_path = Path(ext_dir) / ext.file_name
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(ext.pkg_url)
+            resp.raise_for_status()
+            code = resp.text
+    except Exception as e:
+        return HTMLResponse(
+            f'<p class="text-red-400 text-sm p-4">Update download failed: {e}</p>'
+        )
+
+    try:
+        ext_path.write_text(code, encoding="utf-8")
+    except Exception as e:
+        return HTMLResponse(
+            f'<p class="text-red-400 text-sm p-4">Failed to write update: {e}</p>'
+        )
+
+    extension_loader.unload_extension(ext_id)
+    config = _build_ext_config(session, ext_id)
+    loaded_info = extension_loader.load_extension_file(ext_path, config or None)
+    if loaded_info is None:
+        return HTMLResponse(
+            f'<p class="text-red-400 text-sm p-4">Updated file failed to load. Check {ext_id}.py.</p>'
+        )
+
+    ext.version = loaded_info.get("version", ext.version)
+    ext.updated_at = datetime.utcnow()
+    session.add(ext)
     session.commit()
 
     return HTMLResponse("", headers={"HX-Redirect": "/extensions"})

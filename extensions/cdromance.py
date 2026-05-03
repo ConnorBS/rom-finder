@@ -1,16 +1,18 @@
-"""CDRomance ROM source — https://cdromance.org
+"""CDRomance ROM source extension for ROM Finder."""
 
-Search:     GET /{slug}/?s={query}  →  parse .game-container divs
-File list:  GET game page → extract data-id → POST AJAX → parse filename/size/CDN URL
-Download:   httpx streaming from CDN URL (no Playwright needed)
+EXTENSION_INFO = {
+    "id": "cdromance",
+    "name": "CDRomance",
+    "version": "1.0.0",
+    "type": "rom_source",
+    "author": "ConnorBS",
+    "description": (
+        "Downloads ROMs and ISOs from CDRomance.org. "
+        "No Playwright required — uses CDRomance's AJAX download endpoint directly."
+    ),
+}
 
-The AJAX endpoint (wp-content/plugins/cdr-main/public/ajax.php) requires
-  Content-Type: application/x-www-form-urlencoded
-  Referer: {game page URL}
-  Origin: https://cdromance.org
-  X-Requested-With: XMLHttpRequest
-and a body of just  post_id={data_id}.
-"""
+EXTENSION_SETTINGS = []
 
 import asyncio
 import logging
@@ -20,14 +22,13 @@ from pathlib import Path
 import httpx
 from bs4 import BeautifulSoup
 
-from .base import RomSource
+from app.services.sources.base import RomSource
 
 logger = logging.getLogger(__name__)
 
 CDR_BASE = "https://cdromance.org"
 CDR_AJAX = "https://cdromance.org/wp-content/plugins/cdr-main/public/ajax.php"
 
-# Mimic a real browser so Cloudflare/WordPress don't block us
 _HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -38,7 +39,6 @@ _HEADERS = {
 }
 
 _SYSTEM_MAP: dict[str, str] = {
-    # Nintendo
     "NES":                          "nes-roms",
     "SNES":                         "snes-rom",
     "Nintendo 64":                  "n64-roms",
@@ -48,7 +48,6 @@ _SYSTEM_MAP: dict[str, str] = {
     "Nintendo DS":                  "nds-roms",
     "GameCube":                     "gamecube",
     "Wii":                          "wii-iso",
-    # Sega
     "Sega Genesis / Mega Drive":    "sega_genesis_roms",
     "Sega CD":                      "sega_cd_isos",
     "Sega 32X":                     "sega_32x_roms",
@@ -56,16 +55,12 @@ _SYSTEM_MAP: dict[str, str] = {
     "Dreamcast":                    "dc-iso",
     "Master System":                "sms_roms",
     "Game Gear":                    "game-gear",
-    # Sony
     "PlayStation":                  "psx-iso",
     "PlayStation 2":                "ps2-iso",
     "PlayStation Portable":         "psp",
-    # NEC
     "PC Engine / TurboGrafx-16":   "turbografx-16",
     "PC Engine CD":                 "turbografx-cd",
-    # SNK
     "Neo Geo Pocket":               "neo-geo-pocket",
-    # Other
     "3DO Interactive Multiplayer":  "3do-iso",
     "WonderSwan":                   "wonderswan",
     "MSX":                          "msx-roms",
@@ -96,10 +91,6 @@ def _content_tag(identifier: str) -> str:
 class CdromanceSource(RomSource):
     source_id = "cdromance"
     name = "CDRomance"
-
-    # ------------------------------------------------------------------
-    # Search
-    # ------------------------------------------------------------------
 
     async def search(self, query: str, system: str = "") -> list[dict]:
         slug = _SYSTEM_MAP.get(system, "")
@@ -132,11 +123,9 @@ class CdromanceSource(RomSource):
                 continue
 
             # Replace / with :: so the identifier is safe for URL path routing.
-            # get_files() and get_download_url() convert :: back to / internally.
             identifier = href.replace(CDR_BASE, "").strip("/").replace("/", "::")
             tag = _content_tag(identifier)
 
-            # Language/genre info from .lang div
             lang_el = card.select_one(".lang")
             lang = lang_el.get_text(strip=True) if lang_el else ""
             desc = f"{lang}  {tag}".strip() if (lang or tag) else ""
@@ -150,18 +139,13 @@ class CdromanceSource(RomSource):
 
         return results
 
-    # ------------------------------------------------------------------
-    # File listing — GET page, extract data-id, POST AJAX
-    # ------------------------------------------------------------------
-
     async def get_files(self, identifier: str, name_filter: str = "") -> list[dict]:
         page_url = f"{CDR_BASE}/{identifier.replace('::', '/')}/"
-        await asyncio.sleep(0.5)  # polite delay
+        await asyncio.sleep(0.5)
 
         async with httpx.AsyncClient(
             headers=_HEADERS, follow_redirects=True, timeout=20
         ) as client:
-            # Step 1: fetch the game page to get the post_id
             try:
                 page_resp = await client.get(page_url)
                 page_resp.raise_for_status()
@@ -176,7 +160,6 @@ class CdromanceSource(RomSource):
                 return []
             post_id = wrapper["data-id"]
 
-            # Step 2: call AJAX to reveal download links
             try:
                 ajax_resp = await client.post(
                     CDR_AJAX,
@@ -198,7 +181,6 @@ class CdromanceSource(RomSource):
             logger.warning("CDRomance AJAX error for %s: %s", identifier, ajax_resp.text[:100])
             return []
 
-        # Step 3: parse the download-links table
         dl_soup = BeautifulSoup(ajax_resp.text, "html.parser")
         files: list[dict] = []
 
@@ -220,7 +202,6 @@ class CdromanceSource(RomSource):
                 if nf not in Path(filename).stem.lower():
                     continue
 
-            # Use the CDN URL as the file identifier so get_download_url can return it directly
             files.append({
                 "name": filename,
                 "identifier": cdn_url,
@@ -230,14 +211,8 @@ class CdromanceSource(RomSource):
 
         return files
 
-    # ------------------------------------------------------------------
-    # Download URL — the file identifier IS the CDN URL
-    # ------------------------------------------------------------------
-
     def get_download_url(self, identifier: str, filename: str) -> str:
-        # For CDRomance, get_files() sets the file identifier to the CDN URL directly.
-        # If it somehow still has the :: separator, convert it back (shouldn't happen).
         return identifier.replace("::", "/")
 
-    # download_file uses the base class implementation (httpx streaming)
-    # — no Playwright needed
+
+SOURCE_CLASS = CdromanceSource

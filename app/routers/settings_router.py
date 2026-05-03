@@ -3,15 +3,16 @@ import re
 from fastapi import APIRouter, Request, Form, Depends, Query, BackgroundTasks
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
-from sqlmodel import Session
+from sqlmodel import Session, select
 from pathlib import Path
 
 from app.db.database import get_session
-from app.db.models import AppSetting
+from app.db.models import AppSetting, InstalledExtension
 from app.services import sources as source_registry
 from app.services import cover_sources as cover_source_registry
 from app.services.ra_client import SYSTEMS, DEFAULT_FOLDER_MAP
 from app.services import logger as applog
+from app.services import extension_loader
 
 router = APIRouter(prefix="/settings")
 templates = Jinja2Templates(directory="app/templates")
@@ -121,6 +122,22 @@ async def settings_page(request: Request, session: Session = Depends(get_session
     }
 
     roms_folders = _scan_folders(download_dir)
+
+    # Extension settings — only extensions with at least one setting
+    raw_ext_schemas = extension_loader.get_settings_schemas()
+    ext_schemas = {k: v for k, v in raw_ext_schemas.items() if v}
+    ext_names: dict[str, str] = {}
+    ext_values: dict[str, dict] = {}
+    if ext_schemas:
+        installed_exts = session.exec(select(InstalledExtension)).all()
+        ext_names = {e.ext_id: e.name for e in installed_exts}
+        for ext_id, schema in ext_schemas.items():
+            ext_values[ext_id] = {}
+            for setting in schema:
+                key = f"ext_{ext_id}_{setting['key']}"
+                default = str(setting.get("default", ""))
+                ext_values[ext_id][setting["key"]] = get_setting(session, key, default)
+
     return templates.TemplateResponse(
         request, "settings.html",
         {
@@ -133,6 +150,9 @@ async def settings_page(request: Request, session: Session = Depends(get_session
             "roms_folders": roms_folders,
             "folder_map": folder_map,
             "known_systems": KNOWN_SYSTEMS,
+            "ext_schemas": ext_schemas,
+            "ext_names": ext_names,
+            "ext_values": ext_values,
         },
     )
 
@@ -192,6 +212,21 @@ async def save_settings(
         if fsys:
             folder_map[fsys] = fname
     set_setting(session, "folder_map", json.dumps(folder_map))
+
+    # Extension settings — save ext_{ext_id}_{key} and re-configure loaded extensions
+    ext_schemas = extension_loader.get_settings_schemas()
+    for ext_id, schema in ext_schemas.items():
+        config: dict[str, str] = {}
+        for setting in schema:
+            field_name = f"ext_{ext_id}_{setting['key']}"
+            if setting.get("type") == "checkbox":
+                value = "true" if form_data.get(field_name) == "true" else "false"
+            else:
+                value = str(form_data.get(field_name, setting.get("default", "")))
+            set_setting(session, field_name, value)
+            config[setting["key"]] = value
+        if config:
+            extension_loader.configure_extension(ext_id, config)
 
     session.commit()
 

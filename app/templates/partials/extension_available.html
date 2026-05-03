@@ -28,7 +28,23 @@
       </div>
       <div class="flex-shrink-0">
         {% if ext._installed %}
-          <span class="text-xs px-3 py-1.5 rounded border border-green-900 text-green-400">Installed</span>
+          {% if ext._update_available %}
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-amber-400">v{{ ext._installed_version }} → v{{ ext.version }}</span>
+              <form hx-post="/extensions/{{ ext.id }}/update"
+                    hx-target="body"
+                    hx-swap="outerHTML">
+                <button type="submit"
+                        class="text-xs px-3 py-1.5 rounded bg-amber-600 hover:bg-amber-700 text-white transition-colors">
+                  Update
+                </button>
+              </form>
+            </div>
+          {% else %}
+            <span class="text-xs px-3 py-1.5 rounded border border-green-900 text-green-400">
+              Installed v{{ ext._installed_version }}
+            </span>
+          {% endif %}
         {% else %}
           <form hx-post="/extensions/install"
                 hx-target="body"
