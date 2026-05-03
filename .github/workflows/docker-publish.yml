@@ -44,11 +44,12 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # Registry-backed layer cache: first build is normal speed;
-          # subsequent builds skip unchanged layers (usually just COPY . .)
-          # cutting build time from ~8 min to ~1-2 min.
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache
-          cache-to:   type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache,mode=max
+          provenance: false
+          # GitHub Actions cache — simpler than registry cache, no extra
+          # GHCR tags, free up to 10 GB. Subsequent builds skip unchanged
+          # layers (pip install, RAHasher download) cutting time to ~1-2 min.
+          cache-from: type=gha
+          cache-to:   type=gha,mode=max
 
   # ── 2. Trigger Unraid redeploy ────────────────────────────────────
   deploy:
