@@ -154,36 +154,60 @@ class RAClient:
     async def lookup_hash(self, md5: str) -> Optional[dict]:
         """Look up a game by its ROM MD5 hash. Returns game info dict or None.
 
-        Uses the emulator-style dorequest endpoint which is reliable.
-        API_GetGameInfoByMD5.php was found to return 404 for all hashes
-        regardless of whether they are in RA's database.
+        Uses the emulator-style dorequest endpoint (API_GetGameInfoByMD5.php
+        was found to return 404 for all hashes regardless of database state).
+        Falls back to API_GetGameInfoByMD5.php if dorequest is blocked.
         """
-        async with httpx.AsyncClient() as client:
+        headers = {"User-Agent": "RetroAchievements/1.0"}
+        async with httpx.AsyncClient(headers=headers) as client:
+            # Primary: emulator-style endpoint, returns {"Success":true,"GameID":N}
             resp = await client.get(
                 "https://retroachievements.org/dorequest.php",
                 params={"r": "gameid", "u": self.username, "m": md5},
                 timeout=15,
             )
+            print(f"[lookup_hash] dorequest status={resp.status_code} for {md5}", flush=True)
             if resp.status_code == 429:
                 raise RuntimeError("RetroAchievements rate limit exceeded (429) — retry later")
-            resp.raise_for_status()
+
+            if resp.status_code == 200:
+                try:
+                    data = resp.json()
+                    if isinstance(data, dict) and data.get("Success") and data.get("GameID"):
+                        data["ID"] = data["GameID"]
+                        return data
+                    # GameID=0 means not found — genuine miss, don't fall back
+                    if isinstance(data, dict) and data.get("Success"):
+                        return None
+                except Exception:
+                    pass  # fall through to legacy endpoint
+
+            # Fallback: legacy endpoint (returns 404 for most hashes but may work in some cases)
+            print(f"[lookup_hash] falling back to API_GetGameInfoByMD5 (dorequest status={resp.status_code})", flush=True)
+            resp2 = await client.get(
+                f"{RA_BASE_URL}/API_GetGameInfoByMD5.php",
+                params=self._params({"m": md5}),
+                timeout=15,
+            )
+            print(f"[lookup_hash] API_GetGameInfoByMD5 status={resp2.status_code} for {md5}", flush=True)
+            if resp2.status_code in (404, 429):
+                if resp2.status_code == 429:
+                    raise RuntimeError("RetroAchievements rate limit exceeded (429) — retry later")
+                return None
+            resp2.raise_for_status()
             try:
-                data = resp.json()
+                data2 = resp2.json()
             except Exception:
-                logger.warning("RA dorequest returned non-JSON for hash %s (HTTP %d): %.300s",
-                               md5, resp.status_code, resp.text)
                 return None
 
-        if not isinstance(data, dict) or not data.get("Success"):
+        if not isinstance(data2, dict):
             return None
-
-        # GameID=0 means hash not in RA's database; any positive value is a match.
-        game_id = data.get("GameID")
+        payload = data2.get("GameData") if isinstance(data2.get("GameData"), dict) else data2
+        game_id = payload.get("ID") or payload.get("GameID")
         if not game_id:
             return None
-
-        data["ID"] = game_id  # normalise so all callers can rely on "ID"
-        return data
+        payload["ID"] = game_id
+        return payload
 
     async def test_credentials(self) -> tuple[bool, str]:
         """Test if credentials are valid. Returns (success, message)."""
