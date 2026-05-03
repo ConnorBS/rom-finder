@@ -76,39 +76,39 @@
         {% set log = entry.log %}
         {% set details = entry.details %}
         <details class="border-b border-gray-800 last:border-0 group">
-            <summary class="flex items-start gap-3 px-4 py-2.5 cursor-pointer hover:bg-gray-800/40 list-none">
+            <summary class="flex items-start gap-2 px-4 py-2.5 cursor-pointer hover:bg-gray-800/40 list-none">
 
-                <!-- Timestamp -->
-                <span class="text-gray-600 text-xs font-mono flex-shrink-0 pt-0.5 w-36">
+                <!-- Timestamp — hidden on mobile -->
+                <span class="hidden sm:block text-gray-600 text-xs font-mono flex-shrink-0 pt-0.5 w-36">
                     {{ log.ts.strftime('%m-%d %H:%M:%S') }}
                 </span>
 
                 <!-- Level badge -->
                 {% if log.level == 'error' %}
-                <span class="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-red-900/60 text-red-300 font-medium w-14 text-center">error</span>
+                <span class="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-red-900/60 text-red-300 font-medium w-12 text-center">error</span>
                 {% elif log.level == 'warning' %}
-                <span class="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-yellow-900/60 text-yellow-300 font-medium w-14 text-center">warn</span>
+                <span class="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-yellow-900/60 text-yellow-300 font-medium w-12 text-center">warn</span>
                 {% elif log.level == 'debug' %}
-                <span class="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-purple-900/50 text-purple-300 font-medium w-14 text-center">debug</span>
+                <span class="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-purple-900/50 text-purple-300 font-medium w-12 text-center">debug</span>
                 {% else %}
-                <span class="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-blue-900/40 text-blue-400 font-medium w-14 text-center">info</span>
+                <span class="flex-shrink-0 text-xs px-1.5 py-0.5 rounded bg-blue-900/40 text-blue-400 font-medium w-12 text-center">info</span>
                 {% endif %}
 
-                <!-- Category -->
-                <span class="flex-shrink-0 text-xs text-gray-600 w-20">{{ log.category }}</span>
+                <!-- Category — hidden on mobile -->
+                <span class="hidden sm:block flex-shrink-0 text-xs text-gray-600 w-20">{{ log.category }}</span>
 
                 <!-- Message -->
-                <span class="text-gray-300 text-xs flex-1 leading-relaxed">{{ log.message }}</span>
+                <span class="text-gray-300 text-xs flex-1 min-w-0 leading-relaxed break-words">{{ log.message }}</span>
 
                 <!-- Expand hint -->
                 {% if details %}
-                <span class="text-gray-700 text-xs flex-shrink-0 group-open:hidden">▸ details</span>
-                <span class="text-gray-500 text-xs flex-shrink-0 hidden group-open:inline">▾ hide</span>
+                <span class="text-gray-700 text-xs flex-shrink-0 group-open:hidden">▸</span>
+                <span class="text-gray-500 text-xs flex-shrink-0 hidden group-open:inline">▾</span>
                 {% endif %}
             </summary>
 
             {% if details %}
-            <div class="px-4 pb-3 pt-1 ml-52">
+            <div class="px-4 pb-3 pt-1 sm:ml-52">
                 <pre class="text-xs text-gray-400 bg-gray-950 border border-gray-800 rounded p-3 overflow-x-auto leading-relaxed">{{ details | tojson(indent=2) }}</pre>
             </div>
             {% endif %}

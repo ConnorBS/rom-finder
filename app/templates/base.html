@@ -28,7 +28,7 @@
     <!-- Sidebar — always fixed, never in normal flow -->
     <aside id="sidebar"
            class="fixed inset-y-0 left-0 z-30
-                  w-52 h-screen bg-gray-900 border-r border-gray-800 flex flex-col
+                  w-52 h-screen bg-gray-900 border-r border-gray-800 flex flex-col overflow-hidden
                   -translate-x-full md:translate-x-0 transition-transform duration-200 ease-in-out">
 
         <div class="flex-shrink-0 h-14 flex items-center px-5 border-b border-gray-800">
@@ -42,24 +42,25 @@
             </button>
         </div>
 
-        <nav class="flex-1 min-h-0 overflow-y-auto p-3 space-y-0.5 text-sm">
-            <a href="/collection" class="nav-item block px-3 py-2 rounded-md text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">Collection</a>
-            <a href="/wanted"     class="nav-item block px-3 py-2 rounded-md text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">Wanted</a>
-            <a href="/search"     class="nav-item block px-3 py-2 rounded-md text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">Search</a>
-            <a href="/downloads"  class="nav-item block px-3 py-2 rounded-md text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">Downloads</a>
-            <a href="/settings"   class="nav-item block px-3 py-2 rounded-md text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">Settings</a>
-            <a href="/scheduler"  class="nav-item block px-3 py-2 rounded-md text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">Scheduler</a>
-            <a href="/extensions" class="nav-item block px-3 py-2 rounded-md text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">Extensions</a>
-            <a href="/logs"       class="nav-item block px-3 py-2 rounded-md text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">Logs</a>
-        </nav>
+        <!-- Scrollable body: nav at top, activity pinned to bottom via mt-auto -->
+        <div class="flex-1 min-h-0 overflow-y-auto flex flex-col">
+            <nav class="flex-shrink-0 p-3 space-y-0.5 text-sm">
+                <a href="/collection" class="nav-item block px-3 py-2 rounded-md text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">Collection</a>
+                <a href="/wanted"     class="nav-item block px-3 py-2 rounded-md text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">Wanted</a>
+                <a href="/search"     class="nav-item block px-3 py-2 rounded-md text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">Search</a>
+                <a href="/downloads"  class="nav-item block px-3 py-2 rounded-md text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">Downloads</a>
+                <a href="/settings"   class="nav-item block px-3 py-2 rounded-md text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">Settings</a>
+                <a href="/scheduler"  class="nav-item block px-3 py-2 rounded-md text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">Scheduler</a>
+                <a href="/extensions" class="nav-item block px-3 py-2 rounded-md text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">Extensions</a>
+                <a href="/logs"       class="nav-item block px-3 py-2 rounded-md text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">Logs</a>
+            </nav>
 
-        <!-- Activity section — header always visible, content polls every 3s -->
-        <div class="flex-shrink-0 border-t border-gray-700">
-            <div class="flex items-center gap-2 px-3 py-2.5">
-                <span class="text-gray-300 text-xs font-semibold uppercase tracking-wider flex-1">Activity</span>
-                <span id="activity-count"></span>
-            </div>
-            <div class="overflow-y-auto" style="max-height: 40vh">
+            <!-- Activity section — mt-auto pins it to the bottom of the scroll area -->
+            <div class="mt-auto border-t border-gray-700">
+                <div class="flex items-center gap-2 px-3 py-2.5">
+                    <span class="text-gray-300 text-xs font-semibold uppercase tracking-wider flex-1">Activity</span>
+                    <span id="activity-count"></span>
+                </div>
                 <div
                     id="activity-tray"
                     hx-get="/activity/tray"
