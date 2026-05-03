@@ -81,6 +81,9 @@ jobs:
   cleanup:
     needs: build-and-push
     runs-on: ubuntu-latest
+    # Don't fail the overall run if there's nothing to clean up or
+    # if the action has a transient error.
+    continue-on-error: true
     permissions:
       packages: write
     steps:
@@ -89,6 +92,7 @@ jobs:
         with:
           package-name: ${{ github.event.repository.name }}
           package-type: container
+          owner: ${{ github.repository_owner }}
           # Remove every untagged version (old `latest` digests become
           # untagged each time a new `latest` is pushed).
           min-versions-to-keep: 0
