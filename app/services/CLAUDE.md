@@ -28,9 +28,9 @@ A startup `print()` in `main.py` logs RAHasher availability to Docker stdout on 
 
 ### Rate limiting
 
-`_RateLimiter` (module-level `_limiter`) enforces 4 req/sec (240/min) across all `RAClient` instances and methods. RA's documented ceiling is 500 req/min; 240 gives a comfortable buffer. On a 429 response, `lookup_hash` waits for the `Retry-After` header value (default 60s) and retries once. A second consecutive 429 raises so the caller skips the entry and continues.
+`_RateLimiter` (module-level `_limiter`) enforces 2 req/sec (120/min) across all `RAClient` instances and methods. RA's documented ceiling is 500 req/min; 120 gives a comfortable buffer — 4 req/sec still triggered 429s in practice. On a 429 response, `lookup_hash` waits for the `Retry-After` header value (default 60s) and retries once. A second consecutive 429 raises so the caller skips the entry and continues.
 
-At 4 req/sec, a full bulk verify of ~10 000 entries takes ~42 minutes as a background task.
+At 2 req/sec, a full bulk verify of ~10 000 entries takes ~83 minutes as a background task.
 
 ### RA API gotchas
 

@@ -17,12 +17,12 @@ RA_BASE_URL = "https://retroachievements.org/API"
 
 # ---------------------------------------------------------------------------
 # Rate limiter — shared across all RAClient instances.
-# RA's documented limit is 500 req/min (~8.3/s). We target 4/s (240/min)
-# to stay well clear. On a 429 we back off using the Retry-After header.
+# RA's documented limit is 500 req/min (~8.3/s). We target 2/s (120/min)
+# to stay comfortably clear. On a 429 we back off using Retry-After.
 # ---------------------------------------------------------------------------
 
 class _RateLimiter:
-    def __init__(self, calls_per_second: float = 4.0):
+    def __init__(self, calls_per_second: float = 2.0):
         self._interval = 1.0 / calls_per_second
         self._lock = asyncio.Lock()
         self._last: float = 0.0
@@ -35,7 +35,7 @@ class _RateLimiter:
                 await asyncio.sleep(gap)
             self._last = time.monotonic()
 
-_limiter = _RateLimiter()
+_limiter = _RateLimiter()  # 2 req/sec = 120/min
 
 # Maps RA system name -> folder name on disk.
 # Only entries where the folder name differs from the system name are needed;
