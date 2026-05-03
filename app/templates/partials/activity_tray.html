@@ -3,12 +3,13 @@
     + (individual_cover | selectattr('done', 'equalto', false) | list | length)
     + (tasks | selectattr('done', 'equalto', false) | list | length) %}
 
-{# OOB: update the badge in the persistent sidebar header #}
-<span id="activity-count" hx-swap-oob="true">
+<!-- Header (always rendered, part of the innerHTML swap) -->
+<div class="flex items-center gap-2 px-3 py-2.5">
+    <span class="text-gray-300 text-xs font-semibold uppercase tracking-wider flex-1">Activity</span>
     {% if active_count > 0 %}
     <span class="bg-blue-600 text-white text-xs rounded-full min-w-[1.25rem] h-5 flex items-center justify-center px-1.5 leading-none font-medium">{{ active_count }}</span>
     {% endif %}
-</span>
+</div>
 
 {% if downloads or cover_batch or individual_cover or tasks %}
 <div class="px-3 pb-3 space-y-2.5">

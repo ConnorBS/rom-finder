@@ -55,18 +55,12 @@
                 <a href="/logs"       class="nav-item block px-3 py-2 rounded-md text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">Logs</a>
             </nav>
 
-            <!-- Activity section — mt-auto pins it to the bottom of the scroll area -->
-            <div class="mt-auto border-t border-gray-700">
-                <div class="flex items-center gap-2 px-3 py-2.5">
-                    <span class="text-gray-300 text-xs font-semibold uppercase tracking-wider flex-1">Activity</span>
-                    <span id="activity-count"></span>
-                </div>
-                <div
-                    id="activity-tray"
-                    hx-get="/activity/tray"
-                    hx-trigger="load, every 3s"
-                    hx-swap="innerHTML"
-                ></div>
+            <!-- Activity section — polls every 3s, header included in response -->
+            <div class="mt-auto border-t border-gray-700"
+                 id="activity-tray"
+                 hx-get="/activity/tray"
+                 hx-trigger="load, every 3s"
+                 hx-swap="innerHTML">
             </div>
         </div>
     </aside>
