@@ -131,7 +131,9 @@ class CdromanceSource(RomSource):
             if not title:
                 continue
 
-            identifier = href.replace(CDR_BASE, "").strip("/")
+            # Replace / with :: so the identifier is safe for URL path routing.
+            # get_files() and get_download_url() convert :: back to / internally.
+            identifier = href.replace(CDR_BASE, "").strip("/").replace("/", "::")
             tag = _content_tag(identifier)
 
             # Language/genre info from .lang div
@@ -153,7 +155,7 @@ class CdromanceSource(RomSource):
     # ------------------------------------------------------------------
 
     async def get_files(self, identifier: str, name_filter: str = "") -> list[dict]:
-        page_url = f"{CDR_BASE}/{identifier}/"
+        page_url = f"{CDR_BASE}/{identifier.replace('::', '/')}/"
         await asyncio.sleep(0.5)  # polite delay
 
         async with httpx.AsyncClient(
@@ -233,8 +235,9 @@ class CdromanceSource(RomSource):
     # ------------------------------------------------------------------
 
     def get_download_url(self, identifier: str, filename: str) -> str:
-        # identifier for CDRomance files is the CDN URL from the AJAX response
-        return identifier
+        # For CDRomance, get_files() sets the file identifier to the CDN URL directly.
+        # If it somehow still has the :: separator, convert it back (shouldn't happen).
+        return identifier.replace("::", "/")
 
     # download_file uses the base class implementation (httpx streaming)
     # — no Playwright needed
