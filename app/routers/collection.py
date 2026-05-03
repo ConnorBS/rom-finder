@@ -140,6 +140,35 @@ async def collection_page(
 
 
 # ---------------------------------------------------------------------------
+# Counts (polled by header bar)
+# ---------------------------------------------------------------------------
+
+@router.get("/collection/counts", response_class=HTMLResponse)
+async def collection_counts(session: Session = Depends(get_session)):
+    all_items = _build_collection(session)
+    counts = {
+        "total": len(all_items),
+        "library": sum(1 for i in all_items if i["status"] == "library"),
+        "wanted": sum(1 for i in all_items if i["status"] == "wanted"),
+        "found": sum(1 for i in all_items if i["status"] == "found"),
+        "verified": sum(1 for i in all_items if i["status"] == "verified"),
+        "no_ra": sum(1 for i in all_items if i.get("file_hash") and not i.get("ra_matched")),
+    }
+    parts = [f'<span>{counts["total"]} total</span>']
+    if counts["verified"]:
+        parts.append(f'<span class="text-green-500">{counts["verified"]} verified</span>')
+    if counts["found"]:
+        parts.append(f'<span class="text-blue-400">{counts["found"]} found</span>')
+    if counts["library"]:
+        parts.append(f'<span class="text-gray-400">{counts["library"]} library only</span>')
+    if counts["wanted"]:
+        parts.append(f'<span class="text-yellow-500">{counts["wanted"]} wanted</span>')
+    if counts["no_ra"]:
+        parts.append(f'<span class="text-orange-400">{counts["no_ra"]} no RA match</span>')
+    return HTMLResponse(" ".join(parts))
+
+
+# ---------------------------------------------------------------------------
 # Bulk actions
 # ---------------------------------------------------------------------------
 

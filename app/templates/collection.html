@@ -7,7 +7,11 @@
     <div class="flex items-start justify-between mb-4 gap-4">
         <div>
             <h1 class="text-xl font-semibold text-white">Collection</h1>
-            <div class="flex gap-3 mt-1 text-xs text-gray-500">
+            <div id="collection-counts"
+                 class="flex gap-3 mt-1 text-xs text-gray-500"
+                 hx-get="/collection/counts"
+                 hx-trigger="every 5s"
+                 hx-swap="innerHTML">
                 <span>{{ counts.total }} total</span>
                 {% if counts.verified %}<span class="text-green-500">{{ counts.verified }} verified</span>{% endif %}
                 {% if counts.found %}<span class="text-blue-400">{{ counts.found }} found</span>{% endif %}
@@ -387,11 +391,24 @@ const _ICONS = {
     verify: { svg: `<svg class="animate-spin w-6 h-6 text-yellow-400" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>`, label: 'Verifying',    labelClass: 'text-yellow-300' },
 };
 
+let _bulkWasActive = false;
+
 async function updateCardStates() {
     let data;
     try { data = await fetch('/activity/card-states').then(r => r.json()); }
     catch { return; }
-    const { states } = data;
+    const { states, active_batches } = data;
+
+    // Auto-clear bulk-result text when a batch task finishes
+    const bulkActive = active_batches && active_batches.length > 0;
+    if (_bulkWasActive && !bulkActive) {
+        setTimeout(() => {
+            const el = document.getElementById('bulk-result');
+            if (el) el.innerHTML = '';
+        }, 800);
+    }
+    _bulkWasActive = bulkActive;
+
     document.querySelectorAll('[data-lib-id], [data-wanted-id]').forEach(card => {
         const overlay = card.querySelector('.card-activity');
         if (!overlay) return;
@@ -413,7 +430,15 @@ async function updateCardStates() {
 
 updateCardStates();
 setInterval(updateCardStates, 2000);
-document.addEventListener('htmx:afterSwap', updateCardStates);
+document.body.addEventListener('htmx:afterSwap', e => {
+    if (e.detail.target.id === 'bulk-result') {
+        const text = e.detail.target.textContent;
+        if (text.includes('…') || text.includes('Hashing') || text.includes('Checking') || text.includes('Fetching')) {
+            _bulkWasActive = true;
+        }
+    }
+    updateCardStates();
+});
 
 // Close hashes dropdown when clicking outside
 document.addEventListener('click', e => {

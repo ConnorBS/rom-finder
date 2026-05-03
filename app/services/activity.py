@@ -71,16 +71,22 @@ def get_active() -> list[ActivityTask]:
     return list(_tasks.values())
 
 
+_BATCH_IDS = {"rehash-batch", "verify-batch", "cover-batch", "scan-hash-batch", "sched-hash-batch"}
+
+
 def get_card_states() -> dict:
     """Return per-card activity state keyed by card identifier for collection overlays."""
     tasks = get_active()
     card_states: dict[str, str] = {}
     batch_types: list[str] = []
+    active_batches: list[str] = []
 
     for task in tasks:
         if task.done:
             continue
         tid = task.task_id
+        if tid in _BATCH_IDS:
+            active_batches.append(tid)
         if tid.startswith("cover-lib-"):
             card_states[f"lib-{tid[len('cover-lib-'):]}"] = "cover"
         elif tid.startswith("cover-") and "-batch" not in tid:
@@ -90,4 +96,4 @@ def get_card_states() -> dict:
             for eid in task.entry_ids:
                 card_states[f"lib-{eid}"] = task.task_type
 
-    return {"states": card_states, "batch_types": batch_types}
+    return {"states": card_states, "batch_types": batch_types, "active_batches": active_batches}
