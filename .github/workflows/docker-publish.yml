@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - feature/modular-sources
   workflow_dispatch:
 
 env:
@@ -12,6 +11,7 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  # ── 1. Build & push ────────────────────────────────────────────────
   build-and-push:
     runs-on: ubuntu-latest
     permissions:
@@ -19,58 +19,78 @@ jobs:
       packages: write
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata
-        id: meta
+      - id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=raw,value=dev,enable=${{ github.ref_name == 'feature/modular-sources' }}
-            type=sha,prefix=sha-
+          # Only push `latest` — no sha-prefixed tags that pile up as orphans.
+          # The commit SHA is still recorded in the image label
+          # (org.opencontainers.image.revision) for traceability.
+          tags: type=raw,value=latest
 
-      - name: Build and push
-        uses: docker/build-push-action@v5
+      - uses: docker/build-push-action@v5
         with:
           context: .
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # Registry-backed layer cache: first build is normal speed;
+          # subsequent builds skip unchanged layers (usually just COPY . .)
+          # cutting build time from ~8 min to ~1-2 min.
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache
+          cache-to:   type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache,mode=max
 
+  # ── 2. Trigger Unraid redeploy ────────────────────────────────────
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
-    # secrets context is not available in job-level if; expose via env and check at step level
+    # Don't fail the whole run if Unraid is temporarily unreachable —
+    # the image is already built and pushed regardless.
+    continue-on-error: true
     env:
       DEPLOY_WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
       DEPLOY_WEBHOOK_TOKEN: ${{ secrets.DEPLOY_WEBHOOK_TOKEN }}
     steps:
-      - name: Set image tag
-        id: tag
-        run: |
-          if [ "${{ github.ref_name }}" = "main" ]; then
-            echo "value=latest" >> $GITHUB_OUTPUT
-          else
-            echo "value=dev" >> $GITHUB_OUTPUT
-          fi
-
       - name: Trigger Unraid redeploy
         if: env.DEPLOY_WEBHOOK_URL != ''
         run: |
-          TAG=${{ steps.tag.outputs.value }}
-          curl -f -s -o /dev/null -w "HTTP %{http_code}" \
+          HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
+            --max-time 30 \
             -X POST \
             -H "X-Deploy-Token: $DEPLOY_WEBHOOK_TOKEN" \
-            "$DEPLOY_WEBHOOK_URL?tag=$TAG" \
-          && echo " - redeploy triggered (tag: $TAG)" \
-          || echo "Webhook call failed (server may be unreachable)"
+            "${DEPLOY_WEBHOOK_URL}?tag=latest")
+          echo "Webhook response: HTTP $HTTP"
+          if [[ "$HTTP" == 2* ]]; then
+            echo "Redeploy triggered successfully"
+          else
+            echo "Webhook returned $HTTP — Unraid may be unreachable (image is still updated)"
+            exit 1
+          fi
+
+  # ── 3. Clean up GHCR orphans ──────────────────────────────────────
+  cleanup:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - name: Delete untagged GHCR image versions
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: ${{ github.event.repository.name }}
+          package-type: container
+          # Remove every untagged version (old `latest` digests become
+          # untagged each time a new `latest` is pushed).
+          min-versions-to-keep: 0
+          delete-only-untagged-versions: true
+          token: ${{ secrets.GITHUB_TOKEN }}
