@@ -1,9 +1,15 @@
 """CDRomance ROM source — https://cdromance.org
 
-Search and file-listing use plain httpx + BeautifulSoup (no JS needed).
-Downloads follow the page's download form / redirect chain with httpx.
-If the site requires a JS countdown to reveal the link, the download
-raises RuntimeError with a clear message so the caller can skip it.
+Search:     GET /{slug}/?s={query}  →  parse .game-container divs
+File list:  GET game page → extract data-id → POST AJAX → parse filename/size/CDN URL
+Download:   httpx streaming from CDN URL (no Playwright needed)
+
+The AJAX endpoint (wp-content/plugins/cdr-main/public/ajax.php) requires
+  Content-Type: application/x-www-form-urlencoded
+  Referer: {game page URL}
+  Origin: https://cdromance.org
+  X-Requested-With: XMLHttpRequest
+and a body of just  post_id={data_id}.
 """
 
 import asyncio
@@ -19,12 +25,17 @@ from .base import RomSource
 logger = logging.getLogger(__name__)
 
 CDR_BASE = "https://cdromance.org"
-_UA = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/124.0.0.0 Safari/537.36"
-)
-_HEADERS = {"User-Agent": _UA, "Accept-Language": "en-US,en;q=0.9"}
+CDR_AJAX = "https://cdromance.org/wp-content/plugins/cdr-main/public/ajax.php"
+
+# Mimic a real browser so Cloudflare/WordPress don't block us
+_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept-Language": "en-US,en;q=0.9",
+}
 
 _SYSTEM_MAP: dict[str, str] = {
     # Nintendo
@@ -60,15 +71,6 @@ _SYSTEM_MAP: dict[str, str] = {
     "MSX":                          "msx-roms",
 }
 
-_FILE_EXTS = {
-    ".iso", ".bin", ".cue", ".img", ".chd",
-    ".zip", ".7z", ".rar",
-    ".nes", ".sfc", ".smc", ".gb", ".gbc", ".gba",
-    ".n64", ".z64", ".v64", ".nds",
-    ".md", ".gen", ".sms", ".gg",
-    ".cso", ".pbp", ".psp",
-}
-
 _SIZE_RE = re.compile(r"([\d.]+)\s*(KB|MB|GB|TB)", re.IGNORECASE)
 
 
@@ -77,12 +79,10 @@ def _parse_size(s: str) -> int:
     if not m:
         return 0
     v, u = float(m.group(1)), m.group(2).upper()
-    mult = {"KB": 1024, "MB": 1024**2, "GB": 1024**3, "TB": 1024**4}
-    return int(v * mult[u])
+    return int(v * {"KB": 1024, "MB": 1024**2, "GB": 1024**3, "TB": 1024**4}[u])
 
 
-def _content_tags(identifier: str) -> str:
-    """Return short tag string for translations/romhacks/undubs."""
+def _content_tag(identifier: str) -> str:
     p = identifier.lower()
     if "translations" in p or "english-patched" in p:
         return "[Translation]"
@@ -93,15 +93,13 @@ def _content_tags(identifier: str) -> str:
     return ""
 
 
-def _is_disc_slug(slug: str) -> bool:
-    disc = {"psx-iso", "ps2-iso", "dc-iso", "sega_saturn_isos", "sega_cd_isos",
-            "wii-iso", "gamecube", "3do-iso", "turbografx-cd", "psp"}
-    return slug in disc
-
-
 class CdromanceSource(RomSource):
     source_id = "cdromance"
     name = "CDRomance"
+
+    # ------------------------------------------------------------------
+    # Search
+    # ------------------------------------------------------------------
 
     async def search(self, query: str, system: str = "") -> list[dict]:
         slug = _SYSTEM_MAP.get(system, "")
@@ -120,197 +118,123 @@ class CdromanceSource(RomSource):
         soup = BeautifulSoup(resp.text, "html.parser")
         results: list[dict] = []
 
-        for article in soup.select("article"):
-            link_el = article.select_one("h2 a, h3 a, .entry-title a")
-            if not link_el:
+        for card in soup.select(".game-container"):
+            link = card.select_one("a.cover-link, .bottom-section a")
+            if not link:
                 continue
-            title = link_el.get_text(strip=True)
-            href = link_el.get("href", "")
-            if not href or CDR_BASE not in href:
+            href = link.get("href", "")
+            if not href.startswith(CDR_BASE):
+                continue
+
+            title_el = card.select_one(".game-title")
+            title = title_el.get_text(strip=True) if title_el else link.get_text(strip=True)
+            if not title:
                 continue
 
             identifier = href.replace(CDR_BASE, "").strip("/")
-            tag = _content_tags(identifier)
+            tag = _content_tag(identifier)
 
-            # Platform shown in article meta
-            platform_el = article.select_one(".platform, .console, .cat-badge, .category-badge")
-            platform = platform_el.get_text(strip=True) if platform_el else system
-
-            desc_parts = []
-            if platform:
-                desc_parts.append(f"[{platform}]")
-            if tag:
-                desc_parts.append(tag)
+            # Language/genre info from .lang div
+            lang_el = card.select_one(".lang")
+            lang = lang_el.get_text(strip=True) if lang_el else ""
+            desc = f"{lang}  {tag}".strip() if (lang or tag) else ""
 
             results.append({
                 "identifier": identifier,
                 "title": title,
-                "description": " ".join(desc_parts),
+                "description": desc,
                 "source_id": self.source_id,
             })
 
         return results
 
+    # ------------------------------------------------------------------
+    # File listing — GET page, extract data-id, POST AJAX
+    # ------------------------------------------------------------------
+
     async def get_files(self, identifier: str, name_filter: str = "") -> list[dict]:
         page_url = f"{CDR_BASE}/{identifier}/"
-        await asyncio.sleep(0.5)  # polite delay between requests
-
-        try:
-            async with httpx.AsyncClient(
-                headers=_HEADERS, follow_redirects=True, timeout=20
-            ) as client:
-                resp = await client.get(page_url)
-                resp.raise_for_status()
-        except Exception as exc:
-            logger.warning("CDRomance get_files failed for %s: %s", identifier, exc)
-            return []
-
-        soup = BeautifulSoup(resp.text, "html.parser")
-
-        filename = ""
-        size = 0
-
-        # Try info table rows
-        for row in soup.select("table tr, .game-info tr, .entry-content tr"):
-            cells = row.select("td, th")
-            if len(cells) < 2:
-                continue
-            label = cells[0].get_text(strip=True).lower()
-            value = cells[1].get_text(strip=True)
-            if any(k in label for k in ("file name", "filename", "file")):
-                if not filename:
-                    filename = value
-            elif "size" in label and not size:
-                size = _parse_size(value)
-
-        # Fall back: infer filename from page title + platform slug
-        if not filename:
-            h1 = soup.select_one("h1.entry-title, h1, h2.entry-title")
-            if h1:
-                base = h1.get_text(strip=True)
-                slug = identifier.split("/")[0] if "/" in identifier else identifier
-                ext = ".iso" if _is_disc_slug(slug) else ".zip"
-                filename = f"{base}{ext}"
-
-        if not filename:
-            return []
-
-        if name_filter:
-            nf = Path(name_filter).stem.lower()
-            if nf not in Path(filename).stem.lower():
-                return []
-
-        return [{
-            "name": filename,
-            "identifier": identifier,
-            "source_id": self.source_id,
-            "size": size,
-        }]
-
-    def get_download_url(self, identifier: str, filename: str) -> str:
-        # The game page URL is the entry point; download_file() handles navigation.
-        return f"{CDR_BASE}/{identifier}/"
-
-    async def download_file(
-        self,
-        url: str,
-        dest: Path,
-        progress_callback=None,
-    ) -> None:
-        """Fetch the game page, find the download link/form, and stream the file."""
-        dest.parent.mkdir(parents=True, exist_ok=True)
+        await asyncio.sleep(0.5)  # polite delay
 
         async with httpx.AsyncClient(
-            headers=_HEADERS,
-            follow_redirects=True,
-            timeout=httpx.Timeout(connect=30, read=None, write=30, pool=30),
+            headers=_HEADERS, follow_redirects=True, timeout=20
         ) as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
-            soup = BeautifulSoup(resp.text, "html.parser")
+            # Step 1: fetch the game page to get the post_id
+            try:
+                page_resp = await client.get(page_url)
+                page_resp.raise_for_status()
+            except Exception as exc:
+                logger.warning("CDRomance page fetch failed for %s: %s", identifier, exc)
+                return []
 
-            # Strategy 1: direct file link in an <a> tag
-            dl_url = self._find_direct_link(soup)
-            if dl_url:
-                await self._stream(client, dl_url, dest, progress_callback)
-                return
+            soup = BeautifulSoup(page_resp.text, "html.parser")
+            wrapper = soup.select_one("#acf-content-wrapper[data-id]")
+            if not wrapper:
+                logger.warning("CDRomance: no data-id found on %s", page_url)
+                return []
+            post_id = wrapper["data-id"]
 
-            # Strategy 2: submit the download form
-            form = self._find_download_form(soup)
-            if form:
-                action = form.get("action") or url
-                if not action.startswith("http"):
-                    action = CDR_BASE + "/" + action.lstrip("/")
-                fields = {
-                    inp["name"]: inp.get("value", "")
-                    for inp in form.select("input[name]")
-                    if inp.get("name")
-                }
-                post_resp = await client.post(action, data=fields)
+            # Step 2: call AJAX to reveal download links
+            try:
+                ajax_resp = await client.post(
+                    CDR_AJAX,
+                    content=f"post_id={post_id}",
+                    headers={
+                        **_HEADERS,
+                        "Content-Type": "application/x-www-form-urlencoded",
+                        "Referer": page_url,
+                        "Origin": CDR_BASE,
+                        "X-Requested-With": "XMLHttpRequest",
+                    },
+                    timeout=15,
+                )
+            except Exception as exc:
+                logger.warning("CDRomance AJAX failed for %s: %s", identifier, exc)
+                return []
 
-                # If we got a file directly, stream it
-                ctype = post_resp.headers.get("content-type", "")
-                if "html" not in ctype:
-                    await self._stream_response(post_resp, dest, progress_callback)
-                    return
+        if ajax_resp.status_code != 200 or ajax_resp.text.startswith("error"):
+            logger.warning("CDRomance AJAX error for %s: %s", identifier, ajax_resp.text[:100])
+            return []
 
-                # POST returned HTML — look for a download link in it
-                soup2 = BeautifulSoup(post_resp.text, "html.parser")
-                dl_url = self._find_direct_link(soup2)
-                if dl_url:
-                    await self._stream(client, dl_url, dest, progress_callback)
-                    return
+        # Step 3: parse the download-links table
+        dl_soup = BeautifulSoup(ajax_resp.text, "html.parser")
+        files: list[dict] = []
 
-            raise RuntimeError(
-                f"CDRomance: no direct download link found on {url}. "
-                "The page may require a browser to trigger the download."
-            )
+        rows = dl_soup.select(".tr")
+        for row in rows:
+            tds = row.select(".td")
+            if len(tds) < 2:
+                continue
+            link = tds[0].select_one("a[href]")
+            if not link:
+                continue
+
+            cdn_url = link["href"]
+            filename = link.get_text(strip=True)
+            size = _parse_size(tds[1].get_text(strip=True))
+
+            if name_filter:
+                nf = Path(name_filter).stem.lower()
+                if nf not in Path(filename).stem.lower():
+                    continue
+
+            # Use the CDN URL as the file identifier so get_download_url can return it directly
+            files.append({
+                "name": filename,
+                "identifier": cdn_url,
+                "source_id": self.source_id,
+                "size": size,
+            })
+
+        return files
 
     # ------------------------------------------------------------------
-    # Helpers
+    # Download URL — the file identifier IS the CDN URL
     # ------------------------------------------------------------------
 
-    def _find_direct_link(self, soup: BeautifulSoup) -> str:
-        """Return the first href that looks like a ROM file, or ''."""
-        for a in soup.select("a[href]"):
-            href = a.get("href", "")
-            text = a.get_text(strip=True).lower()
-            # Explicit file extension
-            if Path(href.split("?")[0]).suffix.lower() in _FILE_EXTS:
-                return href
-            # Link labelled "download" pointing off-site or to a /download/ path
-            if "download" in text and ("download" in href or href.startswith("http")):
-                if not href.startswith(CDR_BASE) or "/download/" in href:
-                    return href
-        return ""
+    def get_download_url(self, identifier: str, filename: str) -> str:
+        # identifier for CDRomance files is the CDN URL from the AJAX response
+        return identifier
 
-    def _find_download_form(self, soup: BeautifulSoup):
-        """Return a <form> that contains a download button, or None."""
-        for form in soup.select("form"):
-            action = (form.get("action") or "").lower()
-            if "download" in action:
-                return form
-            btn = form.select_one("button, input[type='submit']")
-            if btn:
-                label = (btn.get_text(strip=True) + btn.get("value", "")).lower()
-                if "download" in label:
-                    return form
-        return None
-
-    async def _stream(
-        self, client: httpx.AsyncClient, url: str, dest: Path, progress_callback
-    ) -> None:
-        async with client.stream("GET", url) as resp:
-            resp.raise_for_status()
-            await self._stream_response(resp, dest, progress_callback)
-
-    @staticmethod
-    async def _stream_response(resp, dest: Path, progress_callback) -> None:
-        total = int(resp.headers.get("content-length", 0))
-        downloaded = 0
-        with open(dest, "wb") as fh:
-            async for chunk in resp.aiter_bytes(65536):
-                fh.write(chunk)
-                downloaded += len(chunk)
-                if progress_callback and total:
-                    await progress_callback(downloaded / total)
+    # download_file uses the base class implementation (httpx streaming)
+    # — no Playwright needed
