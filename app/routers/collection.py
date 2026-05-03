@@ -7,11 +7,15 @@ Status vocabulary:
   wanted    — WantedGame only, no LibraryEntry yet
 """
 import json
+import math
 from datetime import datetime
 from fastapi import APIRouter, Request, Depends, BackgroundTasks, Query
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select
+
+PER_PAGE_CARDS = 50
+PER_PAGE_LIST = 100
 
 from app.db.database import engine, get_session
 from app.db.models import AppSetting, LibraryEntry, WantedGame, HuntStatus
@@ -90,25 +94,38 @@ async def collection_page(
     system: str = Query(default=""),
     status: str = Query(default=""),
     view: str = Query(default="cards"),
+    page: int = Query(default=1, ge=1),
     session: Session = Depends(get_session),
 ):
     all_items = _build_collection(session)
     systems = sorted({i["system"] for i in all_items if i["system"]})
 
-    items = all_items
+    filtered = all_items
     if q:
         ql = q.lower()
-        items = [i for i in items if ql in i["game_title"].lower()]
+        filtered = [i for i in filtered if ql in i["game_title"].lower()]
     if system:
-        items = [i for i in items if i["system"] == system]
+        filtered = [i for i in filtered if i["system"] == system]
     if status == "no_ra":
-        items = [i for i in items if i.get("file_hash") and not i.get("ra_matched")]
+        filtered = [i for i in filtered if i.get("file_hash") and not i.get("ra_matched")]
     elif status:
-        items = [i for i in items if i["status"] == status]
+        filtered = [i for i in filtered if i["status"] == status]
+
+    per_page = PER_PAGE_CARDS if view == "cards" else PER_PAGE_LIST
+    total_filtered = len(filtered)
+    total_pages = max(1, math.ceil(total_filtered / per_page))
+    page = min(page, total_pages)
+    start = (page - 1) * per_page
+    items = filtered[start:start + per_page]
+
+    # IDs for "hash filtered view" — capped at 500 to avoid oversized URLs
+    all_filtered_lib_ids = [i["library_id"] for i in filtered if i.get("library_id")]
+    if len(all_filtered_lib_ids) > 500:
+        all_filtered_lib_ids = []
 
     applog.log_navigation("collection", {
-        "total": len(all_items), "filtered": len(items),
-        "q": q, "system": system, "status": status, "view": view,
+        "total": len(all_items), "filtered": total_filtered,
+        "q": q, "system": system, "status": status, "view": view, "page": page,
     })
 
     covers_enabled = any(
@@ -127,6 +144,12 @@ async def collection_page(
             "selected_status": status,
             "view": view,
             "covers_enabled": covers_enabled,
+            "page": page,
+            "total_pages": total_pages,
+            "total_filtered": total_filtered,
+            "page_start": start + 1 if total_filtered else 0,
+            "page_end": min(start + per_page, total_filtered),
+            "all_filtered_lib_ids": all_filtered_lib_ids,
             "counts": {
                 "total": len(all_items),
                 "library": sum(1 for i in all_items if i["status"] == "library"),

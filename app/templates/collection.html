@@ -123,7 +123,6 @@
             {% endif %}
 
             <!-- Hashes dropdown -->
-            {%- set filtered_lib_ids = items | selectattr('library_id') | map(attribute='library_id') | select | list -%}
             <div class="relative" id="hashes-menu-wrap">
                 <button
                     type="button"
@@ -153,10 +152,10 @@
                         class="w-full text-left px-4 py-2 text-xs text-gray-300 hover:bg-gray-700 hover:text-white transition-colors"
                         title="Only hash ROMs that don't have a hash yet"
                     >Hash unhashed</button>
-                    {% if filtered_lib_ids %}
+                    {% if all_filtered_lib_ids %}
                     <div class="border-t border-gray-700 my-1"></div>
                     <button
-                        hx-post="/collection/bulk/rehash?unhashed_only=true&library_ids={{ filtered_lib_ids | join(',') }}"
+                        hx-post="/collection/bulk/rehash?unhashed_only=true&library_ids={{ all_filtered_lib_ids | join(',') }}"
                         hx-target="#bulk-result"
                         hx-swap="innerHTML"
                         onclick="document.getElementById('hashes-dropdown').classList.add('hidden')"
@@ -164,7 +163,7 @@
                         title="Only hash ROMs in the current filtered view that don't have a hash yet"
                     >Hash unhashed — filtered view</button>
                     <button
-                        hx-post="/collection/bulk/rehash?library_ids={{ filtered_lib_ids | join(',') }}"
+                        hx-post="/collection/bulk/rehash?library_ids={{ all_filtered_lib_ids | join(',') }}"
                         hx-target="#bulk-result"
                         hx-swap="innerHTML"
                         onclick="document.getElementById('hashes-dropdown').classList.add('hidden')"
@@ -365,7 +364,29 @@
     </div>
     {% endif %}
 
-    <p class="text-gray-600 text-xs mt-3">{{ items | length }} item{{ 's' if items | length != 1 }}</p>
+    <!-- Pagination -->
+    <div class="flex items-center justify-between mt-4 text-xs text-gray-500">
+        <span>
+            {% if total_filtered %}
+                Showing {{ page_start }}–{{ page_end }} of {{ total_filtered }} item{{ 's' if total_filtered != 1 }}
+            {% else %}
+                0 items
+            {% endif %}
+        </span>
+        {% if total_pages > 1 %}
+        <div class="flex items-center gap-1">
+            {% if page > 1 %}
+            <a href="?q={{ q }}&system={{ selected_system }}&status={{ selected_status }}&view={{ view }}&page={{ page - 1 }}"
+               class="px-3 py-1.5 bg-gray-800 border border-gray-700 rounded-lg hover:text-white transition-colors">&#8592; Prev</a>
+            {% endif %}
+            <span class="px-3 py-1.5 text-gray-600">{{ page }} / {{ total_pages }}</span>
+            {% if page < total_pages %}
+            <a href="?q={{ q }}&system={{ selected_system }}&status={{ selected_status }}&view={{ view }}&page={{ page + 1 }}"
+               class="px-3 py-1.5 bg-gray-800 border border-gray-700 rounded-lg hover:text-white transition-colors">Next &#8594;</a>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
 
     {% else %}
     <div class="bg-gray-900 border border-gray-800 rounded-lg p-12 text-center">
