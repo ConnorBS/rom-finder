@@ -38,33 +38,53 @@ async def ping():
 
 
 @router.get("/diag/hash-lookup")
-async def diag_hash_lookup(session: Session = Depends(get_session)):
-    """Diagnostic: fetch known RA hashes for a game then test API_GetGameInfoByMD5."""
+async def diag_hash_lookup(q: str = "Pokemon Blue Version", system_id: int = 4, session: Session = Depends(get_session)):
+    """Diagnostic: search RA for a game, fetch its known hashes, test API_GetGameInfoByMD5.
+
+    Confirms whether the lookup endpoint returns a match for hashes RA
+    definitively has in its database (ruling out credential or endpoint issues).
+    """
     from app.services.ra_client import RAClient
     ra_username = _get_setting(session, "ra_username")
     ra_api_key = _get_setting(session, "ra_api_key")
     if not ra_username or not ra_api_key:
         return {"error": "no credentials"}
     ra = RAClient(ra_username, ra_api_key)
-    # Get known hashes for Pokemon Blue (RA game 724) then test one
+
+    # Search for the game to get its RA game ID
     try:
-        hashes = await ra.get_game_hashes_full(724)
+        games = await ra.search_games(system_id, q)
     except Exception as e:
-        return {"error": f"get_game_hashes failed: {e}"}
+        return {"error": f"search_games failed: {e}"}
+    if not games:
+        return {"error": f"no games found for '{q}' on system {system_id}"}
+
+    game = games[0]
+    game_id = game.get("ID") or game.get("GameID")
+    game_title = game.get("Title", "?")
+
+    # Fetch known hashes for this game
+    try:
+        hashes = await ra.get_game_hashes_full(game_id)
+    except Exception as e:
+        return {"error": f"get_game_hashes failed for game {game_id}: {e}"}
     if not hashes:
-        return {"error": "no hashes returned for game 724", "hashes": []}
+        return {"error": f"no hashes for game {game_id} ({game_title})", "game_id": game_id}
+
     # Test the first known hash against API_GetGameInfoByMD5
     test_hash = hashes[0]["MD5"]
     try:
         match = await ra.lookup_hash(test_hash)
     except Exception as e:
-        return {"error": f"lookup_hash failed: {e}", "test_hash": test_hash}
+        return {"error": f"lookup_hash raised: {e}", "test_hash": test_hash}
+
     return {
-        "game_id_tested": 724,
-        "known_hashes": [h["MD5"] for h in hashes[:5]],
+        "game_found": game_title,
+        "game_id": game_id,
+        "known_hashes": [{"md5": h["MD5"], "name": h.get("Name", "")} for h in hashes[:5]],
         "test_hash": test_hash,
         "lookup_result": match,
-        "verdict": "API_GetGameInfoByMD5 WORKS" if match else "API_GetGameInfoByMD5 RETURNS NO MATCH",
+        "verdict": "API_GetGameInfoByMD5 WORKS ✓" if match else "API_GetGameInfoByMD5 RETURNS NO MATCH ✗",
     }
 
 
