@@ -48,8 +48,9 @@ DEFAULT_SETTINGS = {
     "ra_enabled": "false",
     "ra_username": "",
     "ra_api_key": "",
-    # Source enabled flags — archive.org built-in; others are extensions
+    # Source enabled flags
     "source_archive_org_enabled": "true",
+    "source_cdromance_enabled": "false",
     # Extension system
     "extensions_dir": os.environ.get("EXTENSIONS_DIR", "extensions"),
     "extension_repos": '["https://raw.githubusercontent.com/ConnorBS/rom-finder/main/extensions/index.json"]',
