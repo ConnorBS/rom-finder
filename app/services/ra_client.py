@@ -167,9 +167,10 @@ class RAClient:
             try:
                 data = resp.json()
             except Exception:
-                logger.warning("RA API returned non-JSON for hash %s (HTTP %d): %.300s",
-                               md5, resp.status_code, resp.text)
+                print(f"[lookup_hash] non-JSON for {md5} (HTTP {resp.status_code}): {resp.text[:300]}", flush=True)
                 return None
+
+        print(f"[lookup_hash] hash={md5} status={resp.status_code} response={str(data)[:500]}", flush=True)
 
         if not isinstance(data, dict):
             # API returns JSON null when hash is not in the database.
@@ -181,7 +182,7 @@ class RAClient:
         # Flat format uses "ID"; emulator-style responses use "GameID" — accept both.
         game_id = payload.get("ID") or payload.get("GameID")
         if not game_id:
-            logger.warning("RA hash lookup for %s returned no game ID — raw response: %s", md5, data)
+            print(f"[lookup_hash] no game ID in response for {md5}: {data}", flush=True)
             return None
 
         payload["ID"] = game_id  # normalise so all callers can rely on "ID"
