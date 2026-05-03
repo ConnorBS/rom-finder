@@ -40,3 +40,6 @@ docker run -d \
   "$IMAGE"
 
 echo "[$(date)] Redeploy complete. Tag: $TAG"
+
+echo "[$(date)] Pruning dangling images ..."
+docker image prune -f
