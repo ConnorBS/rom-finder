@@ -152,42 +152,38 @@ class RAClient:
         return [g for g in games if q in g.get("Title", "").lower()]
 
     async def lookup_hash(self, md5: str) -> Optional[dict]:
-        """Look up a game by its ROM MD5 hash. Returns game info dict or None."""
+        """Look up a game by its ROM MD5 hash. Returns game info dict or None.
+
+        Uses the emulator-style dorequest endpoint which is reliable.
+        API_GetGameInfoByMD5.php was found to return 404 for all hashes
+        regardless of whether they are in RA's database.
+        """
         async with httpx.AsyncClient() as client:
             resp = await client.get(
-                f"{RA_BASE_URL}/API_GetGameInfoByMD5.php",
-                params=self._params({"m": md5}),
+                "https://retroachievements.org/dorequest.php",
+                params={"r": "gameid", "u": self.username, "m": md5},
                 timeout=15,
             )
-            if resp.status_code == 404:
-                print(f"[lookup_hash] 404 for hash {md5} — not in RA database", flush=True)
-                return None  # hash not in RA's hash list — not an error
             if resp.status_code == 429:
                 raise RuntimeError("RetroAchievements rate limit exceeded (429) — retry later")
             resp.raise_for_status()
             try:
                 data = resp.json()
             except Exception:
-                print(f"[lookup_hash] non-JSON for {md5} (HTTP {resp.status_code}): {resp.text[:300]}", flush=True)
+                logger.warning("RA dorequest returned non-JSON for hash %s (HTTP %d): %.300s",
+                               md5, resp.status_code, resp.text)
                 return None
 
-        print(f"[lookup_hash] hash={md5} status={resp.status_code} response={str(data)[:500]}", flush=True)
-
-        if not isinstance(data, dict):
-            # API returns JSON null when hash is not in the database.
+        if not isinstance(data, dict) or not data.get("Success"):
             return None
 
-        # Newer RA API wraps game info under a "GameData" key; older format is flat.
-        payload = data.get("GameData") if isinstance(data.get("GameData"), dict) else data
-
-        # Flat format uses "ID"; emulator-style responses use "GameID" — accept both.
-        game_id = payload.get("ID") or payload.get("GameID")
+        # GameID=0 means hash not in RA's database; any positive value is a match.
+        game_id = data.get("GameID")
         if not game_id:
-            print(f"[lookup_hash] no game ID in response for {md5}: {data}", flush=True)
             return None
 
-        payload["ID"] = game_id  # normalise so all callers can rely on "ID"
-        return payload
+        data["ID"] = game_id  # normalise so all callers can rely on "ID"
+        return data
 
     async def test_credentials(self) -> tuple[bool, str]:
         """Test if credentials are valid. Returns (success, message)."""

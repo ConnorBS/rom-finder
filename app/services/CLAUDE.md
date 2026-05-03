@@ -28,7 +28,11 @@ A startup `print()` in `main.py` logs RAHasher availability to Docker stdout on 
 
 ### RA API gotchas
 
-**`API_GetGameInfoByMD5` response formats**: Three variants handled by `lookup_hash`:
+**`API_GetGameInfoByMD5` is deprecated/broken**: Returns HTTP 404 for ALL hashes including ones confirmed in RA's database via `API_GetGameHashes.php`. `lookup_hash` now uses `dorequest.php?r=gameid&u={user}&m={hash}` instead, which returns `{"Success": true, "GameID": N}` (N=0 = not found, N>0 = found). This was confirmed by cross-checking: `API_GetGameHashes.php` returned hash `3132056c8f17e4088b95e4264ca59575` for game 724, but `API_GetGameInfoByMD5.php` returned 404 for that same hash.
+
+**`dorequest.php` response format**: `{"Success": true, "GameID": N}` — normalised to `{"ID": N, ...}` before returning to callers.
+
+**Legacy `API_GetGameInfoByMD5` response formats** (kept for reference):
 1. Flat with `"ID"` — legacy format: `{"ID": 1234, "Title": "...", ...}`
 2. Flat with `"GameID"` — emulator-style: `{"Success": true, "GameID": 1234}`
 3. Wrapped in `"GameData"` — newer API format: `{"GameData": {"ID": 1234, ...}}`

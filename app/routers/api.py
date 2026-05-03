@@ -38,7 +38,7 @@ async def ping():
 
 
 @router.get("/diag/hash-lookup")
-async def diag_hash_lookup(q: str = "Pokemon Blue Version", system_id: int = 4, session: Session = Depends(get_session)):
+async def diag_hash_lookup(q: str = "Pokemon Blue Version", system_id: int = 4, game_id: int = 586, session: Session = Depends(get_session)):
     """Diagnostic: search RA for a game, fetch its known hashes, test API_GetGameInfoByMD5.
 
     Confirms whether the lookup endpoint returns a match for hashes RA
