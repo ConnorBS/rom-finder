@@ -26,6 +26,12 @@ RA doesn't always use plain MD5 — many systems use platform-specific algorithm
 The Dockerfile downloads it at build time. Without it, disc-based systems (Saturn, PS1/2, Dreamcast, Sega CD, etc.) hash as plain MD5 of the image file and will never match RA's database.
 A startup `print()` in `main.py` logs RAHasher availability to Docker stdout on every boot.
 
+### Rate limiting
+
+`_RateLimiter` (module-level `_limiter`) enforces 4 req/sec (240/min) across all `RAClient` instances and methods. RA's documented ceiling is 500 req/min; 240 gives a comfortable buffer. On a 429 response, `lookup_hash` waits for the `Retry-After` header value (default 60s) and retries once. A second consecutive 429 raises so the caller skips the entry and continues.
+
+At 4 req/sec, a full bulk verify of ~10 000 entries takes ~42 minutes as a background task.
+
 ### RA API gotchas
 
 **`API_GetGameInfoByMD5` is deprecated/broken**: Returns HTTP 404 for ALL hashes including ones confirmed in RA's database via `API_GetGameHashes.php`. `lookup_hash` now uses `dorequest.php?r=gameid&u={user}&m={hash}` instead, which returns `{"Success": true, "GameID": N}` (N=0 = not found, N>0 = found). This was confirmed by cross-checking: `API_GetGameHashes.php` returned hash `3132056c8f17e4088b95e4264ca59575` for game 724, but `API_GetGameInfoByMD5.php` returned 404 for that same hash.

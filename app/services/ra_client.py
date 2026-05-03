@@ -4,7 +4,9 @@ API docs: https://api.docs.retroachievements.org/
 Requires a free account and API key from retroachievements.org/settings
 """
 
+import asyncio
 import logging
+import time
 
 import httpx
 from typing import Optional
@@ -12,6 +14,28 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 RA_BASE_URL = "https://retroachievements.org/API"
+
+# ---------------------------------------------------------------------------
+# Rate limiter — shared across all RAClient instances.
+# RA's documented limit is 500 req/min (~8.3/s). We target 4/s (240/min)
+# to stay well clear. On a 429 we back off using the Retry-After header.
+# ---------------------------------------------------------------------------
+
+class _RateLimiter:
+    def __init__(self, calls_per_second: float = 4.0):
+        self._interval = 1.0 / calls_per_second
+        self._lock = asyncio.Lock()
+        self._last: float = 0.0
+
+    async def wait(self) -> None:
+        async with self._lock:
+            now = time.monotonic()
+            gap = self._interval - (now - self._last)
+            if gap > 0:
+                await asyncio.sleep(gap)
+            self._last = time.monotonic()
+
+_limiter = _RateLimiter()
 
 # Maps RA system name -> folder name on disk.
 # Only entries where the folder name differs from the system name are needed;
@@ -112,6 +136,7 @@ class RAClient:
 
     async def get_game_list(self, system_id: int) -> list[dict]:
         """Fetch all games for a given system, including hash count."""
+        await _limiter.wait()
         async with httpx.AsyncClient() as client:
             resp = await client.get(
                 f"{RA_BASE_URL}/API_GetGameList.php",
@@ -123,6 +148,7 @@ class RAClient:
 
     async def get_game_hashes(self, game_id: int) -> list[str]:
         """Return the list of accepted MD5 hashes for a game."""
+        await _limiter.wait()
         async with httpx.AsyncClient() as client:
             resp = await client.get(
                 f"{RA_BASE_URL}/API_GetGameHashes.php",
@@ -135,6 +161,7 @@ class RAClient:
 
     async def get_game_hashes_full(self, game_id: int) -> list[dict]:
         """Return full hash entries (MD5, Name, Labels) for a game."""
+        await _limiter.wait()
         async with httpx.AsyncClient() as client:
             resp = await client.get(
                 f"{RA_BASE_URL}/API_GetGameHashes.php",
@@ -147,6 +174,7 @@ class RAClient:
 
     async def search_games(self, system_id: int, query: str) -> list[dict]:
         """Search for games on a system by title (case-insensitive substring match)."""
+        # get_game_list already applies rate limiting
         games = await self.get_game_list(system_id)
         q = query.lower()
         return [g for g in games if q in g.get("Title", "").lower()]
@@ -157,7 +185,9 @@ class RAClient:
         Uses the emulator-style dorequest endpoint (API_GetGameInfoByMD5.php
         was found to return 404 for all hashes regardless of database state).
         Falls back to API_GetGameInfoByMD5.php if dorequest is blocked.
+        On 429 waits for Retry-After then retries once before giving up.
         """
+        await _limiter.wait()
         headers = {"User-Agent": "RetroAchievements/1.0"}
         async with httpx.AsyncClient(headers=headers) as client:
             # Primary: emulator-style endpoint, returns {"Success":true,"GameID":N}
@@ -166,9 +196,19 @@ class RAClient:
                 params={"r": "gameid", "u": self.username, "m": md5},
                 timeout=15,
             )
-            print(f"[lookup_hash] dorequest status={resp.status_code} for {md5}", flush=True)
+
             if resp.status_code == 429:
-                raise RuntimeError("RetroAchievements rate limit exceeded (429) — retry later")
+                retry_after = int(resp.headers.get("Retry-After", 60))
+                logger.warning("RA rate limit hit (429); waiting %ds before retry", retry_after)
+                await asyncio.sleep(retry_after)
+                await _limiter.wait()
+                resp = await client.get(
+                    "https://retroachievements.org/dorequest.php",
+                    params={"r": "gameid", "u": self.username, "m": md5},
+                    timeout=15,
+                )
+                if resp.status_code == 429:
+                    raise RuntimeError("RA rate limit persists after retry — skipping hash")
 
             if resp.status_code == 200:
                 try:
@@ -183,16 +223,19 @@ class RAClient:
                     pass  # fall through to legacy endpoint
 
             # Fallback: legacy endpoint (returns 404 for most hashes but may work in some cases)
-            print(f"[lookup_hash] falling back to API_GetGameInfoByMD5 (dorequest status={resp.status_code})", flush=True)
+            logger.debug("dorequest returned %d for %s, trying legacy endpoint", resp.status_code, md5)
+            await _limiter.wait()
             resp2 = await client.get(
                 f"{RA_BASE_URL}/API_GetGameInfoByMD5.php",
                 params=self._params({"m": md5}),
                 timeout=15,
             )
-            print(f"[lookup_hash] API_GetGameInfoByMD5 status={resp2.status_code} for {md5}", flush=True)
-            if resp2.status_code in (404, 429):
-                if resp2.status_code == 429:
-                    raise RuntimeError("RetroAchievements rate limit exceeded (429) — retry later")
+            if resp2.status_code == 429:
+                retry_after = int(resp2.headers.get("Retry-After", 60))
+                logger.warning("RA rate limit hit (429) on fallback; waiting %ds", retry_after)
+                await asyncio.sleep(retry_after)
+                raise RuntimeError("RA rate limit on fallback — skipping hash")
+            if resp2.status_code == 404:
                 return None
             resp2.raise_for_status()
             try:
@@ -231,6 +274,7 @@ class RAClient:
 
     async def get_game_info(self, game_id: int) -> dict:
         """Fetch detailed info for a single game including achievement count."""
+        await _limiter.wait()
         async with httpx.AsyncClient() as client:
             resp = await client.get(
                 f"{RA_BASE_URL}/API_GetGame.php",
