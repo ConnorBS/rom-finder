@@ -37,6 +37,37 @@ async def ping():
     return {"status": "ok"}
 
 
+@router.get("/diag/hash-lookup")
+async def diag_hash_lookup(session: Session = Depends(get_session)):
+    """Diagnostic: fetch known RA hashes for a game then test API_GetGameInfoByMD5."""
+    from app.services.ra_client import RAClient
+    ra_username = _get_setting(session, "ra_username")
+    ra_api_key = _get_setting(session, "ra_api_key")
+    if not ra_username or not ra_api_key:
+        return {"error": "no credentials"}
+    ra = RAClient(ra_username, ra_api_key)
+    # Get known hashes for Pokemon Blue (RA game 724) then test one
+    try:
+        hashes = await ra.get_game_hashes_full(724)
+    except Exception as e:
+        return {"error": f"get_game_hashes failed: {e}"}
+    if not hashes:
+        return {"error": "no hashes returned for game 724", "hashes": []}
+    # Test the first known hash against API_GetGameInfoByMD5
+    test_hash = hashes[0]["MD5"]
+    try:
+        match = await ra.lookup_hash(test_hash)
+    except Exception as e:
+        return {"error": f"lookup_hash failed: {e}", "test_hash": test_hash}
+    return {
+        "game_id_tested": 724,
+        "known_hashes": [h["MD5"] for h in hashes[:5]],
+        "test_hash": test_hash,
+        "lookup_result": match,
+        "verdict": "API_GetGameInfoByMD5 WORKS" if match else "API_GetGameInfoByMD5 RETURNS NO MATCH",
+    }
+
+
 # ---------------------------------------------------------------------------
 # Wanted
 # ---------------------------------------------------------------------------
