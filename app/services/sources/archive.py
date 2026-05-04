@@ -4,10 +4,13 @@ Uses the archive.org metadata and search APIs to find ROM files.
 Migrated from app/services/archive_client.py.
 """
 
+import logging
 import httpx
 from pathlib import Path
 
 from .base import RomSource
+
+logger = logging.getLogger(__name__)
 
 ARCHIVE_SEARCH_URL = "https://archive.org/advancedsearch.php"
 ARCHIVE_METADATA_URL = "https://archive.org/metadata"
@@ -39,7 +42,7 @@ class ArchiveSource(RomSource):
                 params={
                     "q": search_q,
                     "fl[]": ["identifier", "title", "description", "subject"],
-                    "rows": 25,
+                    "rows": 50,
                     "page": 1,
                     "output": "json",
                 },
@@ -53,13 +56,17 @@ class ArchiveSource(RomSource):
         return results
 
     async def get_files(self, identifier: str, name_filter: str = "") -> list[dict]:
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                f"{ARCHIVE_METADATA_URL}/{identifier}",
-                timeout=20,
-            )
-            resp.raise_for_status()
-            data = resp.json()
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(
+                    f"{ARCHIVE_METADATA_URL}/{identifier}",
+                    timeout=20,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+        except Exception as exc:
+            logger.warning("Archive.org metadata fetch failed for %s: %s", identifier, exc)
+            return []
 
         files = data.get("files", [])
         files = [

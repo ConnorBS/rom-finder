@@ -50,5 +50,108 @@
         {% endif %}
     </section>
 
+    <!-- Hunt History -->
+    <section>
+        <div class="flex items-center justify-between mb-3">
+            <div>
+                <h2 class="text-base font-semibold text-white">Hunt History</h2>
+                <p class="text-gray-500 text-xs mt-0.5">Every auto-hunt attempt — what was tried, from where, and what happened.</p>
+            </div>
+            {% if hunt_log %}
+            <div class="flex gap-1.5 flex-shrink-0" id="hunt-filter-btns">
+                <button onclick="filterHuntLog('all', this)"   class="hunt-filter-btn active-filter px-2.5 py-1 rounded text-xs bg-gray-700 text-white">All</button>
+                <button onclick="filterHuntLog('verified', this)" class="hunt-filter-btn px-2.5 py-1 rounded text-xs bg-gray-800 text-gray-400 hover:text-white">Verified</button>
+                <button onclick="filterHuntLog('bad_hash', this)" class="hunt-filter-btn px-2.5 py-1 rounded text-xs bg-gray-800 text-gray-400 hover:text-white">Bad hash</button>
+                <button onclick="filterHuntLog('download_failed', this)" class="hunt-filter-btn px-2.5 py-1 rounded text-xs bg-gray-800 text-gray-400 hover:text-white">Failed</button>
+            </div>
+            {% endif %}
+        </div>
+
+        {% if hunt_log %}
+        <div class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="w-full text-xs" id="hunt-log-table">
+                    <thead>
+                        <tr class="border-b border-gray-800 text-gray-500 uppercase tracking-wider text-left">
+                            <th class="px-4 py-2.5 font-medium">Time</th>
+                            <th class="px-4 py-2.5 font-medium">Game</th>
+                            <th class="px-4 py-2.5 font-medium">Source</th>
+                            <th class="px-4 py-2.5 font-medium">File</th>
+                            <th class="px-4 py-2.5 font-medium">Result</th>
+                            <th class="px-4 py-2.5 font-medium">Hash</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-800/50">
+                        {% for attempt, game in hunt_log %}
+                        <tr class="hunt-row hover:bg-gray-800/30 transition-colors" data-result="{{ attempt.result }}">
+                            <td class="px-4 py-2.5 text-gray-500 whitespace-nowrap">
+                                {{ attempt.tried_at.strftime('%m/%d %H:%M') }}
+                            </td>
+                            <td class="px-4 py-2.5 text-gray-200 max-w-[180px]">
+                                <span class="truncate block" title="{{ game.game_title }}">{{ game.game_title }}</span>
+                                <span class="text-gray-600">{{ game.system }}</span>
+                            </td>
+                            <td class="px-4 py-2.5">
+                                {% set src = attempt.source_id %}
+                                {% if src == 'cdromance' %}
+                                <span class="px-1.5 py-0.5 rounded text-xs bg-purple-900/50 text-purple-300 border border-purple-800">CDRomance</span>
+                                {% elif src == 'wowroms' %}
+                                <span class="px-1.5 py-0.5 rounded text-xs bg-blue-900/50 text-blue-300 border border-blue-800">WowROMs</span>
+                                {% elif src == 'romsfun' %}
+                                <span class="px-1.5 py-0.5 rounded text-xs bg-green-900/50 text-green-300 border border-green-800">ROMsFun</span>
+                                {% elif src == 'vimm' %}
+                                <span class="px-1.5 py-0.5 rounded text-xs bg-red-900/50 text-red-300 border border-red-800">Vimm</span>
+                                {% elif src == 'archive_org' %}
+                                <span class="px-1.5 py-0.5 rounded text-xs bg-orange-900/50 text-orange-300 border border-orange-800">Archive.org</span>
+                                {% else %}
+                                <span class="px-1.5 py-0.5 rounded text-xs bg-gray-800 text-gray-400 border border-gray-700">{{ src }}</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-4 py-2.5 text-gray-400 max-w-[200px]">
+                                <span class="font-mono truncate block" title="{{ attempt.file_name }}">{{ attempt.file_name }}</span>
+                            </td>
+                            <td class="px-4 py-2.5 whitespace-nowrap">
+                                {% if attempt.result == 'verified' %}
+                                <span class="px-1.5 py-0.5 rounded text-xs bg-green-900/40 text-green-400 border border-green-800">✓ Verified</span>
+                                {% elif attempt.result == 'bad_hash' %}
+                                <span class="px-1.5 py-0.5 rounded text-xs bg-amber-900/40 text-amber-400 border border-amber-800">✗ Bad hash</span>
+                                {% else %}
+                                <span class="px-1.5 py-0.5 rounded text-xs bg-red-900/40 text-red-400 border border-red-800">✗ Failed</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-4 py-2.5 font-mono text-gray-500">
+                                {% if attempt.file_hash %}{{ attempt.file_hash[:8] }}{% else %}—{% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% else %}
+        <div class="bg-gray-900 border border-gray-800 rounded-lg p-6 text-center">
+            <p class="text-gray-600 text-sm">No hunt history yet. Use Auto-Hunt on a Wanted game to get started.</p>
+        </div>
+        {% endif %}
+    </section>
+
 </div>
+<script>
+function filterHuntLog(result, btn) {
+    document.querySelectorAll('.hunt-filter-btn').forEach(function(b) {
+        b.classList.remove('active-filter', 'bg-gray-700', 'text-white');
+        b.classList.add('bg-gray-800', 'text-gray-400');
+    });
+    btn.classList.add('active-filter', 'bg-gray-700', 'text-white');
+    btn.classList.remove('bg-gray-800', 'text-gray-400');
+
+    document.querySelectorAll('.hunt-row').forEach(function(row) {
+        if (result === 'all' || row.dataset.result === result) {
+            row.style.display = '';
+        } else {
+            row.style.display = 'none';
+        }
+    });
+}
+</script>
 {% endblock %}

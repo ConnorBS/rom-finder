@@ -13,7 +13,7 @@
     {
       "id": "vimm",
       "name": "Vimm's Lair",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "type": "rom_source",
       "author": "ConnorBS",
       "description": "Downloads ROMs from Vimm's Lair. Uses headless Chromium (Playwright) to bypass the JS bot challenge. Enforces Vimm's one-download-at-a-time policy automatically.",
@@ -22,7 +22,7 @@
     {
       "id": "wowroms",
       "name": "WowROMs",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "type": "rom_source",
       "author": "ConnorBS",
       "description": "Downloads ROMs from WowROMs.com. No Playwright required — search, browse, and stream directly.",
@@ -31,7 +31,7 @@
     {
       "id": "romsfun",
       "name": "ROMsFun",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "type": "rom_source",
       "author": "ConnorBS",
       "description": "Downloads ROMs from ROMsFun.com. No bot protection — streams directly from their CDN.",

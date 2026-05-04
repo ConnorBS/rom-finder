@@ -8,7 +8,7 @@ from pathlib import Path
 from datetime import datetime
 
 from app.db.database import get_session
-from app.db.models import Download, DownloadStatus, AppSetting, LibraryEntry, WantedGame, HuntStatus
+from app.db.models import Download, DownloadStatus, AppSetting, LibraryEntry, WantedGame, HuntStatus, HuntAttempt
 from app.services import sources as source_registry
 from app.services.hasher import hash_rom, extract_rom_from_zip, DISC_SYSTEMS
 from app.services.rahasher import compute_ra_hash
@@ -38,10 +38,18 @@ async def downloads_page(request: Request, session: Session = Depends(get_sessio
     pending = [d for d in all_downloads if d.status == DownloadStatus.pending_approval]
     active = [d for d in all_downloads if d.status != DownloadStatus.pending_approval]
     ra_configured = bool(_get_setting(session, "ra_username") and _get_setting(session, "ra_api_key"))
+
+    hunt_log = session.exec(
+        select(HuntAttempt, WantedGame)
+        .join(WantedGame, HuntAttempt.wanted_game_id == WantedGame.id)
+        .order_by(HuntAttempt.tried_at.desc())
+        .limit(200)
+    ).all()
+
     applog.log_navigation("downloads", {"pending": len(pending), "active": len(active)})
     return templates.TemplateResponse(
         request, "downloads.html",
-        {"pending": pending, "active": active, "ra_configured": ra_configured},
+        {"pending": pending, "active": active, "ra_configured": ra_configured, "hunt_log": hunt_log},
     )
 
 

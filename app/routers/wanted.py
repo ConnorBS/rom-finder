@@ -385,6 +385,29 @@ async def wanted_detail(
     )
 
 
+@router.delete("/{game_id}/attempts", response_class=HTMLResponse)
+async def clear_hunt_attempts(
+    game_id: int,
+    session: Session = Depends(get_session),
+):
+    """Clear all non-verified hunt attempts and reset status to hunting.
+    Allows a full fresh retry of all sources without re-downloading verified ROMs."""
+    failed = session.exec(
+        select(HuntAttempt)
+        .where(HuntAttempt.wanted_game_id == game_id)
+        .where(HuntAttempt.result != "verified")
+    ).all()
+    for a in failed:
+        session.delete(a)
+    game = session.get(WantedGame, game_id)
+    if game and game.status == HuntStatus.exhausted:
+        game.status = HuntStatus.hunting
+        session.add(game)
+    session.commit()
+    applog.log_action("clear_hunt_attempts", {"game_id": game_id, "cleared": len(failed)})
+    return HTMLResponse("")
+
+
 @router.get("/{game_id}/attempts", response_class=HTMLResponse)
 async def hunt_attempts(
     request: Request,

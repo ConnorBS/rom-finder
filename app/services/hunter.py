@@ -182,7 +182,8 @@ async def auto_hunt(wanted_id: int) -> None:
                     if key not in seen_keys:
                         seen_keys.add(key)
                         candidates.append((_file_score(fname, ra_stems), src, identifier, f))
-            except Exception:
+            except Exception as exc:
+                applog.warning("hunt", f"get_files error ({src.source_id}): {exc}", {"identifier": identifier})
                 continue
 
         candidates.sort(key=lambda x: x[0], reverse=True)

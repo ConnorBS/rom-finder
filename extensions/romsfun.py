@@ -3,7 +3,7 @@
 EXTENSION_INFO = {
     "id": "romsfun",
     "name": "ROMsFun",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "type": "rom_source",
     "author": "ConnorBS",
     "description": "Downloads ROMs from ROMsFun.com. No bot protection — streams directly from their CDN.",
@@ -198,31 +198,43 @@ class RomsfunSource(RomSource):
                 mirror_resp.raise_for_status()
                 mirror_html = mirror_resp.text
 
+                cdn_url = _extract_dl_link(mirror_html)
+                if not cdn_url:
+                    logger.warning("ROMsFun: no #download-link found for %s", identifier)
+                    return []
+
+                filename = _extract_filename(cdn_url)
+
+                if name_filter:
+                    nf = Path(name_filter).stem.lower()
+                    if nf not in Path(filename).stem.lower():
+                        return []
+
+                # Probe CDN for file size (HEAD request — no body downloaded)
+                size = 0
+                try:
+                    head = await client.head(
+                        cdn_url,
+                        headers={**_HEADERS, "Referer": ROMSFUN_BASE + "/"},
+                        timeout=10,
+                    )
+                    size = int(head.headers.get("content-length", 0))
+                except Exception:
+                    pass
+
+                # Store the mirror page path so download_file() can fetch a fresh CDN URL
+                mirror_path = dl_page_path + "/1"  # e.g. /download/super-mario-5000-301806/1
+
+                return [{
+                    "name": filename,
+                    "identifier": mirror_path,
+                    "source_id": self.source_id,
+                    "size": size,
+                }]
+
         except Exception as exc:
             logger.warning("ROMsFun get_files failed for %s: %s", identifier, exc)
             return []
-
-        cdn_url = _extract_dl_link(mirror_html)
-        if not cdn_url:
-            logger.warning("ROMsFun: no #download-link found for %s", identifier)
-            return []
-
-        filename = _extract_filename(cdn_url)
-
-        if name_filter:
-            nf = Path(name_filter).stem.lower()
-            if nf not in Path(filename).stem.lower():
-                return []
-
-        # Store the mirror page path so download_file() can fetch a fresh CDN URL
-        mirror_path = dl_page_path + "/1"  # e.g. /download/super-mario-5000-301806/1
-
-        return [{
-            "name": filename,
-            "identifier": mirror_path,
-            "source_id": self.source_id,
-            "size": 0,
-        }]
 
     # ------------------------------------------------------------------
     # Download URL — mirror page path is the identifier

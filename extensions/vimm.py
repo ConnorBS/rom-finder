@@ -3,7 +3,7 @@
 EXTENSION_INFO = {
     "id": "vimm",
     "name": "Vimm's Lair",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "type": "rom_source",
     "author": "ConnorBS",
     "description": (
@@ -168,12 +168,13 @@ class VimmSource(RomSource):
         return results
 
     async def get_files(self, identifier: str, name_filter: str = "") -> list[dict]:
-        # Skip silently during auto-hunt if Playwright isn't installed — no point
-        # logging hundreds of warnings for something that can't succeed.
         try:
             import playwright  # noqa: F401
         except ImportError:
-            return []
+            raise RuntimeError(
+                "Playwright is not installed — Vimm's Lair downloads unavailable. "
+                "Install Playwright in the Docker container to enable Vimm."
+            )
 
         async with httpx.AsyncClient(follow_redirects=True) as client:
             resp = await client.get(

@@ -3,7 +3,7 @@
 EXTENSION_INFO = {
     "id": "wowroms",
     "name": "WowROMs",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "type": "rom_source",
     "author": "ConnorBS",
     "description": "Downloads ROMs from WowROMs.com. No Playwright required.",
@@ -214,41 +214,56 @@ class WowromsSource(RomSource):
 
         return [{
             "name": filename,
-            # Store the ajax path as identifier — download_file() uses it
-            "identifier": ajax_path,
+            # Store the full download page URL so download_file() can fetch it
+            # fresh with a new session (needed for cookies + ajax token to work).
+            "identifier": dl_page_url,
             "source_id": self.source_id,
             "size": size,
         }]
 
     # ------------------------------------------------------------------
-    # Download URL — the ajax path is stored as the file identifier
+    # Download URL — identifier is already the full download page URL
     # ------------------------------------------------------------------
 
     def get_download_url(self, identifier: str, filename: str) -> str:
-        # identifier is the ajax path from the download page JS
-        if identifier.startswith("/"):
-            return WOWROMS_BASE + identifier
         return identifier
 
     # ------------------------------------------------------------------
-    # Download — generate fresh token, POST to ajax, stream CDN URL
+    # Download — re-fetch download page (establishes session cookies),
+    # extract ajax path, POST with fresh token, stream CDN URL.
     # ------------------------------------------------------------------
 
     async def download_file(self, url: str, dest: Path, progress_callback=None) -> None:
+        # url = download page URL (e.g. https://www.wowroms.com/en/roms/sys/download-slug/123.html)
         dest.parent.mkdir(parents=True, exist_ok=True)
-        k, t = _make_token()
-        ajax_url = f"{url}?k={k}&t={t}"
 
         async with httpx.AsyncClient(
             headers=_HEADERS, follow_redirects=True, timeout=60
         ) as client:
+            # Step 1: fetch download page — this sets session cookies on the client
+            try:
+                page_resp = await client.get(
+                    url, headers={**_HEADERS, "Referer": WOWROMS_BASE + "/"}
+                )
+                page_resp.raise_for_status()
+            except Exception as exc:
+                raise RuntimeError(f"WowROMs download page fetch failed: {exc}") from exc
+
+            ajax_m = _AJAX_URL_RE.search(page_resp.text)
+            if not ajax_m:
+                raise RuntimeError(f"WowROMs: no ajaxLinkUrl found on {url}")
+            ajax_path = ajax_m.group(1)
+
+            # Step 2: POST to ajax with fresh token; cookies from step 1 sent automatically
+            k, t = _make_token()
+            ajax_url = f"{WOWROMS_BASE}{ajax_path}?k={k}&t={t}"
             try:
                 ajax_resp = await client.post(
                     ajax_url,
                     headers={
                         **_HEADERS,
                         "X-Requested-With": "XMLHttpRequest",
-                        "Referer": WOWROMS_BASE + "/",
+                        "Referer": url,
                     },
                 )
                 ajax_resp.raise_for_status()
@@ -260,6 +275,7 @@ class WowromsSource(RomSource):
             if not cdn_url or cdn_url in ("/", ""):
                 raise RuntimeError(f"WowROMs AJAX returned no download link: {data}")
 
+            # Step 3: stream CDN
             try:
                 async with client.stream(
                     "GET", cdn_url,
