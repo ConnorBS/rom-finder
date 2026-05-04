@@ -364,6 +364,27 @@ async def hunt_status(
     )
 
 
+@router.get("/{game_id}/detail", response_class=HTMLResponse)
+async def wanted_detail(
+    request: Request,
+    game_id: int,
+    session: Session = Depends(get_session),
+):
+    """Slide-over detail panel content for a WantedGame card."""
+    game = session.get(WantedGame, game_id)
+    if not game:
+        return HTMLResponse('<p class="text-red-400 text-sm">Game not found.</p>')
+    attempts = session.exec(
+        select(HuntAttempt)
+        .where(HuntAttempt.wanted_game_id == game_id)
+        .order_by(HuntAttempt.tried_at.desc())
+    ).all()
+    return templates.TemplateResponse(
+        request, "partials/wanted_detail.html",
+        {"game": game, "attempts": attempts},
+    )
+
+
 @router.get("/{game_id}/attempts", response_class=HTMLResponse)
 async def hunt_attempts(
     request: Request,

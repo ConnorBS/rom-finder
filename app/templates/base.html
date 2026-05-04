@@ -111,5 +111,40 @@
             }
         });
     </script>
+
+    <!-- Detail slide-over panel -->
+    <div id="detail-backdrop"
+         class="fixed inset-0 bg-black/60 z-40 hidden transition-opacity duration-200"
+         onclick="closeDetailPanel()"></div>
+    <div id="detail-panel"
+         class="fixed top-0 right-0 h-full w-full sm:w-[480px] bg-gray-950 border-l border-gray-800 z-50 flex flex-col translate-x-full transition-transform duration-250 ease-out">
+        <div class="flex items-center justify-between px-4 py-3 border-b border-gray-800 flex-shrink-0">
+            <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Details</span>
+            <button onclick="closeDetailPanel()"
+                    class="text-gray-500 hover:text-white text-xl leading-none transition-colors"
+                    aria-label="Close">×</button>
+        </div>
+        <div id="detail-panel-content" class="flex-1 overflow-y-auto p-4">
+        </div>
+    </div>
+    <script>
+        function openDetailPanel() {
+            document.getElementById('detail-panel').classList.remove('translate-x-full');
+            document.getElementById('detail-backdrop').classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+        }
+        function closeDetailPanel() {
+            document.getElementById('detail-panel').classList.add('translate-x-full');
+            document.getElementById('detail-backdrop').classList.add('hidden');
+            document.body.style.overflow = '';
+        }
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') closeDetailPanel();
+        });
+        // Auto-open whenever HTMX loads content into the detail panel
+        document.body.addEventListener('htmx:afterSwap', function(e) {
+            if (e.detail.target.id === 'detail-panel-content') openDetailPanel();
+        });
+    </script>
 </body>
 </html>

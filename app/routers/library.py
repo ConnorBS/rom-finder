@@ -6,7 +6,7 @@ from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select
 
 from app.db.database import get_session
-from app.db.models import AppSetting, LibraryEntry, WantedGame, HuntStatus
+from app.db.models import AppSetting, Download, LibraryEntry, WantedGame, HuntStatus
 from app.services.ra_client import DEFAULT_FOLDER_MAP
 from app.services import logger as applog
 
@@ -91,6 +91,27 @@ async def library_page(
     return templates.TemplateResponse(
         request, "library.html",
         {"entries": entries, "systems": systems, "selected_system": system, "query": q},
+    )
+
+
+@router.get("/{library_id}/detail", response_class=HTMLResponse)
+async def library_detail(
+    request: Request,
+    library_id: int,
+    session: Session = Depends(get_session),
+):
+    """Slide-over detail panel content for a library/collection card."""
+    entry = session.get(LibraryEntry, library_id)
+    if not entry:
+        return HTMLResponse('<p class="text-red-400 text-sm">Entry not found.</p>')
+    downloads = session.exec(
+        select(Download)
+        .where(Download.file_path == entry.file_path)
+        .order_by(Download.created_at.desc())
+    ).all()
+    return templates.TemplateResponse(
+        request, "partials/library_detail.html",
+        {"entry": entry, "downloads": downloads},
     )
 
 

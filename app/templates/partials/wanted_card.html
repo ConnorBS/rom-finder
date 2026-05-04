@@ -14,8 +14,12 @@
      data-title="{{ game.game_title | lower }}"
      data-added="{{ game.added_at.isoformat() }}">
 
-    <!-- Cover -->
-    <div class="relative bg-gray-800 aspect-[3/4] overflow-hidden">
+    <!-- Cover — clicking opens the detail slide-over panel -->
+    <div class="relative bg-gray-800 aspect-[3/4] overflow-hidden cursor-pointer"
+         hx-get="/wanted/{{ game.id }}/detail"
+         hx-target="#detail-panel-content"
+         hx-swap="innerHTML"
+         hx-trigger="click[!event.target.closest('button')]">
         {% if game.cover_path %}
         <img
             src="/static/{{ game.cover_path }}"

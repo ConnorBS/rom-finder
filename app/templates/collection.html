@@ -201,8 +201,20 @@
              data-lib-id="{{ item.library_id or '' }}"
              data-wanted-id="{{ item.wanted_id or '' }}">
 
-            <!-- Cover -->
-            <div class="relative bg-gray-800 aspect-[3/4] overflow-hidden">
+            <!-- Cover — clicking opens the detail slide-over panel -->
+            <div class="relative bg-gray-800 aspect-[3/4] overflow-hidden
+                        {% if item.library_id or item.wanted_id %}cursor-pointer{% endif %}"
+                 {% if item.library_id %}
+                 hx-get="/library/{{ item.library_id }}/detail"
+                 hx-target="#detail-panel-content"
+                 hx-swap="innerHTML"
+                 hx-trigger="click[!event.target.closest('button')]"
+                 {% elif item.wanted_id %}
+                 hx-get="/wanted/{{ item.wanted_id }}/detail"
+                 hx-target="#detail-panel-content"
+                 hx-swap="innerHTML"
+                 hx-trigger="click[!event.target.closest('button')]"
+                 {% endif %}>
                 {% if item.cover_path %}
                 <img
                     src="/static/{{ item.cover_path }}"
