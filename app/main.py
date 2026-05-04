@@ -87,6 +87,11 @@ DEFAULT_SETTINGS = {
 async def lifespan(app: FastAPI):
     SQLModel.metadata.create_all(engine)
     _run_migrations()
+    # Fix corrupted system names left by the Chrome extension concatenation bug
+    with Session(engine) as session:
+        for table in ("wanted_games", "library"):
+            session.exec(text(f"UPDATE {table} SET system = 'Wii' WHERE system = 'WiiWii'"))
+        session.commit()
     # Seed default settings if not already present
     with Session(engine) as session:
         for key, value in DEFAULT_SETTINGS.items():

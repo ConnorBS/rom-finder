@@ -107,18 +107,22 @@ class VimmSource(RomSource):
 
     async def search(self, query: str, system: str = "") -> list[dict]:
         vimm_sys = self._vimm_system(system)
-        params: dict = {"p": "list", "q": query}
-        if vimm_sys:
-            params["system"] = vimm_sys
+        if not vimm_sys:
+            return []  # Vimm search requires a known system; unknown system = no results
 
-        async with httpx.AsyncClient(follow_redirects=True) as client:
-            resp = await client.get(
-                f"{VIMM_BASE}/vault/",
-                params=params,
-                headers=_HEADERS,
-                timeout=20,
-            )
-            resp.raise_for_status()
+        params: dict = {"p": "list", "q": query, "system": vimm_sys}
+
+        try:
+            async with httpx.AsyncClient(follow_redirects=True) as client:
+                resp = await client.get(
+                    f"{VIMM_BASE}/vault/",
+                    params=params,
+                    headers=_HEADERS,
+                    timeout=20,
+                )
+                resp.raise_for_status()
+        except Exception:
+            return []
 
         soup = BeautifulSoup(resp.text, "html.parser")
         results: list[dict] = []

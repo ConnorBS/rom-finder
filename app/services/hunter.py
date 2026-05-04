@@ -180,8 +180,13 @@ async def auto_hunt(wanted_id: int) -> None:
                     fname = f.get("name", "")
                     key = (src.source_id, identifier, fname)
                     if key not in seen_keys:
+                        score = _file_score(fname, ra_stems)
+                        # Skip files with no title match when we know the expected ROM names.
+                        # Prevents downloading unrelated games returned by loose source searches.
+                        if ra_stems and score == 0:
+                            continue
                         seen_keys.add(key)
-                        candidates.append((_file_score(fname, ra_stems), src, identifier, f))
+                        candidates.append((score, src, identifier, f))
             except Exception as exc:
                 applog.warning("hunt", f"get_files error ({src.source_id}): {exc}", {"identifier": identifier})
                 continue
