@@ -31,10 +31,10 @@
     {
       "id": "romsfun",
       "name": "ROMsFun",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "type": "rom_source",
       "author": "ConnorBS",
-      "description": "Searches ROMsFun.com for ROMs. May be blocked by Cloudflare bot protection.",
+      "description": "Downloads ROMs from ROMsFun.com. No bot protection — streams directly from their CDN.",
       "pkg_url": "https://raw.githubusercontent.com/ConnorBS/rom-finder/main/extensions/romsfun.py"
     }
   ]
