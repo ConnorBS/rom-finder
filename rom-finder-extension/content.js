@@ -47,16 +47,72 @@
     return title;
   }
 
+  // Authoritative system ID → display name mapping (mirrors ra_client.py SYSTEMS dict).
+  // Using the ID avoids scraping link.textContent, which on RA's React frontend
+  // concatenates the abbreviation and full name (e.g. "GBAGame Boy Advance", "WiiWii").
+  const RA_SYSTEMS = {
+    1:  "Sega Genesis / Mega Drive",
+    2:  "Nintendo 64",
+    3:  "SNES",
+    4:  "Game Boy",
+    5:  "Game Boy Advance",
+    6:  "Game Boy Color",
+    7:  "NES",
+    8:  "PC Engine / TurboGrafx-16",
+    9:  "Sega CD",
+    10: "Sega 32X",
+    11: "Master System",
+    12: "PlayStation",
+    13: "Atari Lynx",
+    14: "Neo Geo Pocket",
+    15: "Game Gear",
+    17: "Atari Jaguar",
+    18: "Nintendo DS",
+    20: "Wii",
+    21: "PlayStation 2",
+    23: "Magnavox Odyssey 2",
+    24: "Pokemon Mini",
+    25: "Atari 2600",
+    27: "Arcade",
+    28: "Virtual Boy",
+    29: "MSX",
+    33: "SG-1000",
+    37: "Amstrad CPC",
+    38: "Apple II",
+    39: "Saturn",
+    40: "Dreamcast",
+    41: "PlayStation Portable",
+    43: "3DO Interactive Multiplayer",
+    44: "ColecoVision",
+    45: "Intellivision",
+    46: "Vectrex",
+    47: "PC-8000/8800",
+    49: "PC-FX",
+    51: "Atari 7800",
+    53: "WonderSwan",
+    56: "Fairchild Channel F",
+    57: "Philips CD-i",
+    63: "Watara Supervision",
+    69: "Mega Duck",
+    71: "Arduboy",
+    72: "WASM-4",
+    76: "PC Engine CD",
+    78: "Nintendo DSi",
+    80: "GameCube",
+    89: "Uzebox",
+  };
+
   function getSystemInfo() {
-    // The RA site nav lists every system (NES first) inside <nav>/<header>
-    // elements that appear before the game content in the DOM.
-    // Skip those and take the first system link that's in the page body.
     const allLinks = document.querySelectorAll('a[href*="/system/"]');
     for (const link of allLinks) {
       if (link.closest('nav, header, [role="navigation"], [role="menu"]')) continue;
-      const name = link.textContent.trim();
       const m = link.href.match(/\/system\/(\d+)/);
-      return { name, id: m ? parseInt(m[1], 10) : null };
+      if (!m) continue;
+      const id = parseInt(m[1], 10);
+      // Prefer the authoritative name from RA_SYSTEMS over link text, which can
+      // include both an abbreviation span and the full name on RA's React pages.
+      const name = RA_SYSTEMS[id] || link.textContent.trim();
+      return { name, id };
     }
     return { name: '', id: null };
   }

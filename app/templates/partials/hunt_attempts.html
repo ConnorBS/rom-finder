@@ -1,0 +1,24 @@
+{% if attempts %}
+<div class="mt-1 space-y-1">
+  {% for a in attempts %}
+  <div class="bg-gray-800/60 rounded px-2 py-1.5 text-xs space-y-0.5">
+    <div class="flex items-center justify-between gap-2">
+      <span class="text-gray-400 font-medium truncate">{{ a.source_id }}</span>
+      {% if a.result == 'verified' %}
+        <span class="text-green-400 flex-shrink-0">✓ verified</span>
+      {% elif a.result == 'bad_hash' %}
+        <span class="text-red-400/80 flex-shrink-0">✗ bad hash</span>
+      {% else %}
+        <span class="text-yellow-500/70 flex-shrink-0">✗ failed</span>
+      {% endif %}
+    </div>
+    <p class="text-gray-600 font-mono truncate" title="{{ a.file_name }}">{{ a.file_name }}</p>
+    {% if a.file_hash %}
+    <p class="text-gray-700 font-mono text-xs" title="{{ a.file_hash }}">{{ a.file_hash[:16] }}…</p>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<p class="text-gray-600 text-xs mt-1">No attempts recorded.</p>
+{% endif %}

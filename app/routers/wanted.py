@@ -364,6 +364,24 @@ async def hunt_status(
     )
 
 
+@router.get("/{game_id}/attempts", response_class=HTMLResponse)
+async def hunt_attempts(
+    request: Request,
+    game_id: int,
+    session: Session = Depends(get_session),
+):
+    """HTMX: load hunt attempt history for an exhausted game."""
+    attempts = session.exec(
+        select(HuntAttempt)
+        .where(HuntAttempt.wanted_game_id == game_id)
+        .order_by(HuntAttempt.tried_at)
+    ).all()
+    return templates.TemplateResponse(
+        request, "partials/hunt_attempts.html",
+        {"attempts": attempts},
+    )
+
+
 # ---------------------------------------------------------------------------
 # Background tasks
 # ---------------------------------------------------------------------------

@@ -101,19 +101,33 @@
         </div>
 
         {% elif game.status.value == 'exhausted' %}
-        <p class="text-orange-500/70 text-xs mt-auto">
-            {{ card_hunt_attempts }} source{{ 's' if card_hunt_attempts != 1 }} tried — no verified dump found
-        </p>
-        <button
-            class="w-full bg-orange-900/40 hover:bg-orange-900/60 border border-orange-800 text-orange-300 hover:text-orange-200 text-xs px-2 py-1.5 rounded transition-colors"
-            hx-post="/wanted/{{ game.id }}/auto-hunt"
-            hx-target="#wanted-{{ game.id }}"
-            hx-swap="outerHTML"
-            hx-indicator="this"
-        >
-            <span class="htmx-label">↺ Retry Hunt</span>
-            <span class="htmx-indicator">Starting…</span>
-        </button>
+        <div class="mt-auto space-y-1">
+          <div class="flex items-center justify-between">
+            <p class="text-orange-500/70 text-xs">
+                {{ card_hunt_attempts }} attempt{{ 's' if card_hunt_attempts != 1 }} — no verified dump
+            </p>
+            <button
+                class="text-gray-600 hover:text-gray-400 text-xs transition-colors"
+                hx-get="/wanted/{{ game.id }}/attempts"
+                hx-target="#hunt-history-{{ game.id }}"
+                hx-swap="innerHTML"
+                hx-trigger="click once"
+                onclick="const h=document.getElementById('hunt-history-{{ game.id }}'); h.classList.toggle('hidden'); this.textContent=h.classList.contains('hidden')?'▸ history':'▾ history'"
+                title="View what was tried"
+            >▸ history</button>
+          </div>
+          <div id="hunt-history-{{ game.id }}" class="hidden"></div>
+          <button
+              class="w-full bg-orange-900/40 hover:bg-orange-900/60 border border-orange-800 text-orange-300 hover:text-orange-200 text-xs px-2 py-1.5 rounded transition-colors"
+              hx-post="/wanted/{{ game.id }}/auto-hunt"
+              hx-target="#wanted-{{ game.id }}"
+              hx-swap="outerHTML"
+              hx-indicator="this"
+          >
+              <span class="htmx-label">↺ Retry Hunt</span>
+              <span class="htmx-indicator">Starting…</span>
+          </button>
+        </div>
 
         {% else %}
         <button
