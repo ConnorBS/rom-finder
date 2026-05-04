@@ -5,6 +5,8 @@
 
 {% else %}
 {% set is_vimm = (source_id == 'vimm') %}
+{% set is_archive = (source_id == 'archive_org' or not source_id) %}
+{% set is_cdromance = (source_id == 'cdromance') %}
 <div class="bg-gray-900 border border-gray-800 rounded-lg mt-2 overflow-hidden">
     <div class="flex items-center justify-between px-4 py-2.5 border-b border-gray-800 bg-gray-800/50">
         <div class="flex items-center gap-3 min-w-0">
@@ -15,11 +17,17 @@
                class="text-blue-500 hover:text-blue-400 text-xs flex-shrink-0">
                 vimm.net ↗
             </a>
-            {% else %}
+            {% elif is_archive %}
             <a href="https://archive.org/details/{{ identifier }}"
                target="_blank"
                class="text-blue-500 hover:text-blue-400 text-xs flex-shrink-0">
                 archive.org ↗
+            </a>
+            {% elif is_cdromance %}
+            <a href="https://cdromance.org/{{ identifier.replace('::', '/') }}/"
+               target="_blank"
+               class="text-blue-500 hover:text-blue-400 text-xs flex-shrink-0">
+                cdromance.org ↗
             </a>
             {% endif %}
         </div>
@@ -97,12 +105,20 @@
             Check on vimm.net ↗
         </a>
         {% else %}
-        <p class="text-gray-500 text-xs">No downloadable ROM files found in this collection.</p>
+        <p class="text-gray-500 text-xs">No downloadable ROM files found.</p>
+        {% if is_archive %}
         <a href="https://archive.org/details/{{ identifier }}"
            target="_blank"
            class="text-blue-500 hover:text-blue-400 text-xs flex-shrink-0 ml-4">
             Check on archive.org ↗
         </a>
+        {% elif is_cdromance %}
+        <a href="https://cdromance.org/{{ identifier.replace('::', '/') }}/"
+           target="_blank"
+           class="text-blue-500 hover:text-blue-400 text-xs flex-shrink-0 ml-4">
+            Check on cdromance.org ↗
+        </a>
+        {% endif %}
         {% endif %}
     </div>
     {% endif %}

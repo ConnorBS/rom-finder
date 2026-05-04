@@ -45,6 +45,7 @@
                         {% endif %}
                     </div>
                 </div>
+                {% set files_url = "/games/" ~ item.identifier ~ "/files?source_id=" ~ (item.source_id or 'archive_org') ~ "&system=" ~ (wanted.system | urlencode) ~ "&game_title=" ~ (wanted.game_title | urlencode) ~ "&ra_game_id=" ~ wanted.ra_game_id ~ ("&q=" ~ (rom_names[0].name | urlencode) if rom_names else "") %}
                 {% if item.source_id == 'vimm' %}
                 <form
                     hx-post="/downloads/start"
@@ -67,10 +68,10 @@
                         <span class="htmx-indicator">Queuing...</span>
                     </button>
                 </form>
-                {% else %}
+                {% elif item.source_id == 'archive_org' or not item.source_id %}
                 <button
                     class="flex-shrink-0 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 hover:text-white text-xs px-3 py-1.5 rounded-md transition-colors"
-                    hx-get="/games/{{ item.identifier }}/files?source_id={{ item.source_id or 'archive_org' }}&system={{ wanted.system | urlencode }}&game_title={{ wanted.game_title | urlencode }}&ra_game_id={{ wanted.ra_game_id }}{% if rom_names %}&q={{ rom_names[0].name | urlencode }}{% endif %}"
+                    hx-get="{{ files_url }}"
                     hx-target="#wsrc-item-{{ sid }}-{{ loop.index }}-{{ wanted.id }}"
                     hx-swap="outerHTML"
                     hx-indicator="this"
@@ -78,6 +79,15 @@
                     <span class="htmx-label">Browse files</span>
                     <span class="htmx-indicator">Loading...</span>
                 </button>
+                {% else %}
+                <!-- Extension sources: auto-load the file list without requiring a click -->
+                <div
+                    hx-get="{{ files_url }}"
+                    hx-target="#wsrc-item-{{ sid }}-{{ loop.index }}-{{ wanted.id }}"
+                    hx-swap="outerHTML"
+                    hx-trigger="load">
+                    <span class="text-gray-600 text-xs">Loading...</span>
+                </div>
                 {% endif %}
             </div>
         </div>
