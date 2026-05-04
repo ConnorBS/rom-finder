@@ -44,6 +44,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: APP_VERSION=${{ github.sha }}
           provenance: false
           # GitHub Actions cache — simpler than registry cache, no extra
           # GHCR tags, free up to 10 GB. Subsequent builds skip unchanged

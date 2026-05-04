@@ -14,6 +14,7 @@ Mirrors Sonarr/Radarr's grab logic:
   4. All candidates tried with no match → mark WantedGame.status = exhausted
 """
 
+import asyncio
 import json
 import shutil
 import zipfile
@@ -202,6 +203,10 @@ async def auto_hunt(wanted_id: int) -> None:
 
         tried = 0
         for score, src, identifier, file_info in candidates:
+            if activity_store.is_cancelled(task_id):
+                applog.info("hunt", f"Hunt cancelled by user: {game_title}", {"wanted_id": wanted_id})
+                break
+
             file_name = file_info.get("name", f"rom_{tried}.zip")
             key = (src.source_id, identifier, file_name)
             if key in past:
@@ -223,7 +228,14 @@ async def auto_hunt(wanted_id: int) -> None:
                     "wanted_id": wanted_id, "source": src.source_id,
                     "identifier": identifier, "score": score,
                 })
-                await src.download_file(source_url, dest, None)
+                try:
+                    await asyncio.wait_for(
+                        src.download_file(source_url, dest, None),
+                        timeout=300,  # 5 min max per attempt
+                    )
+                except asyncio.TimeoutError:
+                    applog.warning("hunt", f"Download timed out (5 min): {file_name}", {"wanted_id": wanted_id})
+                    raise RuntimeError("Download timed out after 5 minutes")
 
                 rom_path = dest
                 if dest.suffix.lower() in (".zip", ".7z"):

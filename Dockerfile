@@ -32,9 +32,11 @@ VOLUME ["/data", "/app/static/covers", "/roms"]
 
 EXPOSE 8080
 
+ARG APP_VERSION=dev
 ENV HOST=0.0.0.0 \
     PORT=8080 \
     DEBUG=false \
-    DB_URL=sqlite:////data/rom_finder.db
+    DB_URL=sqlite:////data/rom_finder.db \
+    APP_VERSION=$APP_VERSION
 
 CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]

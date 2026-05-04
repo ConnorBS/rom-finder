@@ -416,6 +416,62 @@
             <div id="settings-feedback"></div>
         </div>
     </form>
+
+    <!-- Application -->
+    <section class="space-y-3 border-t border-gray-800 pt-6 mt-2">
+        <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider">Application</h2>
+        <div class="bg-gray-900 border border-gray-800 rounded-lg divide-y divide-gray-800">
+
+            <!-- Version -->
+            <div class="px-5 py-4 flex items-center justify-between gap-4">
+                <div>
+                    <p class="text-sm text-gray-200 font-medium">Version</p>
+                    {% if version and version != 'dev' %}
+                    <p class="text-xs text-gray-500 mt-0.5 font-mono">
+                        <a href="https://github.com/ConnorBS/rom-finder/commit/{{ version }}"
+                           target="_blank"
+                           class="text-blue-500 hover:text-blue-400">{{ version[:7] }}</a>
+                        &nbsp;·&nbsp;
+                        <a href="https://github.com/ConnorBS/rom-finder/commits/main"
+                           target="_blank"
+                           class="hover:text-gray-300 transition-colors">view history ↗</a>
+                    </p>
+                    {% else %}
+                    <p class="text-xs text-gray-600 mt-0.5">development build</p>
+                    {% endif %}
+                </div>
+                <button
+                    hx-post="/settings/pull-update"
+                    hx-target="#update-result"
+                    hx-swap="innerHTML"
+                    hx-indicator="this"
+                    class="flex-shrink-0 text-xs px-3 py-1.5 rounded border border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 transition-colors"
+                >
+                    <span class="htmx-label">↓ Pull update</span>
+                    <span class="htmx-indicator">Checking…</span>
+                </button>
+            </div>
+
+            <!-- Restart -->
+            <div class="px-5 py-4 flex items-center justify-between gap-4">
+                <div>
+                    <p class="text-sm text-gray-200 font-medium">Restart container</p>
+                    <p class="text-xs text-gray-600 mt-0.5">Gracefully stops the app process. Docker restarts it automatically if the restart policy is <span class="font-mono">unless-stopped</span>.</p>
+                </div>
+                <button
+                    hx-post="/settings/restart"
+                    hx-target="#update-result"
+                    hx-swap="innerHTML"
+                    hx-confirm="Restart the container now?"
+                    class="flex-shrink-0 text-xs px-3 py-1.5 rounded border border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 transition-colors"
+                >
+                    Restart
+                </button>
+            </div>
+
+        </div>
+        <div id="update-result" class="min-h-[1rem]"></div>
+    </section>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>

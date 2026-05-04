@@ -1,10 +1,14 @@
 import json
+import os
 import re
+import signal
 from fastapi import APIRouter, Request, Form, Depends, Query, BackgroundTasks
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select
 from pathlib import Path
+
+APP_VERSION = os.environ.get("APP_VERSION", "dev")
 
 from app.db.database import get_session
 from app.db.models import AppSetting, InstalledExtension
@@ -153,6 +157,7 @@ async def settings_page(request: Request, session: Session = Depends(get_session
             "ext_schemas": ext_schemas,
             "ext_names": ext_names,
             "ext_values": ext_values,
+            "version": APP_VERSION,
         },
     )
 
@@ -323,6 +328,53 @@ async def autodiscover_run_now(session: Session = Depends(get_session)):
     return HTMLResponse(
         f'<span class="text-gray-400 text-xs">No new games found across {systems} system{"s" if systems != 1 else ""}.</span>'
     )
+
+
+@router.post("/restart", response_class=HTMLResponse)
+async def restart_app(background_tasks: BackgroundTasks):
+    """Gracefully stop the uvicorn process. Docker restarts the container
+    automatically when the restart policy is 'unless-stopped' or 'always'."""
+    applog.info("system", "Container restart requested from Settings")
+    background_tasks.add_task(_delayed_restart)
+    return HTMLResponse(
+        '<span class="text-green-400 text-xs">&#10003; Restarting… the page will reload in a few seconds.</span>'
+        '<script>setTimeout(()=>location.reload(),4000)</script>'
+    )
+
+
+async def _delayed_restart() -> None:
+    import asyncio as _asyncio
+    await _asyncio.sleep(1)
+    os.kill(os.getpid(), signal.SIGTERM)
+
+
+@router.post("/pull-update", response_class=HTMLResponse)
+async def pull_update():
+    """Trigger the Unraid redeploy webhook to pull the latest image and restart."""
+    import httpx as _httpx
+    webhook_url = os.environ.get("DEPLOY_WEBHOOK_URL", "")
+    webhook_token = os.environ.get("DEPLOY_WEBHOOK_TOKEN", "")
+    if not webhook_url:
+        return HTMLResponse(
+            '<span class="text-yellow-400 text-xs">'
+            'No webhook configured — set DEPLOY_WEBHOOK_URL in your container environment to enable this.'
+            '</span>'
+        )
+    try:
+        async with _httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"{webhook_url}?tag=latest",
+                headers={"X-Deploy-Token": webhook_token},
+            )
+        if resp.status_code // 100 == 2:
+            return HTMLResponse(
+                '<span class="text-green-400 text-xs">&#10003; Update triggered — container will pull latest image and restart.</span>'
+            )
+        return HTMLResponse(
+            f'<span class="text-red-400 text-xs">Webhook returned HTTP {resp.status_code}.</span>'
+        )
+    except Exception as exc:
+        return HTMLResponse(f'<span class="text-red-400 text-xs">Failed: {exc}</span>')
 
 
 def _build_folder_rows(

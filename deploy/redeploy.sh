@@ -18,7 +18,7 @@ docker rm   rom-finder 2>/dev/null || true
 echo "[$(date)] Starting new container ..."
 docker run -d \
   --name rom-finder \
-  --restart no \
+  --restart=unless-stopped \
   -p 19846:8080 \
   -e TZ=America/New_York \
   -e HOST_OS=Unraid \
