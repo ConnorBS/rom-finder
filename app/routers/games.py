@@ -60,7 +60,11 @@ async def search_page(request: Request, session: Session = Depends(get_session))
     applog.log_navigation("search", {"enabled_sources": list(enabled_ids)})
     return templates.TemplateResponse(
         request, "index.html",
-        {"systems": SYSTEMS, "sources": all_srcs, "enabled_source_ids": enabled_ids},
+        {
+            "systems": sorted(SYSTEMS.items(), key=lambda x: x[1]),
+            "sources": all_srcs,
+            "enabled_source_ids": enabled_ids,
+        },
     )
 
 

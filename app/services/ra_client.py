@@ -6,6 +6,7 @@ Requires a free account and API key from retroachievements.org/settings
 
 import asyncio
 import logging
+import re
 import time
 
 import httpx
@@ -36,6 +37,14 @@ class _RateLimiter:
             self._last = time.monotonic()
 
 _limiter = _RateLimiter()  # 2 req/sec = 120/min
+
+
+def _normalize_title(s: str) -> str:
+    """Normalize a game title for fuzzy substring matching.
+    RA stores titles as 'Game - Subtitle' but users type 'Game: Subtitle'.
+    Replaces all punctuation with spaces and collapses whitespace."""
+    s = re.sub(r"[^\w\s]", " ", s.lower())
+    return re.sub(r"\s+", " ", s).strip()
 
 # Maps RA system name -> folder name on disk.
 # Only entries where the folder name differs from the system name are needed;
@@ -173,11 +182,20 @@ class RAClient:
             return data.get("Results", [])
 
     async def search_games(self, system_id: int, query: str) -> list[dict]:
-        """Search for games on a system by title (case-insensitive substring match)."""
-        # get_game_list already applies rate limiting
-        games = await self.get_game_list(system_id)
-        q = query.lower()
-        return [g for g in games if q in g.get("Title", "").lower()]
+        """Search for games on a system by title (case-insensitive substring match).
+        Fetches all games so games without verified dumps still appear.
+        Normalizes punctuation — RA titles use ' - ' where users often type ': '."""
+        await _limiter.wait()
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"{RA_BASE_URL}/API_GetGameList.php",
+                params=self._params({"i": system_id}),
+                timeout=30,
+            )
+            resp.raise_for_status()
+            games = resp.json()
+        q = _normalize_title(query)
+        return [g for g in games if q in _normalize_title(g.get("Title", ""))]
 
     async def lookup_hash(self, md5: str) -> Optional[dict]:
         """Look up a game by its ROM MD5 hash. Returns game info dict or None.

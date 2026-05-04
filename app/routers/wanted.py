@@ -67,8 +67,11 @@ async def wanted_page(request: Request, session: Session = Depends(get_session))
     return templates.TemplateResponse(
         request, "wanted.html",
         {
-            "games": games, "systems": SYSTEMS, "ra_configured": ra_configured,
-            "system_list": system_list, "hunting_ids": hunting_ids,
+            "games": games,
+            "systems": sorted(SYSTEMS.items(), key=lambda x: x[1]),
+            "ra_configured": ra_configured,
+            "system_list": system_list,
+            "hunting_ids": hunting_ids,
             "hunt_counts": hunt_counts,
         },
     )

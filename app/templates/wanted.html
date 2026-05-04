@@ -39,7 +39,7 @@
                 hx-trigger="change"
             >
                 <option value="">All Systems</option>
-                {% for id, name in systems.items() %}
+                {% for id, name in systems %}
                 <option value="{{ id }}">{{ name }}</option>
                 {% endfor %}
             </select>
