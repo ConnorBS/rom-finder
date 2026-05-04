@@ -82,6 +82,7 @@
                     <input type="hidden" name="source_id" value="{{ source_id or file.source_id or 'archive_org' }}">
                     <input type="hidden" name="file_name" value="{{ file.name }}">
                     <input type="hidden" name="archive_identifier" value="{{ identifier }}">
+                    <input type="hidden" name="file_identifier" value="{{ file.identifier or '' }}">
                     {% if ra_game_id %}<input type="hidden" name="ra_game_id" value="{{ ra_game_id }}">{% endif %}
                     <button
                         type="submit"

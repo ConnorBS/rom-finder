@@ -214,7 +214,10 @@ async def auto_hunt(wanted_id: int) -> None:
 
             tried += 1
             activity_store.update_label(task_id, f"Hunting: {game_title} (attempt {tried})")
-            source_url = src.get_download_url(identifier, file_name)
+            # Extension sources store the CDN/mirror URL in the file's own identifier.
+            # Always use that over the collection identifier for the download URL.
+            file_identifier = file_info.get("identifier") or identifier
+            source_url = src.get_download_url(file_identifier, file_name)
 
             hunt_dir = Path(base_dir) / "_hunt" / system_folder
             hunt_dir.mkdir(parents=True, exist_ok=True)

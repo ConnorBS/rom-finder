@@ -53,6 +53,7 @@ async def start_download(
     system: str = Form(default=""),
     file_name: str = Form(...),
     archive_identifier: str = Form(...),
+    file_identifier: str = Form(default=""),
     source_id: str = Form(default="archive_org"),
     ra_game_id: int = Form(default=0),
     inline: str = Form(default="false"),
@@ -73,7 +74,11 @@ async def start_download(
             f'</{tag}>'
         )
     src = source_registry.get(source_id) or source_registry.get("archive_org")
-    source_url = src.get_download_url(archive_identifier, file_name)
+    # Extension sources store the CDN/mirror URL in the file's own identifier.
+    # Prefer file_identifier when provided; fall back to archive_identifier for
+    # Archive.org where the collection ID doubles as the download URL base.
+    dl_identifier = file_identifier or archive_identifier
+    source_url = src.get_download_url(dl_identifier, file_name)
 
     download = Download(
         game_title=game_title,

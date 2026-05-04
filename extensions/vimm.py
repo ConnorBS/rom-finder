@@ -168,6 +168,13 @@ class VimmSource(RomSource):
         return results
 
     async def get_files(self, identifier: str, name_filter: str = "") -> list[dict]:
+        # Skip silently during auto-hunt if Playwright isn't installed — no point
+        # logging hundreds of warnings for something that can't succeed.
+        try:
+            import playwright  # noqa: F401
+        except ImportError:
+            return []
+
         async with httpx.AsyncClient(follow_redirects=True) as client:
             resp = await client.get(
                 f"{VIMM_BASE}/vault/{identifier}/",
