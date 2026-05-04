@@ -160,6 +160,13 @@ async def install_extension(request: Request, session: Session = Depends(get_ses
             '<p class="text-red-400 text-sm p-4">Missing extension ID or package URL.</p>'
         )
 
+    def _err_card(msg: str) -> HTMLResponse:
+        return HTMLResponse(
+            f'<div id="ext-card-{ext_id}" class="bg-gray-900 border border-red-800 rounded-lg p-4">'
+            f'<p class="text-red-400 text-sm">{msg}</p>'
+            f'</div>'
+        )
+
     ext_dir = _get_setting(session, "extensions_dir", "extensions")
     ext_path = Path(ext_dir) / f"{ext_id}.py"
 
@@ -169,25 +176,20 @@ async def install_extension(request: Request, session: Session = Depends(get_ses
             resp.raise_for_status()
             code = resp.text
     except Exception as e:
-        return HTMLResponse(
-            f'<p class="text-red-400 text-sm p-4">Download failed: {e}</p>'
-        )
+        return _err_card(f"Download failed: {e}")
 
     try:
         Path(ext_dir).mkdir(parents=True, exist_ok=True)
         ext_path.write_text(code, encoding="utf-8")
     except Exception as e:
-        return HTMLResponse(
-            f'<p class="text-red-400 text-sm p-4">Failed to save extension: {e}</p>'
-        )
+        return _err_card(f"Failed to save extension: {e}")
 
     loaded_info = extension_loader.load_extension_file(ext_path)
     if loaded_info is None:
         ext_path.unlink(missing_ok=True)
-        return HTMLResponse(
-            f'<p class="text-red-400 text-sm p-4">'
-            f'Extension loaded but failed validation. Check that {ext_id}.py exports '
-            f'EXTENSION_INFO and SOURCE_CLASS / COVER_SOURCE_CLASS.</p>'
+        return _err_card(
+            f"Extension failed validation — check that {ext_id}.py exports "
+            f"EXTENSION_INFO and SOURCE_CLASS / COVER_SOURCE_CLASS."
         )
 
     # Seed default values for any extension settings
@@ -231,7 +233,42 @@ async def install_extension(request: Request, session: Session = Depends(get_ses
     _set_setting(session, enabled_key, "true")
     session.commit()
 
-    return HTMLResponse("", headers={"HX-Redirect": "/extensions"})
+    # Build the updated browse card showing "Installed"
+    type_badge = (
+        '<span class="text-xs px-2 py-0.5 rounded-full bg-blue-900/50 text-blue-300">ROM Source</span>'
+        if ext_type == "rom_source" else
+        '<span class="text-xs px-2 py-0.5 rounded-full bg-purple-900/50 text-purple-300">Cover Source</span>'
+    )
+    author_badge = f'<span class="text-xs text-gray-500">by {author}</span>' if author else ""
+    desc_html = f'<p class="text-sm text-gray-400 mt-1">{description}</p>' if description else ""
+    card_html = (
+        f'<div id="ext-card-{ext_id}" class="bg-gray-900 border border-gray-800 rounded-lg p-4">'
+        f'<div class="flex items-start justify-between gap-4">'
+        f'<div class="min-w-0">'
+        f'<div class="flex items-center gap-2 flex-wrap">'
+        f'<span class="font-medium text-white">{name}</span>'
+        f'{type_badge}'
+        f'<span class="text-xs text-gray-500">v{version}</span>'
+        f'{author_badge}'
+        f'</div>{desc_html}</div>'
+        f'<div class="flex-shrink-0">'
+        f'<span class="text-xs px-3 py-1.5 rounded border border-green-900 text-green-400">'
+        f'Installed v{version}</span>'
+        f'</div></div></div>'
+    )
+
+    # OOB update: refresh the installed list at the top of the page
+    installed = session.exec(
+        select(InstalledExtension).order_by(InstalledExtension.installed_at)
+    ).all()
+    installed_html = templates.get_template("partials/extension_installed.html").render(
+        installed=installed
+    )
+    oob_html = (
+        f'<div id="installed-list" hx-swap-oob="innerHTML">{installed_html}</div>'
+    )
+
+    return HTMLResponse(card_html + oob_html)
 
 
 @router.post("/{ext_id}/toggle", response_class=HTMLResponse)
