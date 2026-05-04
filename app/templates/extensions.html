@@ -64,31 +64,49 @@
   </section>
 
   <!-- Writing Extensions -->
-  <section class="space-y-2 border-t border-gray-800 pt-6">
+  <section class="space-y-3 border-t border-gray-800 pt-6">
     <h2 class="text-lg font-semibold text-gray-200">Writing an Extension</h2>
     <p class="text-sm text-gray-500">
-      Extensions are single <code class="text-gray-300">.py</code> files hosted on any URL.
-      A ROM source extension must export <code class="text-gray-300">EXTENSION_INFO</code> and <code class="text-gray-300">SOURCE_CLASS</code>;
-      a cover source exports <code class="text-gray-300">COVER_SOURCE_CLASS</code> instead.
-      Host an <code class="text-gray-300">index.json</code> alongside the files to make them browseable here.
+      Extensions are single <code class="text-gray-300">.py</code> files. The goal is simple: when a user searches for a game, they should see it in results and be able to click Download immediately — no extra browsing steps.
+    </p>
+    <p class="text-sm text-gray-500">
+      Implement three methods: <code class="text-gray-300">search()</code> returns one result per game, <code class="text-gray-300">get_files()</code> fetches the game page and extracts the direct CDN URL as a single-item list, and <code class="text-gray-300">get_download_url()</code> returns that URL. Override <code class="text-gray-300">download_file()</code> only if you need to refresh a signed token at download time.
     </p>
     <pre class="text-xs bg-gray-900 border border-gray-800 rounded p-4 text-gray-300 overflow-x-auto">EXTENSION_INFO = {
     "id": "my_source",
     "name": "My Source",
     "version": "1.0.0",
-    "type": "rom_source",   # or "cover_source"
+    "type": "rom_source",
     "author": "you",
-    "description": "A short description.",
+    "description": "Downloads ROMs from mysite.com.",
 }
+
+EXTENSION_SETTINGS = []  # list of {key, label, type, default, description}
 
 from app.services.sources.base import RomSource
 
 class MySource(RomSource):
     source_id = "my_source"
     name = "My Source"
-    # ... implement search(), get_files(), get_download_url()
+
+    async def search(self, query, system=""):
+        # Fetch search results page, return one dict per game:
+        # {identifier, title, source_id, description}
+        ...
+
+    async def get_files(self, identifier, name_filter=""):
+        # Fetch the game page, extract the direct CDN URL + real filename.
+        # Return a single-item list — one file per game:
+        # [{name, identifier (CDN URL), source_id, size}]
+        ...
+
+    def get_download_url(self, identifier, filename):
+        return identifier  # identifier is already the CDN URL
 
 SOURCE_CLASS = MySource</pre>
+    <p class="text-sm text-gray-500 mt-2">
+      Host an <code class="text-gray-300">index.json</code> alongside the file to make it browseable here. See the built-in extensions in <code class="text-gray-300">extensions/</code> for real examples (CDRomance, WowROMs, ROMsFun).
+    </p>
   </section>
 
 </div>

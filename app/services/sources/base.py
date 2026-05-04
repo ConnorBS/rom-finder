@@ -1,71 +1,64 @@
-"""Abstract base class for ROM sources.
+"""Base class for ROM download sources.
 
-A source knows how to:
-  - search for games/collections by title
-  - list downloadable files within a result
-  - produce a download URL
-  - stream-download a file (default httpx impl; override for special cases)
+Each source implements three methods:
+
+  search()          — find games matching a query; return one result per game
+  get_files()       — given a search result, return the downloadable file(s)
+  get_download_url()— convert a file identifier to a URL for download_file()
+
+For most sources get_files() returns a single-item list (one file per game)
+and that file's identifier is the direct CDN URL. The base download_file()
+streams it with httpx. Override download_file() only when a fresh signed URL
+must be fetched at download time (token-based CDNs like WowROMs/ROMsFun).
+
+Archive.org is the exception — it returns collections that may contain many
+files, so it exposes a "Browse files" step. New sources should not replicate
+this; return individual games and one file per result instead.
 """
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
 from pathlib import Path
 
 import httpx
 
 
-@dataclass
-class SourceResult:
-    """A collection or game returned from a source search."""
-    identifier: str       # source-local key; passed back to get_files()
-    title: str
-    source_id: str
-    description: str = ""
-
-
-@dataclass
-class SourceFile:
-    """A downloadable ROM file within a result."""
-    name: str
-    identifier: str       # the parent result's identifier
-    source_id: str
-    size: int = 0
-    md5: str = ""         # pre-known hash if the source provides it
-
-
 class RomSource(ABC):
-    source_id: str   # unique slug, e.g. "archive_org"
-    name: str        # display name, e.g. "Internet Archive"
-    available: bool = True  # False = stub, shown in UI but not selectable
+    source_id: str   # unique slug, e.g. "wowroms"
+    name: str        # display name, e.g. "WowROMs"
+    available: bool = True  # False = shown in UI but not selectable
 
     @abstractmethod
     async def search(self, query: str, system: str = "") -> list[dict]:
-        """Search for games/collections. Returns list of dicts with at least
-        'identifier', 'title', and optionally 'description'."""
+        """Search for games matching query. Return one dict per game with keys:
+        identifier, title, source_id, description (optional).
+        Filter by system slug when system is provided."""
         ...
 
     @abstractmethod
     async def get_files(self, identifier: str, name_filter: str = "") -> list[dict]:
-        """List downloadable files in a result. Returns list of dicts with at
-        least 'name', 'identifier', and optionally 'size', 'md5'."""
+        """Fetch downloadable file(s) for a search result. Typically fetches
+        the game page, extracts the CDN URL and real filename, and returns a
+        single-item list. Keys: name, identifier (CDN URL or path for token
+        refresh), source_id, size (bytes or 0)."""
         ...
 
     @abstractmethod
     def get_download_url(self, identifier: str, filename: str) -> str:
-        """Return the direct download URL for a file."""
+        """Convert a file identifier (from get_files) to the URL passed to
+        download_file(). If the identifier is already a full URL, return it
+        as-is. If it's a path fragment, prefix your base URL."""
         ...
 
     def get_extra_headers(self) -> dict:
-        """Optional headers to send with every download from this source."""
+        """Optional headers sent with every download request in the base
+        download_file(). Override to add Referer, cookies, etc."""
         return {}
 
-    async def download_file(
-        self,
-        url: str,
-        dest: Path,
-        progress_callback=None,
-    ) -> None:
-        """Stream-download url to dest. Override for non-standard download flows."""
+    async def download_file(self, url: str, dest: Path, progress_callback=None) -> None:
+        """Stream url to dest. The base implementation uses httpx with
+        follow_redirects and calls progress_callback(fraction) as data arrives.
+        Override when the real CDN URL must be generated at download time
+        (e.g. fetching a fresh signed token from a mirror page)."""
         dest.parent.mkdir(parents=True, exist_ok=True)
         headers = self.get_extra_headers()
         async with httpx.AsyncClient(
