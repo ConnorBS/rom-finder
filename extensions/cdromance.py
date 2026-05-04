@@ -3,7 +3,7 @@
 EXTENSION_INFO = {
     "id": "cdromance",
     "name": "CDRomance",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "type": "rom_source",
     "author": "ConnorBS",
     "description": (
@@ -17,6 +17,7 @@ EXTENSION_SETTINGS = []
 import asyncio
 import logging
 import re
+import urllib.parse
 from pathlib import Path
 
 import httpx
@@ -88,9 +89,32 @@ def _content_tag(identifier: str) -> str:
     return ""
 
 
+def _first_cdn_url(dl_soup: BeautifulSoup, target_filename: str = "") -> str | None:
+    """Extract CDN URL from CDRomance AJAX response, preferring target_filename."""
+    fallback: str | None = None
+    for row in dl_soup.select(".tr"):
+        tds = row.select(".td")
+        if len(tds) < 2:
+            continue
+        link = tds[0].select_one("a[href]")
+        if not link:
+            continue
+        fname = link.get_text(strip=True)
+        cdn = link["href"]
+        if fallback is None:
+            fallback = cdn
+        if not target_filename or fname == target_filename:
+            return cdn
+    return fallback
+
+
 class CdromanceSource(RomSource):
     source_id = "cdromance"
     name = "CDRomance"
+
+    # ------------------------------------------------------------------
+    # Search
+    # ------------------------------------------------------------------
 
     async def search(self, query: str, system: str = "") -> list[dict]:
         slug = _SYSTEM_MAP.get(system, "")
@@ -122,7 +146,6 @@ class CdromanceSource(RomSource):
             if not title:
                 continue
 
-            # Replace / with :: so the identifier is safe for URL path routing.
             identifier = href.replace(CDR_BASE, "").strip("/").replace("/", "::")
             tag = _content_tag(identifier)
 
@@ -138,6 +161,14 @@ class CdromanceSource(RomSource):
             })
 
         return results
+
+    # ------------------------------------------------------------------
+    # File listing
+    # get_files() stores "{game_identifier}|{post_id}" as the file
+    # identifier instead of the CDN URL, because CDN URLs are
+    # time-limited tokens that expire before the download starts.
+    # download_file() does a fresh AJAX call right before streaming.
+    # ------------------------------------------------------------------
 
     async def get_files(self, identifier: str, name_filter: str = "") -> list[dict]:
         page_url = f"{CDR_BASE}/{identifier.replace('::', '/')}/"
@@ -184,8 +215,7 @@ class CdromanceSource(RomSource):
         dl_soup = BeautifulSoup(ajax_resp.text, "html.parser")
         files: list[dict] = []
 
-        rows = dl_soup.select(".tr")
-        for row in rows:
+        for row in dl_soup.select(".tr"):
             tds = row.select(".td")
             if len(tds) < 2:
                 continue
@@ -193,7 +223,6 @@ class CdromanceSource(RomSource):
             if not link:
                 continue
 
-            cdn_url = link["href"]
             filename = link.get_text(strip=True)
             size = _parse_size(tds[1].get_text(strip=True))
 
@@ -202,17 +231,88 @@ class CdromanceSource(RomSource):
                 if nf not in Path(filename).stem.lower():
                     continue
 
+            # Store the stable game+post identifier so download_file()
+            # can do a fresh AJAX call to get a non-expired CDN URL.
+            file_ident = f"{identifier}|{post_id}"
+
             files.append({
                 "name": filename,
-                "identifier": cdn_url,
+                "identifier": file_ident,
                 "source_id": self.source_id,
                 "size": size,
             })
 
         return files
 
+    # ------------------------------------------------------------------
+    # Download URL — encode game identifier + post_id + filename into a
+    # pseudo-URL that download_file() can parse back out.
+    # ------------------------------------------------------------------
+
     def get_download_url(self, identifier: str, filename: str) -> str:
-        return identifier.replace("::", "/")
+        return f"cdr://{identifier}/{urllib.parse.quote(filename, safe='')}"
+
+    # ------------------------------------------------------------------
+    # Download — fresh AJAX call at download time to get a valid CDN URL
+    # ------------------------------------------------------------------
+
+    async def download_file(self, url: str, dest: Path, progress_callback=None) -> None:
+        # Parse: cdr://{game_identifier}|{post_id}/{url-encoded-filename}
+        path = url[len("cdr://"):]
+        slash = path.rfind("/")
+        target_file = urllib.parse.unquote(path[slash + 1:]) if slash >= 0 else ""
+        rest = path[:slash] if slash >= 0 else path
+        pipe = rest.rfind("|")
+        post_id = rest[pipe + 1:] if pipe >= 0 else ""
+        game_ident = rest[:pipe] if pipe >= 0 else rest
+        page_url = f"{CDR_BASE}/{game_ident.replace('::', '/')}/"
+
+        dest.parent.mkdir(parents=True, exist_ok=True)
+
+        async with httpx.AsyncClient(
+            headers=_HEADERS, follow_redirects=True, timeout=30
+        ) as client:
+            try:
+                ajax_resp = await client.post(
+                    CDR_AJAX,
+                    content=f"post_id={post_id}",
+                    headers={
+                        **_HEADERS,
+                        "Content-Type": "application/x-www-form-urlencoded",
+                        "Referer": page_url,
+                        "Origin": CDR_BASE,
+                        "X-Requested-With": "XMLHttpRequest",
+                    },
+                    timeout=15,
+                )
+            except Exception as exc:
+                raise RuntimeError(f"CDRomance AJAX failed at download time: {exc}") from exc
+
+            if ajax_resp.status_code != 200 or ajax_resp.text.startswith("error"):
+                raise RuntimeError(f"CDRomance AJAX error: {ajax_resp.text[:100]}")
+
+            dl_soup = BeautifulSoup(ajax_resp.text, "html.parser")
+            cdn_url = _first_cdn_url(dl_soup, target_file)
+            if not cdn_url:
+                raise RuntimeError(f"CDRomance: no download URL in AJAX response for post_id={post_id}")
+
+            try:
+                async with client.stream(
+                    "GET", cdn_url,
+                    headers={**_HEADERS, "Referer": page_url},
+                    timeout=None,
+                ) as resp:
+                    resp.raise_for_status()
+                    total = int(resp.headers.get("content-length", 0))
+                    downloaded = 0
+                    with open(dest, "wb") as fh:
+                        async for chunk in resp.aiter_bytes(65536):
+                            fh.write(chunk)
+                            downloaded += len(chunk)
+                            if progress_callback and total:
+                                await progress_callback(downloaded / total)
+            except Exception as exc:
+                raise RuntimeError(f"CDRomance CDN stream failed: {exc}") from exc
 
 
 SOURCE_CLASS = CdromanceSource

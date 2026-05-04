@@ -4,7 +4,7 @@
     {
       "id": "cdromance",
       "name": "CDRomance",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "type": "rom_source",
       "author": "ConnorBS",
       "description": "Downloads ROMs and ISOs from CDRomance.org. No Playwright required — uses CDRomance's AJAX download endpoint directly.",
