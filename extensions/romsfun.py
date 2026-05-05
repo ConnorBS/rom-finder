@@ -286,7 +286,7 @@ class RomsfunSource(RomSource):
             try:
                 async with client.stream(
                     "GET", cdn_url,
-                    headers={**_HEADERS, "Referer": ROMSFUN_BASE + "/"},
+                    headers={**_HEADERS, "Referer": url},
                     timeout=None,
                 ) as stream:
                     stream.raise_for_status()
