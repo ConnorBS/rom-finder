@@ -3,7 +3,7 @@
 EXTENSION_INFO = {
     "id": "romsfun",
     "name": "ROMsFun",
-    "version": "1.3.0",
+    "version": "1.4.0",
     "type": "rom_source",
     "author": "ConnorBS",
     "description": "Downloads ROMs from ROMsFun.com. No bot protection — streams directly from their CDN.",
@@ -205,6 +205,12 @@ class RomsfunSource(RomSource):
                     logger.warning("ROMsFun: no #download-link found for %s", identifier)
                     return []
 
+                # Make relative/protocol-relative URLs absolute
+                if cdn_url.startswith("//"):
+                    cdn_url = "https:" + cdn_url
+                elif cdn_url.startswith("/"):
+                    cdn_url = ROMSFUN_BASE + cdn_url
+
                 filename = _extract_filename(cdn_url)
 
                 if name_filter:
@@ -271,6 +277,11 @@ class RomsfunSource(RomSource):
             cdn_url = _extract_dl_link(mirror_resp.text)
             if not cdn_url:
                 raise RuntimeError(f"ROMsFun: no download link found at {url}")
+            # Make relative/protocol-relative URLs absolute
+            if cdn_url.startswith("//"):
+                cdn_url = "https:" + cdn_url
+            elif cdn_url.startswith("/"):
+                cdn_url = ROMSFUN_BASE + cdn_url
 
             try:
                 async with client.stream(
