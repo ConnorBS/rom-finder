@@ -3,7 +3,7 @@
 EXTENSION_INFO = {
     "id": "romsfun",
     "name": "ROMsFun",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "type": "rom_source",
     "author": "ConnorBS",
     "description": "Downloads ROMs from ROMsFun.com. No bot protection — streams directly from their CDN.",
@@ -127,7 +127,7 @@ class RomsfunSource(RomSource):
             if expected_slug and sys_slug != expected_slug:
                 continue
 
-            identifier = f"{sys_slug}/{game_slug}"
+            identifier = f"{sys_slug}::{game_slug}"
             if identifier in seen:
                 continue
             seen.add(identifier)
@@ -160,7 +160,9 @@ class RomsfunSource(RomSource):
     # ------------------------------------------------------------------
 
     async def get_files(self, identifier: str, name_filter: str = "") -> list[dict]:
-        parts = identifier.split("/", 1)
+        # Support both old "/" format and new "::" format for backwards compat
+        sep = "::" if "::" in identifier else "/"
+        parts = identifier.split(sep, 1)
         if len(parts) != 2:
             logger.warning("ROMsFun: unexpected identifier: %s", identifier)
             return []
