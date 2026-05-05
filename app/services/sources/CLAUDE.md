@@ -74,7 +74,7 @@ download_file()    → override: re-fetches mirror for fresh token, streams CDN
 - `archive_org` (`app/services/sources/archive.py`) — built-in; Archive.org No-Intro/Redump collections. Has the "Browse files" step because collections contain many ROMs.
 - `cdromance` (`extensions/cdromance.py`) — AJAX-based CDN, one file per game, no Playwright
 - `wowroms` (`extensions/wowroms.py`) — token-based CDN (`k`=ms timestamp, `t`=md5(k)), one file per game
-- `romsfun` (`extensions/romsfun.py`) — CSS-hidden CDN URL in HTML, one file per game, refreshed at download time
+- `romsfun` (`extensions/romsfun.py`) — WordPress AJAX endpoint (`action=k_get_download`, `Referer`=mirror page URL) returns fresh signed CDN URL; HTML link is stale placeholder. `get_files()` and `download_file()` both call AJAX.
 - `vimm` (`extensions/vimm.py`) — requires Playwright for JS challenge
 
 ## Vimm Gotcha
