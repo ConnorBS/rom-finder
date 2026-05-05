@@ -3,10 +3,10 @@
 EXTENSION_INFO = {
     "id": "romsfun",
     "name": "ROMsFun",
-    "version": "1.4.0",
+    "version": "1.5.0",
     "type": "rom_source",
     "author": "ConnorBS",
-    "description": "Downloads ROMs from ROMsFun.com. No bot protection — streams directly from their CDN.",
+    "description": "Downloads ROMs from ROMsFun.com. Uses WordPress AJAX to get fresh signed CDN URLs.",
 }
 
 EXTENSION_SETTINGS = []
@@ -25,6 +25,7 @@ from app.services.sources.base import RomSource
 logger = logging.getLogger(__name__)
 
 ROMSFUN_BASE = "https://romsfun.com"
+ROMSFUN_AJAX_URL = f"{ROMSFUN_BASE}/wp-admin/admin-ajax.php"
 
 _HEADERS = {
     "User-Agent": (
@@ -34,6 +35,13 @@ _HEADERS = {
     ),
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
+}
+
+_AJAX_HEADERS = {
+    "User-Agent": _HEADERS["User-Agent"],
+    "Accept": "application/json, text/javascript, */*; q=0.01",
+    "Accept-Language": "en-US,en;q=0.9",
+    "X-Requested-With": "XMLHttpRequest",
 }
 
 # RA system name → ROMsFun system slug (as it appears in /roms/{slug}/ URLs)
@@ -74,9 +82,6 @@ _GAME_HREF_RE = re.compile(r"^/roms/([a-z0-9-]+)/([a-z0-9-]+)\.html$")
 # /download/{slug}-{id}  or  /download/{slug}-{id}/{n}
 _DL_PAGE_RE = re.compile(r"/download/([a-z0-9-]+-\d+)(?:/(\d+))?$")
 
-_DL_LINK_RE = re.compile(r'id=["\']download-link["\'][^>]*href=["\']([^"\']+)["\']')
-_DL_LINK_RE2 = re.compile(r'href=["\']([^"\']+)["\'][^>]*id=["\']download-link["\']')
-
 
 def _extract_filename(cdn_url: str) -> str:
     """Pull the filename from the CDN URL path."""
@@ -85,9 +90,23 @@ def _extract_filename(cdn_url: str) -> str:
     return name if name else "rom.zip"
 
 
-def _extract_dl_link(html: str) -> str | None:
-    m = _DL_LINK_RE.search(html) or _DL_LINK_RE2.search(html)
-    return m.group(1) if m else None
+async def _ajax_signed_url(client: httpx.AsyncClient, mirror_url: str) -> str | None:
+    """POST to ROMsFun's WordPress AJAX endpoint to get a fresh signed CDN URL.
+    The Referer must be the mirror page URL — server uses it to identify the file."""
+    try:
+        resp = await client.post(
+            ROMSFUN_AJAX_URL,
+            headers={**_AJAX_HEADERS, "Referer": mirror_url},
+            data={"action": "k_get_download"},
+            timeout=20,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("success"):
+            return data.get("data", {}).get("download_url")
+    except Exception as exc:
+        logger.warning("ROMsFun AJAX call failed for %s: %s", mirror_url, exc)
+    return None
 
 
 class RomsfunSource(RomSource):
@@ -156,7 +175,7 @@ class RomsfunSource(RomSource):
         return results[:30]
 
     # ------------------------------------------------------------------
-    # File listing — game page → download button → mirror 1 → CDN URL
+    # File listing — game page → download page → mirror 1 → AJAX signed URL
     # ------------------------------------------------------------------
 
     async def get_files(self, identifier: str, name_filter: str = "") -> list[dict]:
@@ -179,37 +198,28 @@ class RomsfunSource(RomSource):
             ) as client:
                 resp = await client.get(game_url)
                 resp.raise_for_status()
-                game_html = resp.text
 
                 # Extract the download page URL from the "Download ROM" button
-                soup = BeautifulSoup(game_html, "html.parser")
+                soup = BeautifulSoup(resp.text, "html.parser")
                 dl_btn = soup.find("a", href=re.compile(r"/download/"))
                 if not dl_btn:
                     logger.warning("ROMsFun: no download button on %s", game_url)
                     return []
 
                 dl_page_path = urllib.parse.urlparse(dl_btn["href"]).path.rstrip("/")
-                # dl_page_path: /download/{slug}-{id}
-
-                # Fetch mirror 1 to get the CDN URL and filename
                 mirror_url = f"{ROMSFUN_BASE}{dl_page_path}/1"
-                mirror_resp = await client.get(
+
+                # Fetch mirror page to establish session cookies
+                await client.get(
                     mirror_url,
                     headers={**_HEADERS, "Referer": f"{ROMSFUN_BASE}{dl_page_path}"},
                 )
-                mirror_resp.raise_for_status()
-                mirror_html = mirror_resp.text
 
-                cdn_url = _extract_dl_link(mirror_html)
+                # Call AJAX to get the real signed CDN URL
+                cdn_url = await _ajax_signed_url(client, mirror_url)
                 if not cdn_url:
-                    logger.warning("ROMsFun: no #download-link found for %s", identifier)
+                    logger.warning("ROMsFun: AJAX returned no URL for %s", identifier)
                     return []
-
-                # Make relative/protocol-relative URLs absolute
-                if cdn_url.startswith("//"):
-                    cdn_url = "https:" + cdn_url
-                elif cdn_url.startswith("/"):
-                    cdn_url = ROMSFUN_BASE + cdn_url
 
                 filename = _extract_filename(cdn_url)
 
@@ -218,20 +228,20 @@ class RomsfunSource(RomSource):
                     if nf not in Path(filename).stem.lower():
                         return []
 
-                # Probe CDN for file size (HEAD request — no body downloaded)
+                # Probe CDN for file size
                 size = 0
                 try:
                     head = await client.head(
                         cdn_url,
-                        headers={**_HEADERS, "Referer": ROMSFUN_BASE + "/"},
+                        headers={**_HEADERS, "Referer": mirror_url},
                         timeout=10,
                     )
                     size = int(head.headers.get("content-length", 0))
                 except Exception:
                     pass
 
-                # Store the mirror page path so download_file() can fetch a fresh CDN URL
-                mirror_path = dl_page_path + "/1"  # e.g. /download/super-mario-5000-301806/1
+                # Store the mirror path — download_file() calls AJAX for a fresh token
+                mirror_path = dl_page_path + "/1"
 
                 return [{
                     "name": filename,
@@ -254,7 +264,7 @@ class RomsfunSource(RomSource):
         return identifier
 
     # ------------------------------------------------------------------
-    # Download — re-fetch mirror page for a fresh CDN token, then stream
+    # Download — call AJAX for fresh token, then stream CDN
     # ------------------------------------------------------------------
 
     async def download_file(self, url: str, dest: Path, progress_callback=None) -> None:
@@ -263,25 +273,18 @@ class RomsfunSource(RomSource):
         async with httpx.AsyncClient(
             headers=_HEADERS, follow_redirects=True, timeout=60
         ) as client:
-            # Re-fetch the mirror page to get a fresh, valid CDN token
             dl_page_base = re.sub(r"/\d+$", "", url)  # strip mirror number
+
+            # Fetch mirror page to establish session cookies
             try:
-                mirror_resp = await client.get(
-                    url,
-                    headers={**_HEADERS, "Referer": dl_page_base},
-                )
-                mirror_resp.raise_for_status()
+                await client.get(url, headers={**_HEADERS, "Referer": dl_page_base})
             except Exception as exc:
                 raise RuntimeError(f"ROMsFun mirror page fetch failed: {exc}") from exc
 
-            cdn_url = _extract_dl_link(mirror_resp.text)
+            # Call AJAX to get a fresh signed CDN URL
+            cdn_url = await _ajax_signed_url(client, url)
             if not cdn_url:
-                raise RuntimeError(f"ROMsFun: no download link found at {url}")
-            # Make relative/protocol-relative URLs absolute
-            if cdn_url.startswith("//"):
-                cdn_url = "https:" + cdn_url
-            elif cdn_url.startswith("/"):
-                cdn_url = ROMSFUN_BASE + cdn_url
+                raise RuntimeError(f"ROMsFun: AJAX returned no download URL for {url}")
 
             try:
                 async with client.stream(

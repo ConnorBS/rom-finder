@@ -31,7 +31,7 @@
     {
       "id": "romsfun",
       "name": "ROMsFun",
-      "version": "1.4.0",
+      "version": "1.5.0",
       "type": "rom_source",
       "author": "ConnorBS",
       "description": "Downloads ROMs from ROMsFun.com. No bot protection — streams directly from their CDN.",
