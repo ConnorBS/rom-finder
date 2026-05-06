@@ -388,11 +388,19 @@ async def _run_verify_ra(download_id: int) -> None:
             try:
                 match = await ra.lookup_hash(download.file_hash)
                 if match:
-                    download.hash_verified = True
-                    download.ra_game_id = download.ra_game_id or match.get("ID")
-                    applog.log_action("manual_verify_ra", {
-                        "game": download.game_title, "hash": download.file_hash, "ra_game_id": download.ra_game_id,
-                    })
+                    matched_id = match.get("ID")
+                    expected_id = download.ra_game_id
+                    if not expected_id or matched_id == expected_id:
+                        download.hash_verified = True
+                        download.ra_game_id = download.ra_game_id or matched_id
+                        applog.log_action("manual_verify_ra", {
+                            "game": download.game_title, "hash": download.file_hash, "ra_game_id": download.ra_game_id,
+                        })
+                    else:
+                        applog.warning("hash",
+                            f"Manual RA verify: hash matched wrong game (expected {expected_id}, got {matched_id}) for {download.game_title}",
+                            {"hash": download.file_hash, "expected_id": expected_id, "matched_id": matched_id},
+                        )
                 else:
                     applog.info("hash", f"Manual RA verify: no match for {download.game_title}", {
                         "hash": download.file_hash, "game": download.game_title,
@@ -495,10 +503,19 @@ async def _run_download(download_id: int) -> None:
                 try:
                     match = await ra.lookup_hash(file_hash)
                     if match:
-                        download.hash_verified = True
-                        download.ra_game_id = download.ra_game_id or match.get("ID")
-                        ra_matched = True
-                        ra_game_id_matched = match.get("ID")
+                        matched_id = match.get("ID")
+                        expected_id = download.ra_game_id
+                        if not expected_id or matched_id == expected_id:
+                            download.hash_verified = True
+                            download.ra_game_id = download.ra_game_id or matched_id
+                            ra_matched = True
+                            ra_game_id_matched = matched_id
+                        else:
+                            applog.warning("hash",
+                                f"Hash matched wrong RA game (expected {expected_id}, got {matched_id}): {rom_path.name}",
+                                {"file": rom_path.name, "hash": file_hash, "expected_id": expected_id, "matched_id": matched_id},
+                            )
+                            ra_game_id_matched = matched_id
                 except Exception as exc:
                     applog.warning("hash", f"RA hash lookup failed: {exc}", {"file": rom_path.name, "hash": file_hash})
 
