@@ -6,7 +6,7 @@ from pathlib import Path
 from datetime import datetime
 
 from app.db.database import get_session
-from app.db.models import AppSetting, WantedGame, HuntStatus, HuntAttempt
+from app.db.models import AppSetting, WantedGame, HuntStatus, HuntAttempt, LibraryEntry
 from app.services import sources as source_registry
 from app.services import activity as activity_store
 from app.services.ra_client import SYSTEMS, RAClient
@@ -90,7 +90,17 @@ async def add_wanted(
     system: str = Form(...),
     session: Session = Depends(get_session),
 ):
-    # Deduplicate
+    # Already in library?
+    in_library = session.exec(
+        select(LibraryEntry).where(LibraryEntry.ra_game_id == ra_game_id)
+    ).first()
+    if in_library:
+        return HTMLResponse(
+            f'<span class="text-yellow-400 text-xs">Already in your library</span>'
+            f'<a href="/collection" class="text-blue-400 text-xs hover:underline ml-2">View ↗</a>'
+        )
+
+    # Already in Wanted?
     existing = session.exec(
         select(WantedGame).where(WantedGame.ra_game_id == ra_game_id)
     ).first()
