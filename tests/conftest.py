@@ -38,11 +38,14 @@ def fresh_engine():
 def client():
     """A TestClient with the full app lifespan run (migrations + settings seed +
     extension load + RAHasher check) against the throwaway DB."""
-    _wipe_db_files()
     import app.db.models  # noqa: F401
+    from app.db.database import engine
+    engine.dispose()      # release WAL connections so the wipe actually deletes
+    _wipe_db_files()
     from fastapi.testclient import TestClient
     from app.main import app
 
     with TestClient(app) as c:
         yield c
+    engine.dispose()
     _wipe_db_files()

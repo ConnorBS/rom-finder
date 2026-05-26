@@ -11,7 +11,7 @@ from app.db.migrations import run_migrations
 from app.db.models import AppSetting, WantedGame, AppLog, HuntAttempt, InstalledExtension  # noqa: F401 — registers tables
 from app.services import settings as app_settings
 from app.services.settings import DEFAULT_SETTINGS
-from app.routers import games, downloads, library, settings_router, wanted, api, logs, collection, activity, scheduler, extensions as extensions_router
+from app.routers import games, downloads, library, settings_router, wanted, api, logs, collection, activity, scheduler, export, extensions as extensions_router
 
 
 @asynccontextmanager
@@ -80,4 +80,5 @@ app.include_router(api.router)
 app.include_router(logs.router)
 app.include_router(activity.router)
 app.include_router(scheduler.router)
+app.include_router(export.router)
 app.include_router(extensions_router.router)

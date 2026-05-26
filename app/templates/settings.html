@@ -434,6 +434,19 @@
         <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider">Application</h2>
         <div class="bg-gray-900 border border-gray-800 rounded-lg divide-y divide-gray-800">
 
+            <!-- Hash export -->
+            <div class="px-5 py-4 flex items-center justify-between gap-4">
+                <div>
+                    <p class="text-sm text-gray-200 font-medium">Export hashes</p>
+                    <p class="text-xs text-gray-500 mt-0.5">Download your library's hashes for emulator frontends.</p>
+                </div>
+                <div class="flex gap-3 text-xs">
+                    <a href="/export/hashes?format=csv" class="text-blue-500 hover:text-blue-400">CSV ↓</a>
+                    <a href="/export/hashes?format=json" class="text-blue-500 hover:text-blue-400">JSON ↓</a>
+                    <a href="/export/hashes?format=csv&verified_only=true" class="text-green-500 hover:text-green-400">RA-verified CSV ↓</a>
+                </div>
+            </div>
+
             <!-- Version -->
             <div class="px-5 py-4 flex items-center justify-between gap-4">
                 <div>
