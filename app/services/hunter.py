@@ -250,7 +250,7 @@ async def auto_hunt(wanted_id: int) -> None:
                 rom_path = dest
                 if dest.suffix.lower() in (".zip", ".7z"):
                     try:
-                        rom_path = extract_rom_from_zip(dest)
+                        rom_path = extract_rom_from_zip(dest, prefer_name=file_name)
                     except zipfile.BadZipFile:
                         real = dest.with_suffix("")
                         dest.rename(real)

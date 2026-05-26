@@ -88,14 +88,18 @@ async def search(
         else:
             srcs = source_registry.enabled_sources(enabled_ids)
 
-        try:
-            for src in srcs:
-                if src is None:
-                    continue
-                src_results = await src.search(q, system)
-                results.extend(src_results)
-        except Exception as exc:
-            error = str(exc)
+        # Per-source: one source failing (403/429/dead mirror) must not wipe out
+        # results from the others, and the failure is surfaced, not swallowed.
+        source_errors = []
+        for src in srcs:
+            if src is None:
+                continue
+            try:
+                results.extend(await src.search(q, system))
+            except Exception as exc:
+                source_errors.append(f"{getattr(src, 'name', '?')}: {exc}")
+        if source_errors:
+            error = "; ".join(source_errors)
 
     if q:
         applog.log_search(
@@ -260,8 +264,9 @@ async def ra_game_sources(
                             seen_ids.add(uid)
                             r["_source_name"] = src.name
                             collections.append(r)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    # Best-effort multi-query sweep — don't abort, but don't hide it.
+                    applog.verbose("source", f"{src.name} search failed for '{query}': {exc}")
             if collections:
                 break  # stop trying more query variants once we have results
     except Exception as exc:

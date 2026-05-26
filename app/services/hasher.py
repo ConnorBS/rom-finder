@@ -11,9 +11,19 @@ RA hash algorithm sources:
 """
 
 import hashlib
+import logging
 import struct
 import zipfile
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+
+def _matches(member_name: str, prefer_name: str | None) -> bool:
+    """True if an archive member's stem matches the expected ROM name."""
+    if not prefer_name:
+        return False
+    return Path(member_name).stem.lower() == Path(prefer_name).stem.lower()
 
 
 # Extensions treated as ROM files when extracting archives
@@ -159,8 +169,10 @@ DISC_SYSTEMS = {
 }
 
 
-def _hash_from_archive(path: Path, system: str) -> str | None:
-    """Extract the largest ROM-like file from a .zip or .7z and hash it in a temp dir."""
+def _hash_from_archive(path: Path, system: str, prefer_name: str | None = None) -> str | None:
+    """Extract a ROM-like file from a .zip/.7z and hash it. Prefers a member whose
+    stem matches prefer_name (multi-ROM archives); else the largest, logging when
+    that heuristic is used on an ambiguous archive."""
     import tempfile
     suffix = path.suffix.lower()
     try:
@@ -180,21 +192,28 @@ def _hash_from_archive(path: Path, system: str) -> str | None:
             targets = rom_candidates or candidates
             if not targets:
                 return None
-            best = max(targets, key=lambda f: f.stat().st_size)
+            match = next((f for f in targets if _matches(f.name, prefer_name)), None)
+            if match is not None:
+                best = match
+            else:
+                best = max(targets, key=lambda f: f.stat().st_size)
+                if len(targets) > 1:
+                    logger.warning("Archive %s has %d candidates; hashed largest (%s) — no name match",
+                                   path.name, len(targets), best.name)
             hasher = _SYSTEM_HASHERS.get(system, md5_file)
             return hasher(best)
     except Exception:
         return None
 
 
-def hash_rom(path: Path, system: str = "") -> str:
+def hash_rom(path: Path, system: str = "", prefer_name: str | None = None) -> str:
     """Hash a ROM using the RA algorithm for its system.
 
     For disc-based systems this returns a plain MD5 which will NOT match RA's
     hash — rahasher.py should be tried first for those.
     """
     if path.suffix.lower() in (".zip", ".7z"):
-        result = _hash_from_archive(path, system)
+        result = _hash_from_archive(path, system, prefer_name)
         if result:
             return result
     hasher = _SYSTEM_HASHERS.get(system, md5_file)
@@ -209,8 +228,10 @@ def verify_hash(path: Path, expected: str, system: str = "") -> bool:
 # Archive extraction
 # ---------------------------------------------------------------------------
 
-def extract_rom_from_zip(zip_path: Path) -> Path:
-    """Extract the ROM file from a zip archive next to the zip, then delete the zip."""
+def extract_rom_from_zip(zip_path: Path, prefer_name: str | None = None) -> Path:
+    """Extract the ROM file from a zip archive next to the zip, then delete the zip.
+    Prefers a member whose stem matches prefer_name (so multi-ROM zips don't pick
+    the wrong game); falls back to the largest, logging when ambiguous."""
     dest_dir = zip_path.parent
     with zipfile.ZipFile(zip_path, "r") as zf:
         members = zf.infolist()
@@ -219,7 +240,12 @@ def extract_rom_from_zip(zip_path: Path) -> Path:
             rom_members = [m for m in members if not m.filename.endswith("/")]
         if not rom_members:
             raise ValueError(f"No files found inside {zip_path.name}")
-        target = max(rom_members, key=lambda m: m.file_size)
+        target = next((m for m in rom_members if _matches(m.filename, prefer_name)), None)
+        if target is None:
+            target = max(rom_members, key=lambda m: m.file_size)
+            if len(rom_members) > 1:
+                logger.warning("Zip %s has %d ROM members; extracted largest (%s) — no name match",
+                               zip_path.name, len(rom_members), target.filename)
         zf.extract(target, dest_dir)
     extracted = dest_dir / target.filename
     zip_path.unlink()

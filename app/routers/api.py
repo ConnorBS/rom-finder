@@ -19,6 +19,7 @@ from app.services import sources as source_registry
 from app.services.cover_sources import registry as cover_source_registry
 from app.services.ra_client import SYSTEMS
 from app.services.title_utils import clean_title
+from app.services import logger as applog
 
 router = APIRouter(prefix="/api")
 
@@ -181,8 +182,10 @@ async def api_search(
             for item in items:
                 item["_source_name"] = src.name
             results.extend(items)
-        except Exception:
-            pass
+        except Exception as exc:
+            # Don't abort the whole search for one bad source — but log it,
+            # don't swallow silently (this masked real 403/429/network failures).
+            applog.log_search(getattr(src, "name", "?"), q, system, 0, str(exc))
     return results
 
 

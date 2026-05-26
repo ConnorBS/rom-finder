@@ -50,7 +50,10 @@ Must include `DownloadStatus.verifying` so the sidebar tray shows RA-lookup prog
 All three scan paths (`bulk_scan`, `/library/scan`, `run_scan` in scheduler) use `subdir.rglob('*')` to find ROMs nested inside system subfolders (e.g. `NES/No-Intro/game.nes`). System name is always the top-level folder under `download_dir`.
 
 ### Archive support (.zip/.7z)
-Both in `ROM_EXTENSIONS`, scanned like any ROM. Hashing extracts to temp dir, hashes the largest ROM-like file inside, cleans up — archive stays on disk. RAHasher handles zips natively; Python fallback uses `_hash_from_archive` in `hasher.py`. `_rom_title()` in `library.py` strips inner extension: `game.nes.zip` → title `game`.
+Both in `ROM_EXTENSIONS`, scanned like any ROM. Hashing extracts to temp dir, hashes the ROM-like file inside (prefers a member matching the expected name, else largest — see `prefer_name` in `hasher.py`), cleans up — archive stays on disk. RAHasher handles zips natively; Python fallback uses `_hash_from_archive` in `hasher.py`. `_rom_title()` in `library.py` strips inner extension: `game.nes.zip` → title `game`.
+
+### Source errors are surfaced, not swallowed (Phase 4)
+Search endpoints (`games.search`, `api.api_search`) query each enabled source in its own try/except: one source's 403/429/dead-mirror failure is logged + shown in the results partial, but never aborts the others or hides as "no results". Sources raise the typed errors in `app/services/sources/errors.py`.
 
 ---
 

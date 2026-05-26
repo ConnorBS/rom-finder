@@ -16,10 +16,24 @@ files, so it exposes a "Browse files" step. New sources should not replicate
 this; return individual games and one file per result instead.
 """
 
+import os
 from abc import ABC, abstractmethod
 from pathlib import Path
 
 import httpx
+
+from app.services.sources.errors import (
+    SourceError, SourceNetworkError, classify_status,
+)
+
+
+def _parse_retry_after(value: str | None) -> float | None:
+    if not value:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None  # HTTP-date form not handled; seconds form is what CDNs/RA use
 
 
 class RomSource(ABC):
@@ -55,22 +69,51 @@ class RomSource(ABC):
         return {}
 
     async def download_file(self, url: str, dest: Path, progress_callback=None) -> None:
-        """Stream url to dest. The base implementation uses httpx with
-        follow_redirects and calls progress_callback(fraction) as data arrives.
-        Override when the real CDN URL must be generated at download time
-        (e.g. fetching a fresh signed token from a mirror page)."""
+        """Stream url to dest. Streams to a `.part` temp file and atomically
+        renames on success, so a failed/partial download never leaves a file the
+        scanner would mistake for a ROM. Verifies the byte count against
+        Content-Length when present, and raises a typed SourceError on HTTP
+        failure or a short/incomplete body. Override when the real CDN URL must
+        be generated at download time (e.g. fetching a fresh signed token)."""
         dest.parent.mkdir(parents=True, exist_ok=True)
         headers = self.get_extra_headers()
-        async with httpx.AsyncClient(
-            follow_redirects=True, timeout=None, headers=headers
-        ) as client:
-            async with client.stream("GET", url) as resp:
-                resp.raise_for_status()
-                total = int(resp.headers.get("content-length", 0))
-                downloaded = 0
-                with open(dest, "wb") as fh:
-                    async for chunk in resp.aiter_bytes(chunk_size=65536):
-                        fh.write(chunk)
-                        downloaded += len(chunk)
-                        if progress_callback and total:
-                            await progress_callback(downloaded / total)
+        tmp = dest.with_name(dest.name + ".part")
+        timeout = httpx.Timeout(connect=30.0, read=300.0, write=300.0, pool=None)
+        try:
+            async with httpx.AsyncClient(
+                follow_redirects=True, timeout=timeout, headers=headers
+            ) as client:
+                async with client.stream("GET", url) as resp:
+                    if resp.status_code >= 400:
+                        raise classify_status(
+                            resp.status_code,
+                            source_id=getattr(self, "source_id", ""),
+                            retry_after=_parse_retry_after(resp.headers.get("retry-after")),
+                            detail=f"{self.name}: HTTP {resp.status_code} for {url}",
+                        )
+                    total = int(resp.headers.get("content-length", 0))
+                    downloaded = 0
+                    with open(tmp, "wb") as fh:
+                        async for chunk in resp.aiter_bytes(chunk_size=65536):
+                            fh.write(chunk)
+                            downloaded += len(chunk)
+                            if progress_callback and total:
+                                await progress_callback(downloaded / total)
+            if total and downloaded != total:
+                raise SourceNetworkError(
+                    f"{self.name}: incomplete download ({downloaded}/{total} bytes) for {url}",
+                    source_id=getattr(self, "source_id", ""),
+                )
+            os.replace(tmp, dest)  # atomic on the same filesystem
+        except SourceError:
+            tmp.unlink(missing_ok=True)
+            raise
+        except (httpx.TimeoutException, httpx.TransportError) as exc:
+            tmp.unlink(missing_ok=True)
+            raise SourceNetworkError(
+                f"{self.name}: {type(exc).__name__} for {url}",
+                source_id=getattr(self, "source_id", ""),
+            ) from exc
+        except Exception:
+            tmp.unlink(missing_ok=True)
+            raise

@@ -80,3 +80,20 @@ download_file()    → override: re-fetches mirror for fresh token, streams CDN
 ## Vimm Gotcha
 
 Vimm blocks automated downloads with a JS challenge. Vault ID shown in URLs ≠ the `mediaId` in the download form. DMCA'd games have no `dl_form`. See project memory for details.
+
+---
+
+## Error handling (Phase 4)
+
+`errors.py` defines a typed taxonomy — **never `return []` / `except: pass` on failure**, raise the right one so the router can surface it (results partial + `/logs`) and callers can back off:
+`SourceError` (base) → `SourceNetworkError` (timeout / 5xx / malformed), `SourceForbiddenError` (403 — bot block or stale signed token), `SourceRateLimitError` (429, carries `retry_after`), `SourceNotFoundError` (404), `SourceBadHashError`. `classify_status(code, ...)` maps an HTTP status to the right one.
+
+Routers query sources **per-source** (`games.search`, `api.api_search`): one source failing must not wipe out the others' results, and the failure is logged/surfaced, not swallowed.
+
+## `download_file` contract (base class)
+
+The base `download_file` now: uses a real `httpx.Timeout` (no more `timeout=None` hangs on dead mirrors); streams to `dest.name + ".part"` then `os.replace` (atomic — a failed/partial download never leaves a file the scanner treats as a ROM); verifies bytes-written == `Content-Length` when present (catches truncated/short-body responses); and raises the typed errors above on HTTP ≥ 400. Token-CDN overrides should preserve this behavior (raise `SourceForbiddenError` on 403).
+
+## Archive member selection
+
+`extract_rom_from_zip(zip, prefer_name=...)` and `hash_rom(..., prefer_name=...)` prefer the archive member whose stem matches the expected ROM name (so multi-ROM zips don't grab the wrong game), falling back to the largest member and logging a WARNING when the archive is ambiguous. Pass `prefer_name` (the download's `game_title` / `file_name`) from the call site.

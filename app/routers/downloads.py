@@ -427,7 +427,7 @@ async def _run_download(download_id: int) -> None:
             if dest.suffix.lower() in (".zip", ".7z"):
                 import zipfile as _zf
                 try:
-                    rom_path = extract_rom_from_zip(dest)
+                    rom_path = extract_rom_from_zip(dest, prefer_name=download.game_title)
                 except _zf.BadZipFile:
                     # The downloaded file is not actually a ZIP (e.g. Vimm served
                     # a raw CHD/ISO). Strip the false extension and keep as-is.
