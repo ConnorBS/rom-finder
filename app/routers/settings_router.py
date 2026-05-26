@@ -18,6 +18,7 @@ from app.services.ra_client import SYSTEMS, DEFAULT_FOLDER_MAP
 from app.services import logger as applog
 from app.services import extension_loader
 from app.services import settings as app_settings
+from app.services.rahasher import rahasher_status
 
 router = APIRouter(prefix="/settings")
 templates = Jinja2Templates(directory="app/templates")
@@ -159,6 +160,7 @@ async def settings_page(request: Request, session: Session = Depends(get_session
             "ext_names": ext_names,
             "ext_values": ext_values,
             "version": APP_VERSION,
+            "rahasher": rahasher_status(),
         },
     )
 

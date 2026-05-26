@@ -33,7 +33,7 @@ from app.services import logger as applog
 from app.services import sources as source_registry
 from app.services.hasher import extract_rom_from_zip, hash_rom
 from app.services.ra_client import DEFAULT_FOLDER_MAP, RAClient
-from app.services.rahasher import compute_ra_hash
+from app.services.rahasher import compute_ra_hash, ra_hash_or_fallback
 from app.services.title_utils import search_variations
 from app.services import settings as app_settings
 
@@ -256,8 +256,7 @@ async def auto_hunt(wanted_id: int) -> None:
                         dest.rename(real)
                         rom_path = real
 
-                ra_hash = await compute_ra_hash(rom_path, system)
-                file_hash = ra_hash if ra_hash is not None else hash_rom(rom_path, system)
+                file_hash, _ = await ra_hash_or_fallback(rom_path, system)
 
                 match = await ra.lookup_hash(file_hash)
                 if match:

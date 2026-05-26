@@ -24,7 +24,8 @@ RA doesn't always use plain MD5 — many systems use platform-specific algorithm
 **RAHasher binary source**: RAHasher is **not** a standalone repo. It's distributed via `RALibretro` releases:
 `https://github.com/RetroAchievements/RALibretro/releases/latest` → `RAHasher-x64-Linux-{version}.zip`
 The Dockerfile downloads it at build time. Without it, disc-based systems (Saturn, PS1/2, Dreamcast, Sega CD, etc.) hash as plain MD5 of the image file and will never match RA's database.
-A startup `print()` in `main.py` logs RAHasher availability to Docker stdout on every boot.
+
+**Availability is surfaced (Phase 6), not silent:** `rahasher_status()` powers `/api/status.rahasher`; `main.py` startup also writes an `applog` info/warning (HTTP-visible via `/logs`, not just Docker stdout); and `/settings` shows an amber banner when it's missing. **Disc guard:** all hashing goes through `ra_hash_or_fallback(path, system) -> (hash, used_rahasher)`, which logs a clear WARNING when a `DISC_SYSTEMS` ROM falls back to MD5 because RAHasher is absent (`disc_without_rahasher()`), so it's diagnosable instead of masquerading as "not in RA database".
 
 ### Rate limiting
 

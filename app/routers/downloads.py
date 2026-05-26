@@ -12,7 +12,7 @@ from app.db.models import Download, DownloadStatus, AppSetting, LibraryEntry, Wa
 from app.db import repository
 from app.services import sources as source_registry
 from app.services.hasher import hash_rom, extract_rom_from_zip, DISC_SYSTEMS
-from app.services.rahasher import compute_ra_hash
+from app.services.rahasher import ra_hash_or_fallback
 from app.services.ra_client import DEFAULT_FOLDER_MAP
 from app.services import logger as applog
 from app.services import settings as app_settings
@@ -323,8 +323,7 @@ async def _run_hash(download_id: int) -> None:
             session.commit()
             return
         try:
-            ra_hash_result = await compute_ra_hash(rom_path, download.system)
-            file_hash = ra_hash_result if ra_hash_result is not None else hash_rom(rom_path, download.system)
+            file_hash, _used = await ra_hash_or_fallback(rom_path, download.system)
             download.file_hash = file_hash
             download.hash_verified = False
             applog.log_action("manual_hash", {"game": download.game_title, "file": rom_path.name, "hash": file_hash})
@@ -435,14 +434,10 @@ async def _run_download(download_id: int) -> None:
                     dest.rename(real_path)
                     rom_path = real_path
 
-            # Compute RA hash — try RAHasher binary first, fall back to Python
-            ra_hash_result = await compute_ra_hash(rom_path, download.system)
-            if ra_hash_result is not None:
-                file_hash = ra_hash_result
-                hasher_used = "RAHasher"
-            else:
-                file_hash = hash_rom(rom_path, download.system)
-                hasher_used = "Python"
+            # Compute RA hash — RAHasher first, fall back to Python MD5.
+            # ra_hash_or_fallback logs a warning if a disc system falls back.
+            file_hash, _used = await ra_hash_or_fallback(rom_path, download.system)
+            hasher_used = "RAHasher" if _used else "Python"
 
             download.file_path = str(rom_path)
             download.file_name = rom_path.name

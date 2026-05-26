@@ -144,6 +144,39 @@ def get_ra_system_id(system_name: str) -> int | None:
     return None
 
 
+def disc_without_rahasher(system_name: str) -> bool:
+    """True if this is a disc system that REQUIRES RAHasher and the binary is
+    missing — a plain-MD5 fallback for these can never match RA's disc hash."""
+    from app.services.hasher import DISC_SYSTEMS
+    return system_name in DISC_SYSTEMS and not _rahasher_available()
+
+
+async def ra_hash_or_fallback(rom_path: Path, system_name: str) -> tuple[str, bool]:
+    """Compute the RA hash, falling back to plain MD5. Returns (hash, used_rahasher).
+
+    When a disc-system ROM falls back to MD5 because RAHasher is unavailable, the
+    hash is non-authoritative (cannot match RA) — we log a clear warning so it's
+    diagnosable instead of silently surfacing as 'not in RA database'.
+    """
+    import asyncio
+    from app.services.hasher import hash_rom
+
+    ra_hash = await compute_ra_hash(rom_path, system_name)
+    if ra_hash is not None:
+        return ra_hash, True
+    loop = asyncio.get_event_loop()
+    fallback = await loop.run_in_executor(None, hash_rom, rom_path, system_name)
+    if disc_without_rahasher(system_name):
+        from app.services import logger as applog
+        applog.warning(
+            "hash",
+            f"{system_name}: RAHasher unavailable — '{rom_path.name}' hashed as plain MD5, "
+            "which cannot match RA's disc hash. Install RAHasher to verify disc systems.",
+            {"system": system_name, "file": rom_path.name},
+        )
+    return fallback, False
+
+
 async def compute_ra_hash(rom_path: Path, system_name: str) -> str | None:
     """Compute the RA hash using the RAHasher binary.
 

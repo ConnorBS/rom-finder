@@ -8,6 +8,7 @@ from app.db.database import engine
 from app.db.models import AppSetting, LibraryEntry
 from app.services import logger as applog
 from app.services import settings as app_settings
+from app.services.rahasher import ra_hash_or_fallback
 
 
 def _get(session: Session, key: str, default: str = "") -> str:
@@ -121,9 +122,7 @@ async def run_scan() -> dict:
                 activity_store.increment(batch_id)
                 continue
             try:
-                h = await compute_ra_hash(p, entry.system)
-                if h is None:
-                    h = await loop.run_in_executor(None, hash_rom, p, entry.system)
+                h, _ = await ra_hash_or_fallback(p, entry.system)
                 entry.file_hash = h
                 entry.hashed_at = datetime.utcnow()
                 session.add(entry)
@@ -243,9 +242,7 @@ async def run_hash_check() -> dict:
                 skipped += 1
                 continue
             try:
-                h = await compute_ra_hash(p, entry.system)
-                if h is None:
-                    h = await loop.run_in_executor(None, hash_rom, p, entry.system)
+                h, _ = await ra_hash_or_fallback(p, entry.system)
                 entry.file_hash = h
                 entry.hashed_at = datetime.utcnow()
                 entry.hash_verified = False

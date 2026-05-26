@@ -375,7 +375,7 @@ async def refresh_library_cover(
 async def _do_rehash(entry_ids: list[int]) -> None:
     import asyncio
     from app.services.hasher import hash_rom
-    from app.services.rahasher import compute_ra_hash
+    from app.services.rahasher import ra_hash_or_fallback
     from app.services import activity as activity_store
     from pathlib import Path
 
@@ -402,10 +402,7 @@ async def _do_rehash(entry_ids: list[int]) -> None:
                 continue
             try:
                 old_hash = entry.file_hash
-                result = await compute_ra_hash(p, entry.system)
-                used_rahasher = result is not None
-                if result is None:
-                    result = await loop.run_in_executor(None, hash_rom, p, entry.system)
+                result, used_rahasher = await ra_hash_or_fallback(p, entry.system)
                 applog.log_action("rehash_entry", {
                     "game": entry.game_title,
                     "system": entry.system,
