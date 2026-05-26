@@ -11,8 +11,22 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  # ── 0. Tests (gate the build) ──────────────────────────────────────
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install deps
+        run: pip install -r requirements.txt pytest
+      - name: Run tests
+        run: pytest tests/ -q
+
   # ── 1. Build & push ────────────────────────────────────────────────
   build-and-push:
+    needs: test          # broken code never builds or deploys
     runs-on: ubuntu-latest
     permissions:
       contents: read

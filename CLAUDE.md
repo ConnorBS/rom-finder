@@ -69,12 +69,19 @@ Confirm a change works by pulling machine-readable feedback from the app — nev
 
 ---
 
+## Done (recent stabilization/modularization pass)
+
+- **Hash export** ✅ — `/export/hashes?format=csv|json` (links on Settings)
+- **Bulk import** ✅ — the scheduler **Library scan** task (`/scheduler` → Run now, or daily) walks `download_dir`, imports untracked ROMs, hashes (RAHasher-first + disc guard), fetches covers, and RA-verifies — that IS the one-pass importer
+- **Bulk RA verify after hash** ✅ — resumable, rate-limit-aware **RA re-verify** scheduler task (`ra_verify.run_pass`)
+
 ## Future Work
 
-- **Hash export**: CSV/JSON of verified ROMs for emulator frontends
+- **RA progress tracking**: Achievement completion % per game (RAProgress model + `API_GetGameInfoAndUserProgress` + scheduler refresh + collection badge) — designed, not yet built
 - **Emulator integration**: Launch a game from the collection view
-- **More ROM sources**: Vimm, ROMsFun, WowROMs, CDRomance are now extensions in `extensions/` — install via `/extensions`
-- **RA progress tracking**: Achievement completion % per game
-- **Bulk RA verify after hash**: Auto-verify newly-hashed entries
-- **Import from existing collection**: Bulk-import + hash + match in one pass
+- **More ROM sources**: Vimm, ROMsFun, WowROMs, CDRomance are extensions in `extensions/` — install via `/extensions`
 - **Notification on autodiscover**: Alert when Wanted pool grows via scheduler
+
+## CI
+
+`.github/workflows/docker-publish.yml` runs `pytest` as a **gate** (`build-and-push` `needs: test`) — broken code never builds or deploys. Run the suite locally with `venv\Scripts\python -m pytest tests/ -q`.
