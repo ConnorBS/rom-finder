@@ -51,3 +51,16 @@ All three scan paths (`bulk_scan`, `/library/scan`, `run_scan` in scheduler) use
 
 ### Archive support (.zip/.7z)
 Both in `ROM_EXTENSIONS`, scanned like any ROM. Hashing extracts to temp dir, hashes the largest ROM-like file inside, cleans up — archive stays on disk. RAHasher handles zips natively; Python fallback uses `_hash_from_archive` in `hasher.py`. `_rom_title()` in `library.py` strips inner extension: `game.nes.zip` → title `game`.
+
+---
+
+## Agent-Observable Diagnostics (`api.py`)
+
+Two JSON endpoints let any agent confirm the running app's state over HTTP — no browser, no Docker socket, no human checking the site. They are the agent-facing twins of the UI; the verifier agents (`deploy-verifier`, `prod-health-monitor`) consume them instead of scraping HTML.
+
+- **`GET /api/status`** → `{version, rahasher:{available,path,bin}, db:{library_total, library_ra_matched, no_ra, library_unhashed, wanted_*, downloads_*}, scheduler:{scan,hash,autodiscover → {enabled,time,last_run}}, verify:{in_progress,paused_until,last_run}, sources[], extensions[], recent_errors:{window_hours,count,latest[]}}`. `version` is `APP_VERSION` (the deployed git SHA). Each section is independently `try`-guarded — a failing section returns `{"error": "..."}` instead of blanking the whole report.
+- **`GET /api/logs?level=&category=&since=&limit=`** → JSON array of `AppLog` rows (newest first; `limit` 1–1000, `since` is ISO-8601 UTC).
+
+**Rule:** anything that previously only went to Docker stdout (RAHasher availability in `main.py`, extension-load failures in `extension_loader.py`) must ALSO go through `applog` so it shows up here. Don't add a diagnostic signal that's only visible in stdout.
+
+`recent_errors.window_hours` comes from the `diagnostics_recent_hours` setting (default 24).

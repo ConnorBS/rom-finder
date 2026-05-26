@@ -113,6 +113,17 @@ def _rahasher_available() -> bool:
     return shutil.which(_RAHASHER_BIN) is not None
 
 
+def rahasher_status() -> dict:
+    """Availability of the RAHasher binary — for /api/status and the disc guard.
+
+    Disc-based systems (PlayStation, Saturn, Dreamcast, CHD, etc.) can only be
+    hashed correctly by this binary; without it they fall back to plain MD5 and
+    can never match RA's database.
+    """
+    path = shutil.which(_RAHASHER_BIN)
+    return {"available": path is not None, "path": path, "bin": _RAHASHER_BIN}
+
+
 def get_ra_system_id(system_name: str) -> int | None:
     """Return the RA numeric system ID for a system name, or None if unknown."""
     if not system_name:

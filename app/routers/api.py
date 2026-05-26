@@ -1,13 +1,21 @@
 """JSON API for the Chrome extension (and any other external clients)."""
 
-from fastapi import APIRouter, BackgroundTasks, Depends
+import os
+from datetime import datetime, timedelta
+
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from pydantic import BaseModel
 from sqlmodel import Session, select
+from sqlalchemy import func, select as sa_select
 from typing import Optional
 
 from app.db.database import get_session
-from app.db.models import AppSetting, WantedGame
+from app.db.models import (
+    AppSetting, WantedGame, HuntStatus,
+    Download, DownloadStatus, LibraryEntry, AppLog, InstalledExtension,
+)
 from app.services import sources as source_registry
+from app.services.cover_sources import registry as cover_source_registry
 from app.services.ra_client import SYSTEMS
 from app.services.title_utils import clean_title
 
@@ -17,6 +25,13 @@ router = APIRouter(prefix="/api")
 def _get_setting(session: Session, key: str, default: str = "") -> str:
     s = session.get(AppSetting, key)
     return s.value if s else default
+
+
+def _count(session: Session, model, *conditions) -> int:
+    stmt = sa_select(func.count()).select_from(model)
+    for c in conditions:
+        stmt = stmt.where(c)
+    return session.scalar(stmt) or 0
 
 
 def _enabled_source_ids(session: Session) -> set[str]:
@@ -170,3 +185,147 @@ async def api_search(
         except Exception:
             pass
     return results
+
+
+# ---------------------------------------------------------------------------
+# Agent-observable diagnostics (Phase 0.5)
+#
+# /api/status and /api/logs let any agent confirm the running app's state over
+# HTTP — no browser, no Docker socket, no human checking the site. Each section
+# is independently guarded so one failure can't blank the whole report.
+# ---------------------------------------------------------------------------
+
+@router.get("/status")
+async def api_status(session: Session = Depends(get_session)):
+    status: dict = {"app": "rom-finder", "version": os.environ.get("APP_VERSION", "dev")}
+
+    try:
+        from app.services.rahasher import rahasher_status
+        status["rahasher"] = rahasher_status()
+    except Exception as e:
+        status["rahasher"] = {"error": str(e)}
+
+    try:
+        active = [
+            DownloadStatus.pending, DownloadStatus.downloading,
+            DownloadStatus.hashing, DownloadStatus.verifying,
+        ]
+        status["db"] = {
+            "library_total": _count(session, LibraryEntry),
+            "library_ra_matched": _count(session, LibraryEntry, LibraryEntry.ra_matched == True),  # noqa: E712
+            "no_ra": _count(session, LibraryEntry, LibraryEntry.file_hash != None, LibraryEntry.ra_matched == False),  # noqa: E711,E712
+            "library_unhashed": _count(session, LibraryEntry, LibraryEntry.file_hash == None),  # noqa: E711
+            "wanted_total": _count(session, WantedGame),
+            "wanted_verified": _count(session, WantedGame, WantedGame.status == HuntStatus.verified),
+            "wanted_hunting": _count(session, WantedGame, WantedGame.status == HuntStatus.hunting),
+            "downloads_active": _count(session, Download, Download.status.in_(active)),
+            "downloads_pending_approval": _count(session, Download, Download.status == DownloadStatus.pending_approval),
+            "downloads_failed": _count(session, Download, Download.status == DownloadStatus.failed),
+        }
+    except Exception as e:
+        status["db"] = {"error": str(e)}
+
+    try:
+        sched = {}
+        for task in ("scan", "hash", "autodiscover"):
+            sched[task] = {
+                "enabled": _get_setting(session, f"sched_{task}_enabled", "false") == "true",
+                "time": _get_setting(session, f"sched_{task}_time", ""),
+                "last_run": _get_setting(session, f"sched_{task}_last_run", ""),
+            }
+        status["scheduler"] = sched
+    except Exception as e:
+        status["scheduler"] = {"error": str(e)}
+
+    # Resumable verify state (keys land in Phase 5; default gracefully until then).
+    status["verify"] = {
+        "in_progress": _get_setting(session, "ra_verify_in_progress", "false") == "true",
+        "paused_until": _get_setting(session, "ra_verify_paused_until", ""),
+        "last_run": _get_setting(session, "ra_verify_last_run", ""),
+    }
+
+    try:
+        srcs = []
+        for src in source_registry.all_sources():
+            srcs.append({
+                "id": src.source_id,
+                "name": getattr(src, "name", src.source_id),
+                "enabled": _get_setting(session, f"source_{src.source_id}_enabled", "false") == "true",
+                "available": getattr(src, "available", True),
+            })
+        status["sources"] = srcs
+    except Exception as e:
+        status["sources"] = {"error": str(e)}
+
+    try:
+        loaded_ids = {s.source_id for s in source_registry.all_sources()}
+        loaded_ids |= {c.source_id for c in cover_source_registry.all_sources()}
+        exts = []
+        for ext in session.exec(select(InstalledExtension)).all():
+            exts.append({
+                "id": ext.ext_id, "name": ext.name, "type": ext.ext_type,
+                "version": ext.version, "enabled": ext.enabled,
+                "loaded": ext.ext_id in loaded_ids,
+            })
+        status["extensions"] = exts
+    except Exception as e:
+        status["extensions"] = {"error": str(e)}
+
+    try:
+        hours = int(_get_setting(session, "diagnostics_recent_hours", "24") or "24")
+        since = datetime.utcnow() - timedelta(hours=hours)
+        levels = ["error", "warning"]
+        count = _count(session, AppLog, AppLog.level.in_(levels), AppLog.ts >= since)
+        latest = session.exec(
+            select(AppLog)
+            .where(AppLog.level.in_(levels), AppLog.ts >= since)
+            .order_by(AppLog.ts.desc())
+            .limit(10)
+        ).all()
+        status["recent_errors"] = {
+            "window_hours": hours,
+            "count": count,
+            "latest": [
+                {"ts": l.ts.isoformat(), "level": l.level, "category": l.category, "message": l.message}
+                for l in latest
+            ],
+        }
+    except Exception as e:
+        status["recent_errors"] = {"error": str(e)}
+
+    return status
+
+
+@router.get("/logs")
+async def api_logs(
+    level: str = Query(default=""),
+    category: str = Query(default=""),
+    since: str = Query(default="", description="ISO-8601 UTC timestamp; only logs at/after this time"),
+    limit: int = Query(default=100, ge=1, le=1000),
+    session: Session = Depends(get_session),
+):
+    """Machine-readable twin of the /logs page — lets an agent pull exactly the
+    errors a change should have fixed or avoided."""
+    import json
+    q = select(AppLog).order_by(AppLog.ts.desc())
+    if level:
+        q = q.where(AppLog.level == level)
+    if category:
+        q = q.where(AppLog.category == category)
+    if since:
+        try:
+            q = q.where(AppLog.ts >= datetime.fromisoformat(since))
+        except ValueError:
+            pass
+    logs = session.exec(q.limit(limit)).all()
+    out = []
+    for l in logs:
+        try:
+            details = json.loads(l.details or "{}")
+        except Exception:
+            details = {}
+        out.append({
+            "id": l.id, "ts": l.ts.isoformat(), "level": l.level,
+            "category": l.category, "message": l.message, "details": details,
+        })
+    return out

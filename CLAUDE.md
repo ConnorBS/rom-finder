@@ -41,13 +41,24 @@ Every ROM kept must be a hash-verified, RA-accepted dump — not just any ROM th
 
 - **After every change**: update the relevant CLAUDE.md(s), then commit and push to `main`
 - **Quality bar**: all edge cases handled in the first push — no follow-up PRs for obvious gaps
-- **No Alembic**: schema changes go through `_MIGRATIONS` in `main.py` only
+- **No Alembic**: schema changes go through the ordered, tracked registry in `app/db/migrations.py`
+
+---
+
+## Verifying a Change (agent-driven, no human site checks)
+
+Confirm a change works by pulling machine-readable feedback from the app — never by asking the user to open the site.
+
+- **Fast local run** (no Docker daemon needed): `scripts/run-local.ps1` boots the app from the test venv (`./venv`) on a throwaway DB and prints `/api/status`. Or run `pytest` against the `tests/conftest.py` fixtures (throwaway-DB engine + `TestClient`).
+- **Full-image run**: `docker compose -f docker-compose.local.yml up --build -d`, then `curl /api/status` and `curl "/api/logs?level=error"`, then `down -v`.
+- **`GET /api/status`** reports version, RAHasher availability, DB counts (incl. `no_ra`), scheduler last-runs, verify progress, sources/extensions, and recent errors. **`GET /api/logs`** is the JSON log feed. These are the source of truth for "did it work?" — the `deploy-verifier` and `prod-health-monitor` agents read them.
+- After deploy, confirm `/api/status.version` == the pushed git SHA (also shown on the Settings page).
 
 ---
 
 ## Adding a New Feature — Checklist
 
-1. **New DB column?** Add to `models.py` + entry in `_MIGRATIONS` in `main.py`
+1. **New DB column?** Add to `models.py` + a new `(version_id, apply_fn)` entry in `app/db/migrations.py`
 2. **New setting?** Add to `DEFAULT_SETTINGS` in `main.py` — seeded automatically at startup
 3. **New router?** Register in `main.py::app.include_router(...)`. Add nav link in `base.html` if user-facing
 4. **New background task?** Use `activity_store.start_batch(..., entry_ids=[...])` for per-card overlays

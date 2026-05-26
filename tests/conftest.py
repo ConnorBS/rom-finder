@@ -32,3 +32,17 @@ def fresh_engine():
     yield engine
     engine.dispose()
     _wipe_db_files()
+
+
+@pytest.fixture()
+def client():
+    """A TestClient with the full app lifespan run (migrations + settings seed +
+    extension load + RAHasher check) against the throwaway DB."""
+    _wipe_db_files()
+    import app.db.models  # noqa: F401
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    with TestClient(app) as c:
+        yield c
+    _wipe_db_files()

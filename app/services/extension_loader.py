@@ -56,6 +56,13 @@ def load_extension_file(ext_path: Path, config: dict | None = None) -> dict | No
         return info
     except Exception as e:
         print(f"[extensions] Failed to load {ext_path.name}: {e}")
+        # Also surface over HTTP (/logs, /api/status) so failures aren't
+        # invisible when Docker stdout isn't accessible.
+        try:
+            from app.services import logger as applog
+            applog.error("system", f"Extension load failed: {ext_path.name}", {"error": str(e)})
+        except Exception:
+            pass
         return None
 
 

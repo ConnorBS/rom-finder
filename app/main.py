@@ -28,6 +28,8 @@ DEFAULT_SETTINGS = {
     "extension_repos": '["https://raw.githubusercontent.com/ConnorBS/rom-finder/main/extensions/index.json"]',
     # Verbose logging captures every page load, button press, and navigation event
     "verbose_logging": "false",
+    # /api/status recent_errors window
+    "diagnostics_recent_hours": "24",
     # When true, downloads stage in check_dir for manual review before moving to download_dir.
     # When false, downloads go directly to download_dir and are auto-imported.
     "use_review_dir": "true",
@@ -104,8 +106,10 @@ async def lifespan(app: FastAPI):
     rahasher_path = shutil.which(_RAHASHER_BIN)
     if rahasher_path:
         print(f"[startup] RAHasher available: {rahasher_path}", flush=True)
+        applog.info("system", "RAHasher available", {"path": rahasher_path})
     else:
         print("[startup] WARNING: RAHasher not found — disc-based ROMs (Saturn, PS1/2, Dreamcast…) will hash incorrectly", flush=True)
+        applog.warning("system", "RAHasher not found — disc-based ROMs (Saturn, PS1/2, Dreamcast, CHD) will hash incorrectly and never match RA")
     applog.info("system", "ROM Finder started")
     from app.services.scheduler import scheduler_loop
     sched_task = asyncio.create_task(scheduler_loop())
