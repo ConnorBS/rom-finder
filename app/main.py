@@ -8,36 +8,9 @@ from pathlib import Path
 from sqlmodel import SQLModel, Session, text
 
 from app.db.database import engine
+from app.db.migrations import run_migrations
 from app.db.models import AppSetting, WantedGame, AppLog, HuntAttempt, InstalledExtension  # noqa: F401 — registers tables
 from app.routers import games, downloads, library, settings_router, wanted, api, logs, collection, activity, scheduler, extensions as extensions_router
-
-
-# (table, column, sql_type, default_expr or None for nullable)
-_MIGRATIONS = [
-    ("download", "source_id", "VARCHAR", "'archive_org'"),
-    ("download", "ra_game_id", "INTEGER", None),
-    ("library", "cover_path", "VARCHAR", "''"),
-    ("library", "hashed_at", "TIMESTAMP", None),
-    ("wanted_games", "last_hunt_at", "TIMESTAMP", None),
-]
-
-
-def _run_migrations() -> None:
-    """Add any columns that exist in the model but not yet in the DB."""
-    with Session(engine) as session:
-        for table, col, col_type, default in _MIGRATIONS:
-            rows = session.exec(text(f"PRAGMA table_info({table})")).all()
-            existing = {r[1] for r in rows}
-            if col not in existing:
-                if default is not None:
-                    session.exec(
-                        text(f"ALTER TABLE {table} ADD COLUMN {col} {col_type} NOT NULL DEFAULT {default}")
-                    )
-                else:
-                    session.exec(
-                        text(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}")
-                    )
-        session.commit()
 
 
 DEFAULT_SETTINGS = {
@@ -86,8 +59,10 @@ DEFAULT_SETTINGS = {
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     SQLModel.metadata.create_all(engine)
-    _run_migrations()
+    run_migrations()
     # Fix corrupted system names left by the Chrome extension concatenation bug
+    # TODO(Phase 8): removed once title_utils.canonical_system + migration 0009 land
+    # and the extension stops posting scraped link text.
     with Session(engine) as session:
         for table in ("wanted_games", "library"):
             session.exec(text(f"UPDATE {table} SET system = 'Wii' WHERE system = 'WiiWii'"))

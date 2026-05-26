@@ -92,6 +92,8 @@ def stem_from_rom_name(rom_name: str) -> str:
 
     e.g. "Burnout 3 - Takedown (USA).iso"  →  "Burnout 3 - Takedown"
     """
+    if not rom_name:
+        return ""
     import pathlib
     stem = pathlib.Path(rom_name).stem          # strip extension
     stem = _REGION_PARENS.sub('', stem)

@@ -4,9 +4,10 @@
 
 ```
 app/
-  main.py              # FastAPI app, lifespan, _MIGRATIONS, DEFAULT_SETTINGS, scheduler startup
+  main.py              # FastAPI app, lifespan, DEFAULT_SETTINGS, scheduler startup
   db/
-    database.py        # SQLite engine + get_session dependency
+    database.py        # SQLite engine (WAL/busy_timeout pragmas) + get_session dependency
+    migrations.py      # Ordered, tracked schema migrations (run_migrations)
     models.py          # All SQLModel table classes
   routers/
     collection.py      # /collection — unified library+wanted view, bulk actions

@@ -84,18 +84,25 @@ sched_autodiscover_enabled / sched_autodiscover_time / sched_autodiscover_last_r
 
 ## Schema Migrations
 
-SQLite doesn't support dropping columns. New columns added via `main.py::_MIGRATIONS`:
+SQLite doesn't support dropping columns. Migrations live in **`app/db/migrations.py`** (a leaf module importing only `database.engine`), run at startup via `lifespan` → `run_migrations()`.
+
+Each migration is `(version_id, apply_fn)` appended to `MIGRATIONS`, applied in order, and recorded once in the `schema_migrations(version, applied_at)` table:
 
 ```python
-_MIGRATIONS = [
-    ("table_name", "column_name", "SQL_TYPE", "DEFAULT_EXPR or None"),
-]
+def _m_0006_my_change(s: Session) -> None:
+    _add_column(s, "table_name", "column_name", "SQL_TYPE", "DEFAULT_EXPR or None")
+
+MIGRATIONS = [..., ("0006_my_change", _m_0006_my_change)]
 ```
 
-- `None` default = nullable column
-- Non-null defaults use a SQL expression string: `"''"`, `"0"`, etc.
-- `_run_migrations()` runs at startup via `lifespan`
-- **Never use Alembic**
+- Add-column helper `_add_column` is idempotent (PRAGMA `table_info` guard) — so a DB that predates the tracking table (prod has the first 5 columns, no `schema_migrations`) back-fills cleanly: the column-add no-ops, then the id is recorded.
+- `None` default = nullable column; non-null defaults use a SQL expression string: `"''"`, `"0"`.
+- Migrations can also create indexes / dedupe rows (see `0006+`), not just add columns.
+- **Never reorder or rename existing version ids.**
+- **Never use Alembic.**
+
+### SQLite pragmas
+`database.py` sets `journal_mode=WAL`, `busy_timeout=5000`, `synchronous=NORMAL` on every connect (via a `connect` event listener, SQLite-only). This lets the scheduler, a live download, and a bulk verify write concurrently without `database is locked`. WAL produces `*.db-wal` / `*.db-shm` sidecar files (already gitignored).
 
 ### `hashed_at` backfill gotcha
 Entries hashed before `hashed_at` was added have `file_hash != None, hashed_at = None`. The scheduler hash-check backfills these on first run.
