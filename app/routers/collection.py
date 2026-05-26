@@ -21,6 +21,7 @@ from app.db.database import engine, get_session
 from app.db.models import AppSetting, LibraryEntry, WantedGame, HuntStatus
 from app.services import logger as applog
 from app.services import cover_sources as cover_source_registry
+from app.services import settings as app_settings
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -209,7 +210,7 @@ async def bulk_scan(session: Session = Depends(get_session)):
     if not base.exists():
         return HTMLResponse(f'<span class="text-yellow-400 text-xs">Directory not found: {download_dir}</span>')
 
-    folder_map = json.loads(_get_setting(session, "folder_map", "{}"))
+    folder_map = app_settings.get_json(session, "folder_map", {})
     folder_to_system = _build_folder_to_system_map(folder_map)
     existing_paths = set(session.exec(select(LibraryEntry.file_path)).all())
 

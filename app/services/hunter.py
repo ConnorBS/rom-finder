@@ -35,6 +35,7 @@ from app.services.hasher import extract_rom_from_zip, hash_rom
 from app.services.ra_client import DEFAULT_FOLDER_MAP, RAClient
 from app.services.rahasher import compute_ra_hash
 from app.services.title_utils import search_variations
+from app.services import settings as app_settings
 
 
 def _gs(session: Session, key: str, default: str = "") -> str:
@@ -111,7 +112,7 @@ async def auto_hunt(wanted_id: int) -> None:
         check_dir = _gs(session, "check_dir", "/rom-check")
         download_dir = _gs(session, "download_dir", "/roms")
         use_review = _gs(session, "use_review_dir", "true") == "true"
-        folder_map = json.loads(_gs(session, "folder_map", "{}"))
+        folder_map = app_settings.get_json(session, "folder_map", {})
         srcs = _enabled_srcs(session)
         game_title = game.game_title
         system = game.system

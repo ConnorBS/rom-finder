@@ -14,14 +14,15 @@ from app.services.hasher import hash_rom, extract_rom_from_zip, DISC_SYSTEMS
 from app.services.rahasher import compute_ra_hash
 from app.services.ra_client import DEFAULT_FOLDER_MAP
 from app.services import logger as applog
+from app.services import settings as app_settings
 
 router = APIRouter(prefix="/downloads")
 templates = Jinja2Templates(directory="app/templates")
 
 
 def _get_setting(session: Session, key: str, default: str = "") -> str:
-    s = session.get(AppSetting, key)
-    return s.value if s else default
+    # Canonical impl lives in app.services.settings (leaf module, no import cycle).
+    return app_settings.get(session, key, default)
 
 
 def _resolve_folder(folder_map: dict, system: str) -> str:
@@ -144,7 +145,7 @@ async def approve_download(
         return HTMLResponse("")
 
     download_dir = _get_setting(session, "download_dir", "/roms")
-    folder_map = json.loads(_get_setting(session, "folder_map", "{}"))
+    folder_map = app_settings.get_json(session, "folder_map", {})
     folder_name = _resolve_folder(folder_map, download.system)
 
     final_dir = Path(download_dir) / folder_name
@@ -227,7 +228,7 @@ async def approve_all_verified(
     ).all()
 
     download_dir = _get_setting(session, "download_dir", "/roms")
-    folder_map = json.loads(_get_setting(session, "folder_map", "{}"))
+    folder_map = app_settings.get_json(session, "folder_map", {})
 
     for download in pending:
         if not download.file_path:
@@ -425,7 +426,7 @@ async def _run_download(download_id: int) -> None:
         use_review = _get_setting(session, "use_review_dir", "true") == "true"
         check_dir = _get_setting(session, "check_dir", "/rom-check")
         download_dir = _get_setting(session, "download_dir", "/roms")
-        folder_map = json.loads(_get_setting(session, "folder_map", "{}"))
+        folder_map = app_settings.get_json(session, "folder_map", {})
         folder_name = _resolve_folder(folder_map, download.system)
         base_dir = check_dir if use_review else download_dir
         dest = Path(base_dir) / folder_name / download.file_name

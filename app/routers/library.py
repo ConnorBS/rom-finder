@@ -9,6 +9,7 @@ from app.db.database import get_session
 from app.db.models import AppSetting, Download, LibraryEntry, WantedGame, HuntStatus
 from app.services.ra_client import DEFAULT_FOLDER_MAP
 from app.services import logger as applog
+from app.services import settings as app_settings
 
 router = APIRouter(prefix="/library")
 templates = Jinja2Templates(directory="app/templates")
@@ -192,7 +193,7 @@ async def scan_rom_folder(session: Session = Depends(get_session)):
             '<span class="text-yellow-400 text-xs">No ROMs directory configured. Set it in Settings first.</span>'
         )
 
-    folder_map = json.loads(_get_setting(session, "folder_map", "{}"))
+    folder_map = app_settings.get_json(session, "folder_map", {})
     folder_to_system = _build_folder_to_system_map(folder_map)
 
     existing_paths = set(

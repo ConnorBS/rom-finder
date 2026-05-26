@@ -7,6 +7,7 @@ from sqlmodel import Session, select
 from app.db.database import engine
 from app.db.models import AppSetting, LibraryEntry
 from app.services import logger as applog
+from app.services import settings as app_settings
 
 
 def _get(session: Session, key: str, default: str = "") -> str:
@@ -51,7 +52,7 @@ async def run_scan() -> dict:
 
     with Session(engine) as session:
         download_dir = _get(session, "download_dir", "")
-        folder_map = json.loads(_get(session, "folder_map", "{}"))
+        folder_map = app_settings.get_json(session, "folder_map", {})
         ra_username = _get(session, "ra_username")
         ra_api_key = _get(session, "ra_api_key")
         covers_readonly = _get(session, "covers_dir_readonly", "false") == "true"

@@ -1,5 +1,4 @@
 import asyncio
-import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -10,52 +9,9 @@ from sqlmodel import SQLModel, Session, text
 from app.db.database import engine
 from app.db.migrations import run_migrations
 from app.db.models import AppSetting, WantedGame, AppLog, HuntAttempt, InstalledExtension  # noqa: F401 — registers tables
+from app.services import settings as app_settings
+from app.services.settings import DEFAULT_SETTINGS
 from app.routers import games, downloads, library, settings_router, wanted, api, logs, collection, activity, scheduler, extensions as extensions_router
-
-
-DEFAULT_SETTINGS = {
-    "download_dir": os.environ.get("DOWNLOAD_DIR", str(Path.home() / "ROMs")),
-    "check_dir": os.environ.get("CHECK_DIR", str(Path.home() / "ROMs-check")),
-    "covers_dir": os.environ.get("COVERS_DIR", "static/covers"),
-    "folder_map": "{}",
-    "ra_enabled": "false",
-    "ra_username": "",
-    "ra_api_key": "",
-    # Source enabled flags
-    "source_archive_org_enabled": "true",
-    # Extension system
-    "extensions_dir": os.environ.get("EXTENSIONS_DIR", "extensions"),
-    "extension_repos": '["https://raw.githubusercontent.com/ConnorBS/rom-finder/main/extensions/index.json"]',
-    # Verbose logging captures every page load, button press, and navigation event
-    "verbose_logging": "false",
-    # /api/status recent_errors window
-    "diagnostics_recent_hours": "24",
-    # When true, downloads stage in check_dir for manual review before moving to download_dir.
-    # When false, downloads go directly to download_dir and are auto-imported.
-    "use_review_dir": "true",
-    # Per-directory read-only locks — prevent any edits, deletes, or writes within the app
-    "download_dir_readonly": "false",
-    "check_dir_readonly": "false",
-    "covers_dir_readonly": "false",
-    # Cover art sources — RA on by default, SteamGridDB opt-in
-    "cover_sources_order": '["retroachievements", "steamgriddb"]',
-    "cover_source_retroachievements_enabled": "true",
-    "cover_source_steamgriddb_enabled": "false",
-    "cover_source_steamgriddb_api_key": "",
-    # Autodiscover — periodically add newly-released RA games to Wanted pool
-    "ra_autodiscover_enabled": "false",
-    "ra_autodiscover_last_checked": "",
-    # Scheduler — daily task schedule (local time HH:MM)
-    "sched_scan_enabled": "true",
-    "sched_scan_time": "04:00",
-    "sched_scan_last_run": "",
-    "sched_hash_enabled": "true",
-    "sched_hash_time": "04:00",
-    "sched_hash_last_run": "",
-    "sched_autodiscover_enabled": "true",
-    "sched_autodiscover_time": "04:00",
-    "sched_autodiscover_last_run": "",
-}
 
 
 @asynccontextmanager
@@ -76,27 +32,18 @@ async def lifespan(app: FastAPI):
                 session.add(AppSetting(key=key, value=value))
         session.commit()
         # Ensure the configured covers directory exists
-        covers_setting = session.get(AppSetting, "covers_dir")
-        covers_path = covers_setting.value if covers_setting else "static/covers"
+        covers_path = app_settings.get(session, "covers_dir", "static/covers")
         Path(covers_path).mkdir(parents=True, exist_ok=True)
         # Load installed extensions
-        ext_setting = session.get(AppSetting, "extensions_dir")
-        ext_dir = ext_setting.value if ext_setting else "extensions"
+        ext_dir = app_settings.get(session, "extensions_dir", "extensions")
         # Gather which extensions are enabled and their settings
         from sqlmodel import select as _select
         installed_exts = session.exec(_select(InstalledExtension)).all()
         enabled_ext_ids = {e.ext_id for e in installed_exts if e.enabled}
-        all_settings_rows = session.exec(_select(AppSetting)).all()
-        all_settings_dict = {s.key: s.value for s in all_settings_rows}
-        ext_configs: dict[str, dict] = {}
-        for ext in installed_exts:
-            if ext.enabled:
-                prefix = f"ext_{ext.ext_id}_"
-                ext_configs[ext.ext_id] = {
-                    k[len(prefix):]: v
-                    for k, v in all_settings_dict.items()
-                    if k.startswith(prefix)
-                }
+        ext_configs: dict[str, dict] = {
+            ext.ext_id: app_settings.get_extension_config(session, ext.ext_id)
+            for ext in installed_exts if ext.enabled
+        }
     Path(ext_dir).mkdir(parents=True, exist_ok=True)
     from app.services.extension_loader import load_all_extensions
     load_all_extensions(ext_dir, enabled_ids=enabled_ext_ids, configs=ext_configs)

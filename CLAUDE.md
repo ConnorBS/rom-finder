@@ -59,7 +59,7 @@ Confirm a change works by pulling machine-readable feedback from the app — nev
 ## Adding a New Feature — Checklist
 
 1. **New DB column?** Add to `models.py` + a new `(version_id, apply_fn)` entry in `app/db/migrations.py`
-2. **New setting?** Add to `DEFAULT_SETTINGS` in `main.py` — seeded automatically at startup
+2. **New setting?** Add to `DEFAULT_SETTINGS` in `app/services/settings.py` — seeded automatically at startup. Read it via `app.services.settings` (`get`/`get_bool`/`get_json`)
 3. **New router?** Register in `main.py::app.include_router(...)`. Add nav link in `base.html` if user-facing
 4. **New background task?** Use `activity_store.start_batch(..., entry_ids=[...])` for per-card overlays
 5. **New cover source?** Subclass `CoverSource` → `app/services/cover_sources/` → register in `registry.py` → add settings to `DEFAULT_SETTINGS`

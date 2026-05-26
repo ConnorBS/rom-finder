@@ -28,6 +28,7 @@ app/
     autodiscover.py    # One-shot: check RA for new games in tracked systems
     scheduler.py       # Scheduled task runners + scheduler_loop()
     logger.py          # Structured app logging to app_logs table
+    settings.py        # Canonical settings accessors + DEFAULT_SETTINGS (leaf: imports only app.db)
     title_utils.py     # Search query generation helpers
     sources/           # ROM download sources
     cover_sources/     # Cover art sources
@@ -60,12 +61,16 @@ Always `with Session(engine) as session:`. Never hold a session open across an `
 Synchronous file I/O (hashing) → `await loop.run_in_executor(None, fn, *args)`. Network calls use httpx async client.
 
 ### Settings access pattern
+Use the canonical leaf module **`app.services.settings`** (imports only `app.db`, so no import cycle — that was the original reason the per-router `_get_setting` was duplicated):
 ```python
-def _get_setting(session, key, default=""):
-    s = session.get(AppSetting, key)
-    return s.value if s else default
+from app.services import settings as app_settings
+app_settings.get(session, key, default="")          # str
+app_settings.get_bool(session, key, default=False)  # "true" → True
+app_settings.get_json(session, key, default)         # GUARDED — bad JSON returns default, never raises
+app_settings.set(session, key, value)
+app_settings.get_extension_config(session, ext_id)   # {name: value} from ext_{id}_* keys
 ```
-Duplicated across routers intentionally — do not consolidate (circular deps). Keep it local to each router/service.
+`DEFAULT_SETTINGS` also lives there (seeded in `main.py` lifespan). Always read JSON settings (e.g. `folder_map`) via `get_json` — a corrupted value must never 500 a page. The remaining per-module `_get_setting`/`_gs`/`_get` helpers delegate to `app_settings.get`; migrate call sites to `app_settings` directly when you touch them.
 
 ---
 

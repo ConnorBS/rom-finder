@@ -17,6 +17,7 @@ from app.services import cover_sources as cover_source_registry
 from app.services.ra_client import SYSTEMS, DEFAULT_FOLDER_MAP
 from app.services import logger as applog
 from app.services import extension_loader
+from app.services import settings as app_settings
 
 router = APIRouter(prefix="/settings")
 templates = Jinja2Templates(directory="app/templates")
@@ -281,7 +282,7 @@ async def folder_scan(
 ):
     """Rescan the download_dir and return updated folder rows partial."""
     scan_path = path or get_setting(session, "download_dir", "")
-    folder_map = json.loads(get_setting(session, "folder_map", "{}"))
+    folder_map = app_settings.get_json(session, "folder_map", {})
     folders = _scan_folders(scan_path)
     rows = _build_folder_rows(folders, folder_map)
     return HTMLResponse(rows)
@@ -294,7 +295,7 @@ async def folder_automap(
 ):
     """Auto-suggest system mappings for each folder based on name matching."""
     scan_path = path or get_setting(session, "download_dir", "")
-    folder_map = json.loads(get_setting(session, "folder_map", "{}"))
+    folder_map = app_settings.get_json(session, "folder_map", {})
     folders = _scan_folders(scan_path)
 
     # Apply auto-mapping: prefer existing user map, then auto-detect
