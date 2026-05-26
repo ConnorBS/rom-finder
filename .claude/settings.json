@@ -1,0 +1,23 @@
+{
+  "enabledPlugins": {
+    "frontend-design@claude-plugins-official": true
+  },
+  "permissions": {
+    "allow": [
+      "mcp__godot-mcp-pro__validate_script",
+      "mcp__godot-mcp-pro__get_game_screenshot",
+      "mcp__godot-mcp-pro__get_editor_errors",
+      "mcp__godot-mcp-pro__read_script",
+      "mcp__godot-mcp-pro__get_output_log",
+      "mcp__godot-mcp-pro__get_autoload",
+      "mcp__homeassistant__GetLiveContext",
+      "Bash(where *)",
+      "mcp__claude_ai_Google_Drive__read_file_content",
+      "mcp__godot-mcp-pro__get_scene_file_content",
+      "mcp__godot-mcp-pro__get_scene_tree",
+      "mcp__claude_ai_Google_Drive__search_files",
+      "mcp__godot-mcp-pro__get_game_scene_tree",
+      "mcp__chrome-devtools__take_screenshot"
+    ]
+  }
+}
