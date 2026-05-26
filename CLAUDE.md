@@ -22,6 +22,7 @@ Every ROM kept must be a hash-verified, RA-accepted dump — not just any ROM th
 | Database | SQLite via SQLModel (sync sessions, async routes) |
 | Deploy | Docker on Unraid, GitHub Actions CI/CD → webhook triggers pull+restart |
 | HTTP client | httpx (async) |
+| Headless browser | Playwright (Chromium) — bundled in the Docker image for the Vimm extension's JS-challenge bypass |
 
 **No JS framework.** All interactivity is HTMX. JS in templates is minimal — only for things HTMX can't do (dropdowns, card overlay polling, drag-to-reorder).
 

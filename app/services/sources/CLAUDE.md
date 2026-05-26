@@ -81,6 +81,8 @@ download_file()    → override: re-fetches mirror for fresh token, streams CDN
 
 Vimm blocks automated downloads with a JS challenge. Vault ID shown in URLs ≠ the `mediaId` in the download form. DMCA'd games have no `dl_form`. See project memory for details.
 
+**Playwright is bundled (Phase 7):** the Dockerfile runs `playwright install --with-deps chromium`, so Vimm downloads work in the deployed image (they used to always fail with "Playwright is not installed"). Vimm imports Playwright lazily (inside its methods), so the extension and tests load fine without it; only an actual download needs the browser. Image cost: ~400MB (chromium only).
+
 ---
 
 ## Error handling (Phase 4)

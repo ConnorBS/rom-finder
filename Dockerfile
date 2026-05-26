@@ -24,6 +24,11 @@ RUN HASHER_URL=$(curl -fsSL \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Chromium + its system libs for the Vimm extension (Playwright bypasses Vimm's
+# JS download challenge). Chromium only — keeps the image ~400MB smaller than
+# installing all browsers. Layer ordered after requirements so it caches.
+RUN playwright install --with-deps chromium
+
 COPY . .
 
 RUN mkdir -p /app/static/covers /data

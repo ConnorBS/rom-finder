@@ -1,13 +1,20 @@
-"""Tests for VimmSource in app/services/sources/vimm.py
+"""Tests for VimmSource (extensions/vimm.py).
 
 Covers the logic that was broken before — name filter and URL generation.
-No network calls; tests the pure logic only.
+No network calls; tests the pure logic only. (Vimm moved from
+app/services/sources/ to extensions/, so we load it by file path.)
 """
+import importlib.util
 from pathlib import Path
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.services.sources.vimm import VimmSource, VIMM_DOWNLOAD_FALLBACK
+import pytest
+
+_VIMM_PATH = Path(__file__).resolve().parent.parent / "extensions" / "vimm.py"
+_spec = importlib.util.spec_from_file_location("romfinder_ext_vimm", _VIMM_PATH)
+_vimm = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_vimm)
+VimmSource = _vimm.VimmSource
+VIMM_DOWNLOAD_FALLBACK = _vimm.VIMM_DOWNLOAD_FALLBACK
 
 
 @pytest.fixture
@@ -64,9 +71,10 @@ def test_filter_blocks_generic_collection_name():
 
 
 def test_filter_passes_with_no_filter():
-    # Empty filter string: everything passes
-    assert _run_filter("", "Any Game Title") is False  # empty string: code skips check
-    # The actual code: `if name_filter:` — empty string is falsy so all files pass
+    # An empty filter stem is a substring of everything, so _run_filter passes it.
+    assert _run_filter("", "Any Game Title") is True
+    # The real code guards with `if name_filter:` — an empty filter is falsy so the
+    # check is skipped entirely and all files pass:
     name_filter = ""
     if not name_filter:
         passed = True  # filter skipped
