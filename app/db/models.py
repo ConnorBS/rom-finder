@@ -28,7 +28,7 @@ class Download(SQLModel, table=True):
     game_title: str
     system: str
     file_name: str
-    file_path: Optional[str] = None
+    file_path: Optional[str] = None  # unique when non-null — ux_download_path (migration 0007)
     source_url: str
     source_id: str = "archive_org"
     archive_identifier: str = ""
@@ -54,7 +54,7 @@ class WantedGame(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     game_title: str
     system: str
-    ra_game_id: int = Field(index=True)
+    ra_game_id: int = Field(index=True)  # (ra_game_id, system) unique — ux_wanted_ra_system (migration 0006)
     cover_path: str = ""        # relative path under static/, e.g. "covers/1234.png"
     status: HuntStatus = HuntStatus.hunting
     last_hunt_at: Optional[datetime] = None   # when auto-hunt last ran
@@ -128,7 +128,7 @@ class LibraryEntry(SQLModel, table=True):
     game_title: str
     system: str
     file_name: str
-    file_path: str
+    file_path: str  # unique — ux_library_path (migration 0008); idempotent imports
     file_hash: Optional[str] = None
     hash_verified: bool = False
     ra_game_id: Optional[int] = None

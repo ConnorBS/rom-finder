@@ -49,6 +49,43 @@ def _m_0005(s: Session) -> None:
     _add_column(s, "wanted_games", "last_hunt_at", "TIMESTAMP", None)
 
 
+def _m_0006_wanted_unique(s: Session) -> None:
+    # De-dupe (ra_game_id, system) keeping the lowest id, THEN enforce uniqueness.
+    # api.py deduped in Python which races under concurrent extension posts.
+    s.exec(text(
+        "DELETE FROM wanted_games WHERE id NOT IN "
+        "(SELECT MIN(id) FROM wanted_games GROUP BY ra_game_id, system)"
+    ))
+    s.exec(text(
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_wanted_ra_system "
+        "ON wanted_games(ra_game_id, system)"
+    ))
+
+
+def _m_0007_download_path_unique(s: Session) -> None:
+    # Partial unique on non-null file_path — stops two concurrent downloads
+    # writing the same destination.
+    s.exec(text(
+        "DELETE FROM download WHERE file_path IS NOT NULL AND id NOT IN "
+        "(SELECT MIN(id) FROM download WHERE file_path IS NOT NULL GROUP BY file_path)"
+    ))
+    s.exec(text(
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_download_path "
+        "ON download(file_path) WHERE file_path IS NOT NULL"
+    ))
+
+
+def _m_0008_library_path_unique(s: Session) -> None:
+    # Enables idempotent "already imported?" checks for bulk import (Phase 9).
+    s.exec(text(
+        "DELETE FROM library WHERE id NOT IN "
+        "(SELECT MIN(id) FROM library GROUP BY file_path)"
+    ))
+    s.exec(text(
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_library_path ON library(file_path)"
+    ))
+
+
 # (version_id, apply_fn) — applied in order, recorded once.
 MIGRATIONS: list[tuple[str, "callable"]] = [
     ("0001_download_source_id", _m_0001),
@@ -56,6 +93,9 @@ MIGRATIONS: list[tuple[str, "callable"]] = [
     ("0003_library_cover_path", _m_0003),
     ("0004_library_hashed_at", _m_0004),
     ("0005_wanted_last_hunt_at", _m_0005),
+    ("0006_wanted_unique", _m_0006_wanted_unique),
+    ("0007_download_path_unique", _m_0007_download_path_unique),
+    ("0008_library_path_unique", _m_0008_library_path_unique),
 ]
 
 
