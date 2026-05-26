@@ -1,0 +1,16 @@
+# Normalize line endings to LF in the repository.
+* text=auto
+
+# Files executed on Linux MUST stay LF regardless of checkout platform.
+# A CRLF shebang makes the Unraid webhook fail to exec redeploy.sh with
+# "fork/exec ...: no such file or directory" — the deploy then silently
+# no-ops and prod freezes on the old image. (This actually happened: prod
+# was stuck on a 3-week-old commit because the host redeploy.sh had CRLF.)
+*.sh              text eol=lf
+deploy/hooks.json text eol=lf
+Dockerfile        text eol=lf
+*.py              text eol=lf
+*.html            text eol=lf
+
+# PowerShell helper scripts are Windows-side; CRLF is fine.
+*.ps1             text eol=crlf
