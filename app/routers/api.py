@@ -18,7 +18,7 @@ from app.db import repository
 from app.services import sources as source_registry
 from app.services.cover_sources import registry as cover_source_registry
 from app.services.ra_client import SYSTEMS
-from app.services.title_utils import clean_title
+from app.services.title_utils import clean_title, canonical_system
 from app.services import logger as applog
 
 router = APIRouter(prefix="/api")
@@ -126,8 +126,11 @@ async def api_add_wanted(
     if existing:
         return {"status": "exists", "id": existing.id, "game_title": existing.game_title}
 
-    # Use canonical system name from SYSTEMS dict when system_id is provided
-    system = SYSTEMS.get(req.system_id, req.system) if req.system_id else req.system
+    # Resolve a canonical system name server-side: the RA console id is
+    # authoritative; otherwise normalize a possibly-doubled scraped string
+    # ("WiiWii" -> "Wii"). This fixes the corruption at the source regardless of
+    # what the Chrome extension posts.
+    system = canonical_system(req.system, req.system_id)
     game = WantedGame(
         game_title=clean_title(req.game_title),
         system=system,
@@ -174,6 +177,7 @@ async def api_search(
     if not q:
         return []
 
+    system = canonical_system(system, None)  # fix doubled scraped system ("WiiWii" -> "Wii")
     enabled_ids = _enabled_source_ids(session)
     results = []
     for src in source_registry.enabled_sources(enabled_ids):

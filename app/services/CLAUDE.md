@@ -15,6 +15,8 @@ Key methods:
 `SYSTEMS` dict maps RA numeric console IDs → display names (authoritative list).  
 `DEFAULT_FOLDER_MAP` maps system names → typical folder names on disk.
 
+**System name normalization (`title_utils.canonical_system(name, system_id)`)**: the RA console id is authoritative — resolve `SYSTEMS[id]` when present. Otherwise collapse an exact-doubled scraped name (`"WiiWii"` → `"Wii"`). It deliberately does NOT use an endswith/abbrev heuristic ("Super Nintendo Entertainment System" ends with NES's full name). Used by `api.py` (add-wanted + search) so corruption is fixed at the source regardless of what the Chrome extension posts; migration `0010` fixed existing rows, so the old every-startup WiiWii `UPDATE` is gone from `main.py` lifespan.
+
 ### Cover filenames
 `{ra_game_id}.png` when RA ID is known; `lib_{library_id}.png` for entries with no RA ID.
 

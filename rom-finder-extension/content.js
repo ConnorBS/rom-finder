@@ -109,9 +109,12 @@
       const m = link.href.match(/\/system\/(\d+)/);
       if (!m) continue;
       const id = parseInt(m[1], 10);
-      // Prefer the authoritative name from RA_SYSTEMS over link text, which can
-      // include both an abbreviation span and the full name on RA's React pages.
-      const name = RA_SYSTEMS[id] || link.textContent.trim();
+      // Use the authoritative name from RA_SYSTEMS. Never fall back to link text:
+      // RA's React pages render an abbreviation span + the full name, which
+      // concatenates into "WiiWii"/"GBAGame Boy Advance". When the id is unknown
+      // here, send an empty name and let the server resolve it from the id
+      // (api.py → title_utils.canonical_system).
+      const name = RA_SYSTEMS[id] || '';
       return { name, id };
     }
     return { name: '', id: null };

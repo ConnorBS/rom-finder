@@ -87,6 +87,37 @@ def search_variations(title: str) -> list[str]:
     return result
 
 
+def _normalize_doubled_system(name: str) -> str:
+    """Collapse a system name the Chrome extension doubled when scraping RA link
+    text — exact repetition only ('WiiWii' -> 'Wii'). We deliberately do NOT try
+    an abbrev+fullname / endswith heuristic: "Super Nintendo Entertainment System"
+    ends with "Nintendo Entertainment System" and would be wrongly collapsed.
+    The RA console id (resolved server-side) is the authoritative path; this is
+    just a safe net for the name-only case."""
+    if not name:
+        return name
+    s = name.strip()
+    half = len(s) // 2
+    if len(s) % 2 == 0 and half and s[:half] == s[half:]:
+        return s[:half]
+    return s
+
+
+def canonical_system(name: str, system_id=None) -> str:
+    """Resolve a clean, canonical RA system name. The RA console id is
+    authoritative — when present and known, use SYSTEMS[id] regardless of the
+    (possibly corrupted) scraped `name`. Otherwise normalize the name."""
+    if system_id not in (None, ""):
+        from app.services.ra_client import SYSTEMS
+        try:
+            canon = SYSTEMS.get(int(system_id))
+        except (TypeError, ValueError):
+            canon = None
+        if canon:
+            return canon
+    return _normalize_doubled_system(name or "")
+
+
 def stem_from_rom_name(rom_name: str) -> str:
     """Return a cleaned search query from a No-Intro/Redump ROM filename.
 

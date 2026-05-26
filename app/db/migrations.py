@@ -93,6 +93,15 @@ def _m_0009_library_ra_checked_at(s: Session) -> None:
     _add_column(s, "library", "ra_checked_at", "TIMESTAMP", None)
 
 
+def _m_0010_normalize_system_names(s: Session) -> None:
+    # One-time fix for system names the Chrome extension doubled while scraping
+    # RA link text ("WiiWii"). New rows are normalized server-side in api.py
+    # (title_utils.canonical_system), so this replaces the every-startup UPDATE
+    # that used to live in main.py lifespan.
+    for table in ("wanted_games", "library"):
+        s.exec(text(f"UPDATE {table} SET system = 'Wii' WHERE system = 'WiiWii'"))
+
+
 # (version_id, apply_fn) — applied in order, recorded once.
 MIGRATIONS: list[tuple[str, "callable"]] = [
     ("0001_download_source_id", _m_0001),
@@ -104,6 +113,7 @@ MIGRATIONS: list[tuple[str, "callable"]] = [
     ("0007_download_path_unique", _m_0007_download_path_unique),
     ("0008_library_path_unique", _m_0008_library_path_unique),
     ("0009_library_ra_checked_at", _m_0009_library_ra_checked_at),
+    ("0010_normalize_system_names", _m_0010_normalize_system_names),
 ]
 
 
