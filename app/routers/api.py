@@ -14,6 +14,7 @@ from app.db.models import (
     AppSetting, WantedGame, HuntStatus,
     Download, DownloadStatus, LibraryEntry, AppLog, InstalledExtension,
 )
+from app.db import repository
 from app.services import sources as source_registry
 from app.services.cover_sources import registry as cover_source_registry
 from app.services.ra_client import SYSTEMS
@@ -120,9 +121,7 @@ async def api_add_wanted(
     background_tasks: BackgroundTasks,
     session: Session = Depends(get_session),
 ):
-    existing = session.exec(
-        select(WantedGame).where(WantedGame.ra_game_id == req.ra_game_id)
-    ).first()
+    existing = repository.wanted_by_ra_game_id(session, req.ra_game_id)
     if existing:
         return {"status": "exists", "id": existing.id, "game_title": existing.game_title}
 

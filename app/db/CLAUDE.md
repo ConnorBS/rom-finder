@@ -104,5 +104,19 @@ MIGRATIONS = [..., ("0006_my_change", _m_0006_my_change)]
 ### SQLite pragmas
 `database.py` sets `journal_mode=WAL`, `busy_timeout=5000`, `synchronous=NORMAL` on every connect (via a `connect` event listener, SQLite-only). This lets the scheduler, a live download, and a bulk verify write concurrently without `database is locked`. WAL produces `*.db-wal` / `*.db-shm` sidecar files (already gitignored).
 
+---
+
+## Repository (`repository.py`)
+
+A deliberately small data-access seam — **NOT** a general ORM wrapper. Functions take an explicit `session` (caller controls lifetime; never held across an await) and is a leaf module (imports only sqlmodel + models).
+
+Current functions (each existed in 3+ near-identical copies before extraction):
+- `wanted_by_ra_game_id(session, ra_game_id)` — the most-duplicated query (downloads ×3, api, hunter).
+- `mark_wanted_verified(session, ra_game_id)` — find wanted → set verified + touch `updated_at`; no-op when id is None/unmatched. Used by all three download-approval paths.
+- `create_library_entry_from_download(session, download, file_path, file_hash=None)` — the LibraryEntry construction copy-pasted into approve / approve-all / `_run_download`.
+- `unverified_library_entries(session)` — `file_hash IS NOT NULL AND ra_matched == False`; the `no_ra` set + the Phase 5 resumable-verify work set.
+
+**Rule:** only add a function here when a query/mutation repeats 3+ times AND drift risks correctness. Simple one-off queries (and genuinely different ones, e.g. hunter's mark-by-primary-key that sets `last_hunt_at`) stay inline.
+
 ### `hashed_at` backfill gotcha
 Entries hashed before `hashed_at` was added have `file_hash != None, hashed_at = None`. The scheduler hash-check backfills these on first run.

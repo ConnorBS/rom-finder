@@ -9,6 +9,7 @@ from datetime import datetime
 
 from app.db.database import get_session
 from app.db.models import Download, DownloadStatus, AppSetting, LibraryEntry, WantedGame, HuntStatus, HuntAttempt
+from app.db import repository
 from app.services import sources as source_registry
 from app.services.hasher import hash_rom, extract_rom_from_zip, DISC_SYSTEMS
 from app.services.rahasher import compute_ra_hash
@@ -156,27 +157,8 @@ async def approve_download(
     if src_path.exists():
         shutil.move(str(src_path), str(dest_path))
 
-    entry = LibraryEntry(
-        game_title=download.game_title,
-        system=download.system,
-        file_name=dest_path.name,
-        file_path=str(dest_path),
-        file_hash=download.file_hash,
-        hash_verified=download.hash_verified,
-        ra_game_id=download.ra_game_id,
-        ra_matched=download.hash_verified,
-    )
-    session.add(entry)
-
-    # Mark matching wanted game verified
-    if download.ra_game_id:
-        wanted = session.exec(
-            select(WantedGame).where(WantedGame.ra_game_id == download.ra_game_id)
-        ).first()
-        if wanted and wanted.status != HuntStatus.verified:
-            wanted.status = HuntStatus.verified
-            wanted.updated_at = datetime.utcnow()
-            session.add(wanted)
+    repository.create_library_entry_from_download(session, download, dest_path)
+    repository.mark_wanted_verified(session, download.ra_game_id)
 
     applog.log_action("approve_download", {
         "game": download.game_title, "file": dest_path.name,
@@ -240,25 +222,8 @@ async def approve_all_verified(
         dest_path = final_dir / src_path.name
         if src_path.exists():
             shutil.move(str(src_path), str(dest_path))
-        entry = LibraryEntry(
-            game_title=download.game_title,
-            system=download.system,
-            file_name=dest_path.name,
-            file_path=str(dest_path),
-            file_hash=download.file_hash,
-            hash_verified=download.hash_verified,
-            ra_game_id=download.ra_game_id,
-            ra_matched=download.hash_verified,
-        )
-        session.add(entry)
-        if download.ra_game_id:
-            wanted = session.exec(
-                select(WantedGame).where(WantedGame.ra_game_id == download.ra_game_id)
-            ).first()
-            if wanted and wanted.status != HuntStatus.verified:
-                wanted.status = HuntStatus.verified
-                wanted.updated_at = datetime.utcnow()
-                session.add(wanted)
+        repository.create_library_entry_from_download(session, download, dest_path)
+        repository.mark_wanted_verified(session, download.ra_game_id)
         session.delete(download)
 
     session.commit()
@@ -527,25 +492,10 @@ async def _run_download(download_id: int) -> None:
                 download.status = DownloadStatus.pending_approval
             else:
                 download.status = DownloadStatus.completed
-                entry = LibraryEntry(
-                    game_title=download.game_title,
-                    system=download.system,
-                    file_name=rom_path.name,
-                    file_path=str(rom_path),
-                    file_hash=file_hash,
-                    hash_verified=download.hash_verified,
-                    ra_game_id=download.ra_game_id,
-                    ra_matched=download.hash_verified,
+                repository.create_library_entry_from_download(
+                    session, download, rom_path, file_hash=file_hash
                 )
-                session.add(entry)
-                if download.ra_game_id:
-                    wanted = session.exec(
-                        select(WantedGame).where(WantedGame.ra_game_id == download.ra_game_id)
-                    ).first()
-                    if wanted and wanted.status != HuntStatus.verified:
-                        wanted.status = HuntStatus.verified
-                        wanted.updated_at = datetime.utcnow()
-                        session.add(wanted)
+                repository.mark_wanted_verified(session, download.ra_game_id)
 
         except Exception as exc:
             applog.log_download(download.game_title, download.file_name, download.source_url, "failed", str(exc))
