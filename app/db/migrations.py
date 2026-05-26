@@ -86,6 +86,13 @@ def _m_0008_library_path_unique(s: Session) -> None:
     ))
 
 
+def _m_0009_library_ra_checked_at(s: Session) -> None:
+    # When the entry was last looked up against RA — lets the resumable verify
+    # skip recently-checked genuine misses so passes terminate and the daily
+    # scheduler pass doesn't re-hammer the whole no_ra set.
+    _add_column(s, "library", "ra_checked_at", "TIMESTAMP", None)
+
+
 # (version_id, apply_fn) — applied in order, recorded once.
 MIGRATIONS: list[tuple[str, "callable"]] = [
     ("0001_download_source_id", _m_0001),
@@ -96,6 +103,7 @@ MIGRATIONS: list[tuple[str, "callable"]] = [
     ("0006_wanted_unique", _m_0006_wanted_unique),
     ("0007_download_path_unique", _m_0007_download_path_unique),
     ("0008_library_path_unique", _m_0008_library_path_unique),
+    ("0009_library_ra_checked_at", _m_0009_library_ra_checked_at),
 ]
 
 

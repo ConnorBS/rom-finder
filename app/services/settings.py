@@ -63,6 +63,14 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "sched_autodiscover_enabled": "true",
     "sched_autodiscover_time": "04:00",
     "sched_autodiscover_last_run": "",
+    # Resilient bulk RA re-verify (Phase 5)
+    "sched_verify_enabled": "true",
+    "sched_verify_time": "05:00",
+    "sched_verify_last_run": "",
+    "ra_verify_in_progress": "false",
+    "ra_verify_paused_until": "",
+    "ra_verify_last_run": "",
+    "ra_verify_batch_size": "500",
 }
 
 

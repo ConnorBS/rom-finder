@@ -32,6 +32,17 @@ A startup `print()` in `main.py` logs RAHasher availability to Docker stdout on 
 
 At 2 req/sec, a full bulk verify of ~10 000 entries takes ~83 minutes as a background task.
 
+On a persistent 429, `lookup_hash` now raises **`SourceRateLimitError`** (from `sources/errors.py`, carries `retry_after`) instead of `RuntimeError`, so the resilient verify can back off intelligently.
+
+### Resilient re-verify (`ra_verify.py`)
+`run_pass()` is the rate-limit-aware, resumable bulk verify (replaces the old in-memory loop that the 2026-05-03 429 cut off, stranding ~2789 entries). It:
+- derives the work set from the DB each pass (`repository.library_pending_ra_check` — hashed, unmatched, and `ra_checked_at` null or older than `stale_days`), so a crash/restart just recomputes the remainder;
+- opens a **fresh Session per entry** (never across the `lookup_hash` await);
+- on `SourceRateLimitError`, persists an escalating pause in `ra_verify_paused_until` and stops — the next pass (scheduler tick or manual run) honours it even across restarts;
+- stamps `ra_checked_at` so genuine misses leave the work set (passes terminate; the daily scheduler pass doesn't re-hammer them).
+
+Wired as the scheduler **`verify`** task (`sched_verify_*`, default 05:00) and the `/scheduler` Run-now button. State surfaces in `/api/status.verify`. Settings: `ra_verify_in_progress`, `ra_verify_paused_until`, `ra_verify_last_run`, `ra_verify_batch_size`.
+
 ### RA API gotchas
 
 **`API_GetGameInfoByMD5` is deprecated/broken**: Returns HTTP 404 for ALL hashes including ones confirmed in RA's database via `API_GetGameHashes.php`. `lookup_hash` now uses `dorequest.php?r=gameid&u={user}&m={hash}` instead, which returns `{"Success": true, "GameID": N}` (N=0 = not found, N>0 = found). This was confirmed by cross-checking: `API_GetGameHashes.php` returned hash `3132056c8f17e4088b95e4264ca59575` for game 724, but `API_GetGameInfoByMD5.php` returned 404 for that same hash.

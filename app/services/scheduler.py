@@ -269,6 +269,15 @@ async def run_autodiscover() -> dict:
     return result
 
 
+async def run_verify() -> dict:
+    """Resumable bulk RA re-verify pass — clears the no_ra backlog over time,
+    backing off on 429 (see ra_verify.run_pass)."""
+    from app.services.ra_verify import run_pass
+    result = await run_pass()
+    _set_last_run("sched_verify_last_run")
+    return result
+
+
 async def scheduler_loop() -> None:
     """Wake every minute; fire tasks whose scheduled local time has arrived."""
     while True:
@@ -290,9 +299,15 @@ async def scheduler_loop() -> None:
                     _get(session, "sched_autodiscover_time", "04:00"),
                     _get(session, "sched_autodiscover_last_run", ""),
                 ),
+                "verify": (
+                    _get(session, "sched_verify_enabled", "true"),
+                    _get(session, "sched_verify_time", "05:00"),
+                    _get(session, "sched_verify_last_run", ""),
+                ),
             }
 
-        runners = {"scan": run_scan, "hash": run_hash_check, "autodiscover": run_autodiscover}
+        runners = {"scan": run_scan, "hash": run_hash_check,
+                   "autodiscover": run_autodiscover, "verify": run_verify}
         for task_name, (enabled, time_str, last_run) in task_configs.items():
             if enabled != "true":
                 continue

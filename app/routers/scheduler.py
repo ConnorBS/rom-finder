@@ -49,6 +49,14 @@ def _task_list(session: Session) -> list[dict]:
             "time": _get(session, "sched_autodiscover_time", "04:00"),
             "last_run": _get(session, "sched_autodiscover_last_run", ""),
         },
+        {
+            "id": "verify",
+            "name": "RA re-verify",
+            "description": "Re-check hashed ROMs that aren't yet RA-matched against RetroAchievements. Resumable and rate-limit-aware — pauses and resumes on a 429 instead of failing, and clears the no-RA-match backlog over successive runs.",
+            "enabled": _get(session, "sched_verify_enabled", "true"),
+            "time": _get(session, "sched_verify_time", "05:00"),
+            "last_run": _get(session, "sched_verify_last_run", ""),
+        },
     ]
 
 
@@ -63,7 +71,7 @@ async def scheduler_page(request: Request, session: Session = Depends(get_sessio
 @router.post("/save", response_class=HTMLResponse)
 async def save_schedule(request: Request, session: Session = Depends(get_session)):
     form = await request.form()
-    for tid in ("scan", "hash", "autodiscover"):
+    for tid in ("scan", "hash", "autodiscover", "verify"):
         _set(session, f"sched_{tid}_enabled", "true" if form.get(f"sched_{tid}_enabled") == "true" else "false")
         time_val = str(form.get(f"sched_{tid}_time", "04:00")).strip() or "04:00"
         _set(session, f"sched_{tid}_time", time_val)
@@ -84,8 +92,9 @@ def _oob_last_run(task_id: str) -> str:
 
 @router.post("/run/{task_id}", response_class=HTMLResponse)
 async def run_task_now(task_id: str):
-    from app.services.scheduler import run_scan, run_hash_check, run_autodiscover
-    runners = {"scan": run_scan, "hash": run_hash_check, "autodiscover": run_autodiscover}
+    from app.services.scheduler import run_scan, run_hash_check, run_autodiscover, run_verify
+    runners = {"scan": run_scan, "hash": run_hash_check,
+               "autodiscover": run_autodiscover, "verify": run_verify}
     fn = runners.get(task_id)
     if not fn:
         return HTMLResponse('<span class="text-red-400 text-xs">Unknown task.</span>')
@@ -127,6 +136,18 @@ async def run_task_now(task_id: str):
             if added:
                 return HTMLResponse(f'<span class="text-green-400 text-xs">&#10003; {added} new game{"s" if added != 1 else ""} added from {systems} system{"s" if systems != 1 else ""}.</span>{oob}')
             return HTMLResponse(f'<span class="text-gray-400 text-xs">No new games found across {systems} system{"s" if systems != 1 else ""}.</span>{oob}')
+
+        if task_id == "verify":
+            status = result.get("status", "")
+            if status == "no_credentials":
+                return HTMLResponse(f'<span class="text-yellow-500 text-xs">Add RA credentials in Settings first.</span>{oob}')
+            if status == "paused":
+                return HTMLResponse(f'<span class="text-yellow-500 text-xs">Rate-limited — paused until {result.get("paused_until","")} (will resume).</span>{oob}')
+            checked, mat, rem = result.get("checked", 0), result.get("matched", 0), result.get("remaining", 0)
+            note = " (hit rate-limit, paused — resumes next run)" if status == "rate_limited" else ""
+            if checked == 0 and rem == 0:
+                return HTMLResponse(f'<span class="text-gray-400 text-xs">Nothing to verify — all hashed ROMs checked.</span>{oob}')
+            return HTMLResponse(f'<span class="text-green-400 text-xs">&#10003; Checked {checked}, {mat} newly matched, {rem} still pending{note}.</span>{oob}')
 
         return HTMLResponse(f'<span class="text-green-400 text-xs">&#10003; Done.</span>{oob}')
     except Exception as exc:

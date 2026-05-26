@@ -135,4 +135,5 @@ class LibraryEntry(SQLModel, table=True):
     ra_matched: bool = False
     cover_path: str = ""
     hashed_at: Optional[datetime] = None
+    ra_checked_at: Optional[datetime] = None   # last RA hash lookup (migration 0009)
     added_at: datetime = Field(default_factory=datetime.utcnow)

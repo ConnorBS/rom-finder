@@ -36,6 +36,22 @@ def unverified_library_entries(session: Session) -> list[LibraryEntry]:
     ).all())
 
 
+def library_pending_ra_check(session: Session, stale_days: int = 7, limit: Optional[int] = None) -> list[LibraryEntry]:
+    """Hashed-but-unmatched entries due for an RA re-check: never checked, or last
+    checked more than `stale_days` ago. The Phase 5 resumable-verify work set —
+    bounded so passes terminate and genuine misses aren't re-hammered daily."""
+    from datetime import datetime, timedelta
+    cutoff = datetime.utcnow() - timedelta(days=stale_days)
+    stmt = select(LibraryEntry).where(
+        LibraryEntry.file_hash != None,    # noqa: E711
+        LibraryEntry.ra_matched == False,  # noqa: E712
+        (LibraryEntry.ra_checked_at == None) | (LibraryEntry.ra_checked_at < cutoff),  # noqa: E711
+    ).order_by(LibraryEntry.ra_checked_at)  # nulls (never-checked) first in SQLite
+    if limit:
+        stmt = stmt.limit(limit)
+    return list(session.exec(stmt).all())
+
+
 def mark_wanted_verified(session: Session, ra_game_id: Optional[int]) -> Optional[WantedGame]:
     """Flip the matching WantedGame to verified. No-op (returns None) when there's
     no ra_game_id or no matching wanted entry. Caller commits."""

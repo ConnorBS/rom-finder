@@ -12,6 +12,8 @@ import time
 import httpx
 from typing import Optional
 
+from app.services.sources.errors import SourceRateLimitError
+
 logger = logging.getLogger(__name__)
 
 RA_BASE_URL = "https://retroachievements.org/API"
@@ -227,7 +229,10 @@ class RAClient:
                     timeout=15,
                 )
                 if resp.status_code == 429:
-                    raise RuntimeError("RA rate limit persists after retry — skipping hash")
+                    raise SourceRateLimitError(
+                        "RA rate limit persists after retry — skipping hash",
+                        retry_after=float(resp.headers.get("Retry-After", retry_after)),
+                    )
 
             if resp.status_code == 200:
                 try:
@@ -252,8 +257,9 @@ class RAClient:
             if resp2.status_code == 429:
                 retry_after = int(resp2.headers.get("Retry-After", 60))
                 logger.warning("RA rate limit hit (429) on fallback; waiting %ds", retry_after)
-                await asyncio.sleep(retry_after)
-                raise RuntimeError("RA rate limit on fallback — skipping hash")
+                raise SourceRateLimitError(
+                    "RA rate limit on fallback — skipping hash", retry_after=float(retry_after),
+                )
             if resp2.status_code == 404:
                 return None
             resp2.raise_for_status()
