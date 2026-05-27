@@ -74,10 +74,10 @@ Confirm a change works by pulling machine-readable feedback from the app — nev
 - **Hash export** ✅ — `/export/hashes?format=csv|json` (links on Settings)
 - **Bulk import** ✅ — the scheduler **Library scan** task (`/scheduler` → Run now, or daily) walks `download_dir`, imports untracked ROMs, hashes (RAHasher-first + disc guard), fetches covers, and RA-verifies — that IS the one-pass importer
 - **Bulk RA verify after hash** ✅ — resumable, rate-limit-aware **RA re-verify** scheduler task (`ra_verify.run_pass`)
+- **RetroAchievements Dashboard** ✅ — `/dashboard` (Overview / Timeline / Games / Insights / Reports). A **local mirror** of the configured user's RA data (`ra_achievement`/`ra_game_progress`/`ra_profile`), so all metrics/graphs/search/time-filters run with **zero RA calls**. Synced by a **manual** Refresh (`ra_dashboard.refresh()`) that **fully re-pulls + replaces** the mirror — that's how retroactively-changed achievements reconcile. Charts via ApexCharts (CDN); games cross-referenced to the owned library by RA ID; reports export as RetroAchievements forum markup (`ra_report.py`). State surfaces in `/api/status.dashboard`.
 
 ## Future Work
 
-- **RA progress tracking**: Achievement completion % per game (RAProgress model + `API_GetGameInfoAndUserProgress` + scheduler refresh + collection badge) — designed, not yet built
 - **Emulator integration**: Launch a game from the collection view
 - **More ROM sources**: Vimm, ROMsFun, WowROMs, CDRomance are extensions in `extensions/` — install via `/extensions`
 - **Notification on autodiscover**: Alert when Wanted pool grows via scheduler

@@ -81,6 +81,14 @@ def test_insights_empty_state(client):
     assert "No achievement data yet" in r.text
 
 
+def test_api_status_dashboard_section(client):
+    _seed_profile_and_unlocks()
+    r = client.get("/api/status")
+    assert r.status_code == 200
+    d = r.json().get("dashboard", {})
+    assert d.get("achievements") == 2 and d.get("games") == 1
+
+
 def test_refresh_requires_credentials(client):
     r = client.post("/dashboard/refresh")
     assert r.status_code == 200

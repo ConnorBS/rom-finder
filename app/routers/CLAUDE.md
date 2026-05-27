@@ -78,9 +78,20 @@ Search endpoints (`games.search`, `api.api_search`) query each enabled source in
 
 Two JSON endpoints let any agent confirm the running app's state over HTTP — no browser, no Docker socket, no human checking the site. They are the agent-facing twins of the UI; the verifier agents (`deploy-verifier`, `prod-health-monitor`) consume them instead of scraping HTML.
 
-- **`GET /api/status`** → `{version, rahasher:{available,path,bin}, db:{library_total, library_ra_matched, no_ra, library_unhashed, wanted_*, downloads_*}, scheduler:{scan,hash,autodiscover → {enabled,time,last_run}}, verify:{in_progress,paused_until,last_run}, sources[], extensions[], recent_errors:{window_hours,count,latest[]}}`. `version` is `APP_VERSION` (the deployed git SHA). Each section is independently `try`-guarded — a failing section returns `{"error": "..."}` instead of blanking the whole report.
+- **`GET /api/status`** → `{version, rahasher:{available,path,bin}, db:{library_total, library_ra_matched, no_ra, library_unhashed, wanted_*, downloads_*}, scheduler:{scan,hash,autodiscover → {enabled,time,last_run}}, verify:{in_progress,paused_until,last_run}, dashboard:{achievements,games,last_sync}, sources[], extensions[], recent_errors:{window_hours,count,latest[]}}`. `version` is `APP_VERSION` (the deployed git SHA). `dashboard` reports the RA mirror's local counts + last manual sync. Each section is independently `try`-guarded — a failing section returns `{"error": "..."}` instead of blanking the whole report.
 - **`GET /api/logs?level=&category=&since=&limit=`** → JSON array of `AppLog` rows (newest first; `limit` 1–1000, `since` is ISO-8601 UTC).
 
 **Rule:** anything that previously only went to Docker stdout (RAHasher availability in `main.py`, extension-load failures in `extension_loader.py`) must ALSO go through `applog` so it shows up here. Don't add a diagnostic signal that's only visible in stdout.
 
 `recent_errors.window_hours` comes from the `diagnostics_recent_hours` setting (default 24).
+
+---
+
+## RetroAchievements Dashboard (`dashboard.py`)
+
+`/dashboard` pages (Overview, `/timeline`, `/games`, `/insights`, `/reports`) read **only the local mirror** (`ra_dashboard.py` query helpers) — zero RA calls on page load. The single RA-touching action is **`POST /dashboard/refresh`**, which kicks `ra_dashboard.refresh()` as a `BackgroundTask` (progress in the activity tray as `ra-sync`) and returns a feedback snippet; the user reloads when it finishes.
+
+- Filter pages (Timeline, Games) use **plain GET forms** (full re-render) rather than HTMX partial-swaps — that keeps ApexCharts init bulletproof (no re-init-on-swap).
+- Charts get their series as `{{ ... | tojson }}` injected into an inline init script per page (ApexCharts loaded globally in `base.html`).
+- **Reports**: `GET /dashboard/reports/preview` (hx-get → read-only textarea + Copy/Download) and `GET /dashboard/reports/download` (StreamingResponse `text/markdown`) both call `ra_report.build(...)`. Report types: `recap|lifetime|per_game|custom`.
+- Empty-state CTAs render when the mirror is empty or RA creds are missing (`_ra_configured`).

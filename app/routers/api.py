@@ -314,6 +314,17 @@ async def api_status(session: Session = Depends(get_session)):
         "last_run": _get_setting(session, "ra_verify_last_run", ""),
     }
 
+    # RA dashboard mirror state (counts of the local mirror + last manual sync).
+    try:
+        from app.db.models import RAAchievement, RAGameProgress
+        status["dashboard"] = {
+            "achievements": _count(session, RAAchievement),
+            "games": _count(session, RAGameProgress),
+            "last_sync": _get_setting(session, "ra_dashboard_last_sync", ""),
+        }
+    except Exception as e:
+        status["dashboard"] = {"error": str(e)}
+
     try:
         srcs = []
         for src in source_registry.all_sources():

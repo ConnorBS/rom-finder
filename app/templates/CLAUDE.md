@@ -2,11 +2,15 @@
 
 ## Sidebar Navigation (`base.html`)
 
-Nav order: Collection, Wanted, Search, Downloads, Settings, Scheduler, Logs.
+Nav order: Collection, Dashboard, Wanted, Search, Downloads, Settings, Scheduler, Extensions, Logs.
 
 Active-link detection:
 - Exact match: `/collection`, `/wanted`, `/search`, `/logs`
-- `startsWith`: `/settings`, `/scheduler`, `/downloads`
+- `startsWith`: `/dashboard`, `/settings`, `/scheduler`, `/downloads` (so `/dashboard/timeline` etc. highlight Dashboard)
+
+## Charts (ApexCharts)
+
+`base.html` loads **ApexCharts** via CDN (the only JS charting lib — graphs need it; everything else stays HTMX/minimal-JS). Only the `dashboard/*.html` pages use it. Pattern: server injects chart series as `{{ series | tojson }}` into a per-page inline `<script>` that `new ApexCharts(el, {...}).render()`. Dashboard pages use `theme: {mode:'dark'}` + `grid.borderColor:'#1f2937'` to match the UI. Filter pages re-render fully (plain GET form) so charts re-init cleanly — avoid HTMX-swapping a chart container. Tabs come from the shared `dashboard/_tabs.html` partial (set `active_tab` before `{% include %}`).
 
 ## Activity Tray Polling
 
