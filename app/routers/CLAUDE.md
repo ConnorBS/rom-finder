@@ -49,6 +49,9 @@ Must include `DownloadStatus.verifying` so the sidebar tray shows RA-lookup prog
 ### ROM scan is recursive
 All three scan paths (`bulk_scan`, `/library/scan`, `run_scan` in scheduler) use `subdir.rglob('*')` to find ROMs nested inside system subfolders (e.g. `NES/No-Intro/game.nes`). System name is always the top-level folder under `download_dir`.
 
+### Scan = sync (Collection `bulk_scan`)
+The Collection "Scan folder" button imports new files AND **removes library entries whose file is gone from disk** (a deleted ROM no longer lingers with a dead path). It reports scope: *"Scanned N files across M folders — X imported, Y removed."* Safety guard: if more than half the library (and >5 entries) appears missing, it assumes an unmounted drive and **skips removal**, logging a warning instead of wiping. A removed entry that was the verified copy for a wanted game (no other copy left) moves that game back to `hunting`. Scan is metadata only — no hashing/verifying (those are the scheduler Hash/RA-verify tasks). NOTE: `/library/scan` and the scheduler `run_scan` do NOT yet remove orphans — only `bulk_scan` does.
+
 ### Archive support (.zip/.7z)
 Both in `ROM_EXTENSIONS`, scanned like any ROM. Hashing extracts to temp dir, hashes the ROM-like file inside (prefers a member matching the expected name, else largest — see `prefer_name` in `hasher.py`), cleans up — archive stays on disk. RAHasher handles zips natively; Python fallback uses `_hash_from_archive` in `hasher.py`. `_rom_title()` in `library.py` strips inner extension: `game.nes.zip` → title `game`.
 

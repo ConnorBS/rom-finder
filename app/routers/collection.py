@@ -212,16 +212,22 @@ async def bulk_scan(session: Session = Depends(get_session)):
 
     folder_map = app_settings.get_json(session, "folder_map", {})
     folder_to_system = _build_folder_to_system_map(folder_map)
-    existing_paths = set(session.exec(select(LibraryEntry.file_path)).all())
+    existing_entries = session.exec(select(LibraryEntry)).all()
+    existing_paths = {e.file_path for e in existing_entries}
 
+    # --- Import new ROMs on disk -------------------------------------------
     added = 0
+    scanned = 0
+    folders = 0
     for subdir in sorted(base.iterdir()):
         if not subdir.is_dir():
             continue
+        folders += 1
         system = folder_to_system.get(subdir.name, subdir.name)
         for f in sorted(subdir.rglob('*')):
             if not f.is_file() or f.suffix.lower() not in ROM_EXTENSIONS:
                 continue
+            scanned += 1
             fp = str(f)
             if fp in existing_paths:
                 continue
@@ -231,12 +237,50 @@ async def bulk_scan(session: Session = Depends(get_session)):
             existing_paths.add(fp)
             added += 1
 
-    session.commit()
-    applog.log_action("bulk_scan", {"download_dir": download_dir, "added": added})
+    # --- Detect ROMs removed from disk -------------------------------------
+    on_disk = {id(e): Path(e.file_path).exists() for e in existing_entries}
+    orphans = [e for e in existing_entries if not on_disk[id(e)]]
+    removed = 0
+    if orphans and len(orphans) > max(5, len(existing_entries) // 2):
+        # More than half the library looks missing — almost certainly an
+        # unmounted share or wrong path, not real deletions. Don't wipe; warn.
+        applog.warning(
+            "library",
+            f"Scan: {len(orphans)} of {len(existing_entries)} files missing — "
+            "skipping removal (possible unmounted drive). Check the ROMs directory.",
+        )
+    else:
+        # Games that still have an on-disk copy after removals.
+        still_present = {e.ra_game_id for e in existing_entries
+                         if e.ra_game_id and on_disk[id(e)]}
+        for e in orphans:
+            # If this was the verified copy for a wanted game and no other copy
+            # remains, move it back to hunting (mirrors the reject behaviour).
+            if e.ra_game_id and e.ra_game_id not in still_present:
+                w = session.exec(
+                    select(WantedGame).where(WantedGame.ra_game_id == e.ra_game_id)
+                ).first()
+                if w and w.status == HuntStatus.verified:
+                    w.status = HuntStatus.hunting
+                    w.updated_at = datetime.utcnow()
+                    session.add(w)
+            session.delete(e)
+            removed += 1
 
+    session.commit()
+    applog.log_action("bulk_scan", {
+        "download_dir": download_dir, "scanned": scanned,
+        "folders": folders, "added": added, "removed": removed,
+    })
+
+    summary = f"Scanned {scanned:,} file{'s' if scanned != 1 else ''} across {folders} folder{'s' if folders != 1 else ''}"
+    parts = []
     if added:
-        return HTMLResponse(f'<span class="text-green-400 text-xs">&#10003; Imported {added} ROM{"s" if added != 1 else ""} from disk.</span>')
-    return HTMLResponse('<span class="text-gray-400 text-xs">Scan complete — no new ROMs found.</span>')
+        parts.append(f"{added} imported")
+    if removed:
+        parts.append(f"{removed} removed (no longer on disk)")
+    detail = " — " + ", ".join(parts) if parts else " — no changes"
+    return HTMLResponse(f'<span class="text-green-400 text-xs">&#10003; {summary}{detail}.</span>')
 
 
 @router.post("/collection/bulk/fetch-covers", response_class=HTMLResponse)
