@@ -54,6 +54,47 @@ async def ping():
     return {"status": "ok"}
 
 
+@router.get("/diag/rahasher")
+async def diag_rahasher(system: str = "PlayStation", session: Session = Depends(get_session)):
+    """Diagnose disc/arcade/NDS no-RA-match: run RAHasher on one no_ra entry for
+    `system` and compare to the stored hash. ZERO RA calls — purely local."""
+    import time
+    from pathlib import Path
+    from app.services.rahasher import compute_ra_hash, _rahasher_available, get_ra_system_id
+
+    e = session.exec(
+        select(LibraryEntry).where(
+            LibraryEntry.system == system,
+            LibraryEntry.ra_matched == False,        # noqa: E712
+            LibraryEntry.file_hash != None,          # noqa: E711
+        ).limit(1)
+    ).first()
+    if not e:
+        return {"error": f"no unmatched hashed entry for system {system!r}"}
+
+    p = Path(e.file_path)
+    info = {
+        "file": e.file_name, "system": e.system, "file_path": e.file_path,
+        "exists": p.exists(),
+        "size_mb": round(p.stat().st_size / 1e6, 1) if p.exists() else None,
+        "stored_hash": e.file_hash,
+        "rahasher_available": _rahasher_available(),
+        "ra_system_id": get_ra_system_id(e.system),
+    }
+    if p.exists():
+        t0 = time.time()
+        ra_hash = await compute_ra_hash(p, e.system)
+        info["rahasher_secs"] = round(time.time() - t0, 1)
+        info["rahasher_hash"] = ra_hash
+        info["stored_matches_rahasher"] = (ra_hash == e.file_hash) if ra_hash else None
+        info["verdict"] = (
+            "RAHasher failed → stored is a plain-MD5 fallback; re-hash needed" if ra_hash is None
+            else "stored hash is stale/wrong; re-hash will fix" if ra_hash != e.file_hash
+            else "RAHasher hash == stored but RA has no match (dump genuinely not in RA?)"
+        )
+    return info
+
+
 @router.get("/diag/hash-lookup")
 async def diag_hash_lookup(q: str = "Pokemon Blue Version", system_id: int = 4, game_id: int = 586, session: Session = Depends(get_session)):
     """Diagnostic: search RA for a game, fetch its known hashes, test API_GetGameInfoByMD5.
