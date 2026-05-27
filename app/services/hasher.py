@@ -106,6 +106,27 @@ def md5_a7800(path: Path) -> str:
     return hashlib.md5(data).hexdigest()
 
 
+def md5_snes(path: Path) -> str:
+    """SNES: skip a 512-byte copier header when present, per rcheevos rc_hash_snes:
+    strip 512 iff `size % 0x2000 == 512`. Headerless No-Intro ROMs are unaffected.
+    (In prod RAHasher handles this; this keeps the Python fallback faithful.)"""
+    with open(path, "rb") as f:
+        data = f.read()
+    if (len(data) % 0x2000) == 512:
+        data = data[512:]
+    return hashlib.md5(data).hexdigest()
+
+
+def md5_pce(path: Path) -> str:
+    """PC Engine: skip a 512-byte copier header when present, per rcheevos
+    rc_hash_pce: strip 512 iff `size & 512`. Headerless ROMs are unaffected."""
+    with open(path, "rb") as f:
+        data = f.read()
+    if len(data) & 512:
+        data = data[512:]
+    return hashlib.md5(data).hexdigest()
+
+
 def md5_arduboy(path: Path) -> str:
     """Arduboy: hash the Intel-HEX as text, per RA's canonical algorithm.
 
@@ -176,6 +197,17 @@ _SYSTEM_HASHERS = {
 
     # Arduboy (.hex text — line-ending normalized)
     "Arduboy": md5_arduboy,
+
+    # SNES — 512-byte copier-header skip
+    "SNES": md5_snes,
+    "Super Nintendo Entertainment System": md5_snes,
+    "Super Nintendo": md5_snes,
+    "Super Famicom": md5_snes,
+
+    # PC Engine / TurboGrafx-16 — 512-byte copier-header skip
+    "PC Engine / TurboGrafx-16": md5_pce,
+    "PC Engine": md5_pce,
+    "TurboGrafx-16": md5_pce,
 
     # All other cartridge systems fall through to md5_file (the default)
 }
