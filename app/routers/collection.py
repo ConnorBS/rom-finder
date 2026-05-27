@@ -654,33 +654,42 @@ async def _do_verify(entry_ids: list[int], username: str, api_key: str) -> None:
     matched = 0
     checked = 0
 
-    with Session(engine) as session:
-        for eid in entry_ids:
-            if activity_store.is_cancelled(batch_id):
-                break
+    # Fresh session per entry — never hold one open across the lookup await (SQLite
+    # lock safety), and commit each result so progress is live + durable: no_ra drops
+    # as we go, and a restart loses at most the in-flight entry, not the whole batch.
+    for eid in entry_ids:
+        if activity_store.is_cancelled(batch_id):
+            break
+        with Session(engine) as session:
             entry = session.get(LibraryEntry, eid)
-            if not entry or not entry.file_hash:
-                activity_store.complete_entry(batch_id, eid)
-                continue
-            try:
-                match = await ra.lookup_hash(entry.file_hash)
+            file_hash = entry.file_hash if entry else None
+            file_name = entry.file_name if entry else str(eid)
+        if not file_hash:
+            activity_store.complete_entry(batch_id, eid)
+            continue
+        try:
+            match = await ra.lookup_hash(file_hash)
+        except SourceRateLimitError:
+            # Stop rather than hammer RA — the rest is left to a later run or the
+            # scheduled resumable re-verify.
+            applog.warning("hash", "Bulk verify hit RA rate-limit (429) — stopping early to avoid hammering RA.")
+            break
+        except Exception as exc:
+            applog.warning("hash", f"RA verify failed for {file_name}: {exc}")
+            activity_store.complete_entry(batch_id, eid)
+            continue
+        checked += 1
+        with Session(engine) as session:
+            entry = session.get(LibraryEntry, eid)
+            if entry:
                 if match:
                     entry.ra_matched = True
                     entry.hash_verified = True
                     entry.ra_game_id = entry.ra_game_id or match.get("ID")
                     matched += 1
-                    session.add(entry)
-                checked += 1
-            except SourceRateLimitError:
-                # Stop rather than hammer RA — the rest can be retried later or
-                # left to the scheduled resumable re-verify.
-                applog.warning("hash", "Bulk verify hit RA rate-limit (429) — stopping early to avoid hammering RA.")
+                entry.ra_checked_at = datetime.utcnow()  # leaves the resumable-verify work set
+                session.add(entry)
                 session.commit()
-                activity_store.complete_entry(batch_id, eid)
-                break
-            except Exception as exc:
-                applog.warning("hash", f"RA verify failed for {entry.file_name}: {exc}")
-            activity_store.complete_entry(batch_id, eid)
-        session.commit()
+        activity_store.complete_entry(batch_id, eid)
     activity_store.finish(batch_id)
     applog.log_action("bulk_verify_done", {"checked": checked, "matched": matched})

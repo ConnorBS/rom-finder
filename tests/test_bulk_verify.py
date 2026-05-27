@@ -69,3 +69,36 @@ def test_verify_dropdown_renders(client):
     r = client.get("/collection")
     assert r.status_code == 200
     assert "Re-verify all (incl. matched)" in r.text     # the new scoped dropdown
+
+
+def test_do_verify_commits_each_match_durably(fresh_engine, monkeypatch):
+    """A match must be committed immediately (visible no_ra drop) and survive a
+    later entry's failure — not buffered until one final commit at batch end."""
+    import asyncio
+    from app.routers.collection import _do_verify
+    from app.services import ra_client
+
+    with Session(engine) as s:
+        hit = LibraryEntry(game_title="Hit", system="PlayStation", file_name="h.chd",
+                           file_path="/h.chd", file_hash="good", ra_matched=False)
+        boom = LibraryEntry(game_title="Boom", system="PlayStation", file_name="x.chd",
+                            file_path="/x.chd", file_hash="boom", ra_matched=False)
+        s.add(hit); s.add(boom); s.commit()
+        id_hit, id_boom = hit.id, boom.id
+
+    class FakeRA:
+        def __init__(self, u, k): pass
+        async def lookup_hash(self, h):
+            if h == "good":
+                return {"ID": 555}
+            raise RuntimeError("network blew up")   # a later entry fails mid-batch
+
+    monkeypatch.setattr(ra_client, "RAClient", FakeRA)
+    asyncio.run(_do_verify([id_hit, id_boom], "u", "k"))
+
+    with Session(engine) as s:
+        a = s.get(LibraryEntry, id_hit)
+        b = s.get(LibraryEntry, id_boom)
+    assert a.ra_matched and a.ra_game_id == 555      # committed despite boom failing after
+    assert a.ra_checked_at is not None               # stamped → leaves resumable work set
+    assert not b.ra_matched                          # the failure didn't abort the batch
