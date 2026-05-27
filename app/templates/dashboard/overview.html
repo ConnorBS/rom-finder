@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "dashboard/_macros.html" as ra %}
 {% block title %}Dashboard — ROM Finder{% endblock %}
 {% block content %}
 <div class="p-4 md:p-6 max-w-6xl mx-auto">
@@ -53,7 +54,7 @@
       <span class="text-lg font-semibold text-white">{{ owned_mastered }}</span>
       <span class="text-gray-400 text-sm">of {{ owned_count }} owned games mastered/completed</span>
     </div>
-    <a href="/collection?status=verified" class="text-xs text-blue-400 hover:text-blue-300">View owned collection &rarr;</a>
+    <a href="/dashboard/games?owned=1" class="text-xs text-blue-400 hover:text-blue-300">View owned games &rarr;</a>
     <span class="text-xs text-gray-600 ml-auto">games matched to your library by RA ID</span>
   </div>
 
@@ -79,10 +80,11 @@
     <div class="space-y-1.5">
       {% for a in recent %}
       <div class="flex items-center gap-3 text-sm">
-        {% if a.badge_url %}<img src="{{ a.badge_url }}" class="w-8 h-8 rounded" loading="lazy">{% endif %}
+        {{ ra.badge(a) }}
         <div class="min-w-0 flex-1">
-          <span class="text-gray-200">{{ a.title }}</span>
-          <span class="text-gray-600">— {{ a.game_title }} ({{ a.console_name }})</span>
+          {{ ra.ach(a, "text-gray-200 hover:text-blue-400") }}
+          <span class="text-gray-600">— </span>{{ ra.game(a.game_id, a.game_title, "text-gray-500 hover:text-blue-400") }}
+          <span class="text-gray-600">({{ a.console_name }})</span>
         </div>
         <span class="text-amber-400 text-xs">{{ a.points }}pts</span>
         {% if a.hardcore %}<span class="text-xs text-orange-500" title="Hardcore">HC</span>{% endif %}

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "dashboard/_macros.html" as ra %}
 {% block title %}Games — ROM Finder{% endblock %}
 {% block content %}
 <div class="p-4 md:p-6 max-w-6xl mx-auto">
@@ -55,9 +56,9 @@
         <tr class="border-b border-gray-800/50 hover:bg-gray-800/40 {% if g.owned %}bg-blue-950/20{% endif %}">
           <td class="px-3 py-1.5 text-gray-200">
             <div class="flex items-center gap-2">
-              {% if g.image_icon %}<img src="{{ g.image_icon }}" class="w-8 h-8 rounded" loading="lazy">{% endif %}
-              <span>{{ g.title }}</span>
-              {% if g.owned %}<a href="/collection?q={{ g.title|urlencode }}" class="text-[10px] px-1.5 py-0.5 rounded bg-blue-600/20 border border-blue-700 text-blue-300" title="In your library">owned</a>{% endif %}
+              {{ ra.game_icon(g.game_id, g.image_icon) }}
+              {{ ra.game(g.game_id, g.title, "hover:text-blue-400") }}
+              {% if g.owned %}<a href="/collection?q={{ g.title|urlencode }}" class="text-[10px] px-1.5 py-0.5 rounded bg-blue-600/20 border border-blue-700 text-blue-300" title="Find in your library">owned</a>{% endif %}
             </div>
           </td>
           <td class="px-3 py-1.5 text-gray-500 hidden md:table-cell">{{ g.console_name }}</td>

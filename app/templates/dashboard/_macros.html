@@ -1,0 +1,16 @@
+{# RetroAchievements deep-links — always open the live site in a new tab. #}
+{% macro ach(a, cls="") -%}
+<a href="https://retroachievements.org/achievement/{{ a.achievement_id }}" target="_blank" rel="noopener" class="{{ cls }}" title="Open achievement on RetroAchievements">{{ a.title }}</a>
+{%- endmacro %}
+
+{% macro game(game_id, title, cls="") -%}
+<a href="https://retroachievements.org/game/{{ game_id }}" target="_blank" rel="noopener" class="{{ cls }}" title="Open game on RetroAchievements">{{ title }}</a>
+{%- endmacro %}
+
+{% macro badge(a, size="w-8 h-8") -%}
+{% if a.badge_url %}<a href="https://retroachievements.org/achievement/{{ a.achievement_id }}" target="_blank" rel="noopener"><img src="{{ a.badge_url }}" class="{{ size }} rounded hover:ring-2 hover:ring-blue-500 transition" loading="lazy" title="Open achievement on RetroAchievements"></a>{% endif %}
+{%- endmacro %}
+
+{% macro game_icon(game_id, icon, size="w-8 h-8") -%}
+{% if icon %}<a href="https://retroachievements.org/game/{{ game_id }}" target="_blank" rel="noopener"><img src="{{ icon }}" class="{{ size }} rounded hover:ring-2 hover:ring-blue-500 transition" loading="lazy" title="Open game on RetroAchievements"></a>{% endif %}
+{%- endmacro %}

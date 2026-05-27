@@ -38,7 +38,9 @@ def test_overview_renders_with_data(client):
     assert r.status_code == 200
     assert "1,234" in r.text                         # points tile
     assert "of 1 owned games mastered/completed" in r.text
+    assert "/dashboard/games?owned=1" in r.text      # fixed owned link (was status=verified)
     assert "First Blood" in r.text                   # recent unlock
+    assert "retroachievements.org/achievement/1" in r.text   # unlock deep-links to RA (new tab)
     assert "ptsChart" in r.text                      # chart wired
 
 
@@ -61,6 +63,7 @@ def test_games_page_owned_highlight_and_filter(client):
     r = client.get("/dashboard/games")
     assert r.status_code == 200
     assert "Contra" in r.text and ">owned<" in r.text     # owned badge rendered
+    assert "retroachievements.org/game/111" in r.text     # game deep-links to RA (new tab)
     # owned-only filter keeps Contra (it's owned)
     r2 = client.get("/dashboard/games?owned=1")
     assert "Contra" in r2.text
