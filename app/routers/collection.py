@@ -395,27 +395,41 @@ async def bulk_rehash(
 @router.post("/collection/bulk/verify", response_class=HTMLResponse)
 async def bulk_verify(
     background_tasks: BackgroundTasks,
+    library_ids: str = Query(default=""),          # scope to the current filtered view
+    include_matched: bool = Query(default=False),  # re-verify already RA-matched too
     session: Session = Depends(get_session),
 ):
-    """Verify unmatched library entries against RetroAchievements."""
+    """Verify library hashes against RetroAchievements.
+
+    Scope: `library_ids` limits to the current filtered view (else the entire
+    library). By default already-RA-matched ROMs are SKIPPED so we don't re-hammer
+    RA for games already verified; `include_matched=true` re-verifies them too.
+    """
     username = _get_setting(session, "ra_username")
     api_key = _get_setting(session, "ra_api_key")
     if not username or not api_key:
         return HTMLResponse('<span class="text-yellow-400 text-xs">Add RetroAchievements credentials in Settings to verify hashes.</span>')
 
-    unverified = session.exec(
-        select(LibraryEntry).where(
-            LibraryEntry.ra_matched == False,  # noqa: E712
-            LibraryEntry.file_hash.is_not(None),
-        )
-    ).all()
+    stmt = select(LibraryEntry).where(LibraryEntry.file_hash.is_not(None))
+    if library_ids:
+        ids = [int(x) for x in library_ids.split(",") if x.strip().isdigit()]
+        stmt = stmt.where(LibraryEntry.id.in_(ids))
+    if not include_matched:
+        stmt = stmt.where(LibraryEntry.ra_matched == False)  # noqa: E712
+    entries = session.exec(stmt).all()
 
-    if not unverified:
-        return HTMLResponse('<span class="text-gray-400 text-xs">All hashed ROMs are already verified.</span>')
+    scope = "filtered view" if library_ids else "entire library"
+    if not entries:
+        none_msg = "Nothing to verify in this view." if library_ids else "All hashed ROMs are already verified."
+        return HTMLResponse(f'<span class="text-gray-400 text-xs">{none_msg}</span>')
 
-    background_tasks.add_task(_do_verify, [e.id for e in unverified], username, api_key)
-    applog.log_action("bulk_verify", {"count": len(unverified)})
-    return HTMLResponse(f'<span class="text-blue-400 text-xs">&#10003; Checking {len(unverified)} hash{"es" if len(unverified) != 1 else ""} against RetroAchievements…</span>')
+    background_tasks.add_task(_do_verify, [e.id for e in entries], username, api_key)
+    applog.log_action("bulk_verify", {"count": len(entries), "scope": scope, "include_matched": include_matched})
+    mode = "re-verifying incl. matched" if include_matched else "unmatched only"
+    return HTMLResponse(
+        f'<span class="text-blue-400 text-xs">&#10003; Checking {len(entries)} hash{"es" if len(entries) != 1 else ""} '
+        f'against RetroAchievements ({scope}, {mode})…</span>'
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -608,6 +622,7 @@ async def _fetch_cover_for_library(library_id: int, ra_game_id: int, game_title:
 async def _do_verify(entry_ids: list[int], username: str, api_key: str) -> None:
     from app.services.ra_client import RAClient
     from app.services import activity as activity_store
+    from app.services.sources.errors import SourceRateLimitError
 
     batch_id = "verify-batch"
     activity_store.start_batch(
@@ -637,6 +652,13 @@ async def _do_verify(entry_ids: list[int], username: str, api_key: str) -> None:
                     matched += 1
                     session.add(entry)
                 checked += 1
+            except SourceRateLimitError:
+                # Stop rather than hammer RA — the rest can be retried later or
+                # left to the scheduled resumable re-verify.
+                applog.warning("hash", "Bulk verify hit RA rate-limit (429) — stopping early to avoid hammering RA.")
+                session.commit()
+                activity_store.complete_entry(batch_id, eid)
+                break
             except Exception as exc:
                 applog.warning("hash", f"RA verify failed for {entry.file_name}: {exc}")
             activity_store.complete_entry(batch_id, eid)

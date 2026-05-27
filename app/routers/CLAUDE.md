@@ -49,6 +49,9 @@ Must include `DownloadStatus.verifying` so the sidebar tray shows RA-lookup prog
 ### ROM scan is recursive
 All three scan paths (`bulk_scan`, `/library/scan`, `run_scan` in scheduler) use `subdir.rglob('*')` to find ROMs nested inside system subfolders (e.g. `NES/No-Intro/game.nes`). System name is always the top-level folder under `download_dir`.
 
+### Bulk actions: scope model
+Collection bulk actions (Hashes, Verify) are dropdowns scoped two ways: **Filtered view** (passes `library_ids` = the current filtered set, capped at 500 via `all_filtered_lib_ids`) and **Entire library** (no `library_ids`). **Verify** (`/collection/bulk/verify`) additionally **skips already-RA-matched ROMs by default** (`include_matched=false`) so it doesn't re-hammer RA for verified games; `include_matched=true` re-verifies them. `_do_verify` stops early on a 429 (`SourceRateLimitError`) instead of hammering — the rest is left to retry or the scheduled resumable re-verify.
+
 ### Scan = sync (Collection `bulk_scan`)
 The Collection "Scan folder" button is a 3-way sync. It reports scope: *"Scanned N files across M folders — X imported, Y marked missing, Z restored."*
 - **Import** new ROM files on disk.

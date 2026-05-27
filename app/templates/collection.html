@@ -135,56 +135,84 @@
                     <svg class="w-3 h-3 ml-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
                 </button>
                 <div id="hashes-dropdown"
-                     class="hidden absolute left-0 top-full mt-1 z-20 bg-gray-800 border border-gray-700 rounded-lg shadow-xl min-w-[14rem] py-1">
+                     class="hidden absolute left-0 top-full mt-1 z-20 bg-gray-800 border border-gray-700 rounded-lg shadow-xl min-w-[17rem] py-1">
+                    {% if all_filtered_lib_ids %}
+                    <div class="px-4 pt-1.5 pb-1 text-[10px] uppercase tracking-wider text-gray-500">Filtered view</div>
                     <button
-                        hx-post="/collection/bulk/rehash"
-                        hx-target="#bulk-result"
-                        hx-swap="innerHTML"
+                        hx-post="/collection/bulk/rehash?unhashed_only=true&library_ids={{ all_filtered_lib_ids | join(',') }}"
+                        hx-target="#bulk-result" hx-swap="innerHTML"
                         onclick="document.getElementById('hashes-dropdown').classList.add('hidden')"
                         class="w-full text-left px-4 py-2 text-xs text-gray-300 hover:bg-gray-700 hover:text-white transition-colors"
-                        title="Re-hash every ROM in the library"
-                    >Hash all</button>
+                        title="Only hash ROMs in the current filtered view that don't have a hash yet"
+                    >Hash unhashed</button>
+                    <button
+                        hx-post="/collection/bulk/rehash?library_ids={{ all_filtered_lib_ids | join(',') }}"
+                        hx-target="#bulk-result" hx-swap="innerHTML"
+                        onclick="document.getElementById('hashes-dropdown').classList.add('hidden')"
+                        class="w-full text-left px-4 py-2 text-xs text-gray-300 hover:bg-gray-700 hover:text-white transition-colors"
+                        title="Re-hash all ROMs in the current filtered view"
+                    >Re-hash all</button>
+                    <div class="border-t border-gray-700 my-1"></div>
+                    {% endif %}
+                    <div class="px-4 pt-1.5 pb-1 text-[10px] uppercase tracking-wider text-gray-500">Entire library</div>
                     <button
                         hx-post="/collection/bulk/rehash?unhashed_only=true"
-                        hx-target="#bulk-result"
-                        hx-swap="innerHTML"
+                        hx-target="#bulk-result" hx-swap="innerHTML"
                         onclick="document.getElementById('hashes-dropdown').classList.add('hidden')"
                         class="w-full text-left px-4 py-2 text-xs text-gray-300 hover:bg-gray-700 hover:text-white transition-colors"
                         title="Only hash ROMs that don't have a hash yet"
                     >Hash unhashed</button>
-                    {% if all_filtered_lib_ids %}
-                    <div class="border-t border-gray-700 my-1"></div>
                     <button
-                        hx-post="/collection/bulk/rehash?unhashed_only=true&library_ids={{ all_filtered_lib_ids | join(',') }}"
-                        hx-target="#bulk-result"
-                        hx-swap="innerHTML"
+                        hx-post="/collection/bulk/rehash"
+                        hx-target="#bulk-result" hx-swap="innerHTML"
                         onclick="document.getElementById('hashes-dropdown').classList.add('hidden')"
                         class="w-full text-left px-4 py-2 text-xs text-gray-300 hover:bg-gray-700 hover:text-white transition-colors"
-                        title="Only hash ROMs in the current filtered view that don't have a hash yet"
-                    >Hash unhashed — filtered view</button>
-                    <button
-                        hx-post="/collection/bulk/rehash?library_ids={{ all_filtered_lib_ids | join(',') }}"
-                        hx-target="#bulk-result"
-                        hx-swap="innerHTML"
-                        onclick="document.getElementById('hashes-dropdown').classList.add('hidden')"
-                        class="w-full text-left px-4 py-2 text-xs text-gray-300 hover:bg-gray-700 hover:text-white transition-colors"
-                        title="Re-hash all ROMs in the current filtered view"
-                    >Hash all — filtered view</button>
-                    {% endif %}
+                        title="Re-hash every ROM in the library"
+                    >Re-hash all</button>
                 </div>
             </div>
 
-            <!-- Verify hashes -->
-            <button
-                hx-post="/collection/bulk/verify"
-                hx-target="#bulk-result"
-                hx-swap="innerHTML"
-                class="bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5"
-                title="Look up hashed-but-unverified ROMs against RetroAchievements"
-            >
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                Verify hashes
-            </button>
+            <!-- Verify dropdown — scoped, skips RA matches by default -->
+            <div class="relative" id="verify-menu-wrap">
+                <button
+                    type="button"
+                    onclick="document.getElementById('verify-dropdown').classList.toggle('hidden')"
+                    class="bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5"
+                    title="Verify hashes against RetroAchievements"
+                >
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    Verify hashes
+                    <svg class="w-3 h-3 ml-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                </button>
+                <div id="verify-dropdown"
+                     class="hidden absolute left-0 top-full mt-1 z-20 bg-gray-800 border border-gray-700 rounded-lg shadow-xl min-w-[17rem] py-1">
+                    {% if all_filtered_lib_ids %}
+                    <div class="px-4 pt-1.5 pb-1 text-[10px] uppercase tracking-wider text-gray-500">Filtered view</div>
+                    <button hx-post="/collection/bulk/verify?library_ids={{ all_filtered_lib_ids | join(',') }}"
+                        hx-target="#bulk-result" hx-swap="innerHTML"
+                        onclick="document.getElementById('verify-dropdown').classList.add('hidden')"
+                        class="w-full text-left px-4 py-2 text-xs text-gray-300 hover:bg-gray-700 hover:text-white transition-colors"
+                        title="Verify only the not-yet-matched ROMs in the current view">Verify unmatched</button>
+                    <button hx-post="/collection/bulk/verify?library_ids={{ all_filtered_lib_ids | join(',') }}&include_matched=true"
+                        hx-target="#bulk-result" hx-swap="innerHTML"
+                        onclick="document.getElementById('verify-dropdown').classList.add('hidden')"
+                        class="w-full text-left px-4 py-2 text-xs text-gray-300 hover:bg-gray-700 hover:text-white transition-colors"
+                        title="Re-check every ROM in the current view, including ones already RA-matched">Re-verify all (incl. matched)</button>
+                    <div class="border-t border-gray-700 my-1"></div>
+                    {% endif %}
+                    <div class="px-4 pt-1.5 pb-1 text-[10px] uppercase tracking-wider text-gray-500">Entire library</div>
+                    <button hx-post="/collection/bulk/verify"
+                        hx-target="#bulk-result" hx-swap="innerHTML"
+                        onclick="document.getElementById('verify-dropdown').classList.add('hidden')"
+                        class="w-full text-left px-4 py-2 text-xs text-gray-300 hover:bg-gray-700 hover:text-white transition-colors"
+                        title="Verify every not-yet-matched ROM in the whole library (rate-limited; can be long)">Verify unmatched</button>
+                    <button hx-post="/collection/bulk/verify?include_matched=true"
+                        hx-target="#bulk-result" hx-swap="innerHTML"
+                        onclick="document.getElementById('verify-dropdown').classList.add('hidden')"
+                        class="w-full text-left px-4 py-2 text-xs text-gray-300 hover:bg-gray-700 hover:text-white transition-colors"
+                        title="Re-check the entire library including already-matched ROMs — heavy on RA, use sparingly">Re-verify all (incl. matched)</button>
+                </div>
+            </div>
 
             <div id="bulk-result" class="text-xs ml-1"></div>
         </div>
