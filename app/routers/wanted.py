@@ -330,8 +330,10 @@ async def start_auto_hunt(
     if not game:
         return HTMLResponse("")
 
-    # Reset exhausted → hunting and clear previous failures so sources are retried
-    if game.status == HuntStatus.exhausted:
+    # Reset exhausted/verified → hunting and clear previous failures so sources
+    # are retried. (Re-hunting a 'verified' game lets the user recover from a bad
+    # verification — e.g. a wrong-game match that left the slot stuck verified.)
+    if game.status in (HuntStatus.exhausted, HuntStatus.verified):
         failed = session.exec(
             select(HuntAttempt)
             .where(HuntAttempt.wanted_game_id == game_id)
