@@ -372,24 +372,30 @@ async def bulk_rehash(
     background_tasks: BackgroundTasks,
     library_ids: str = Query(default=""),
     unhashed_only: bool = Query(default=False),
+    unmatched_only: bool = Query(default=False),
     session: Session = Depends(get_session),
 ):
-    """Re-hash library entries. library_ids scopes to a subset; unhashed_only skips already-hashed."""
+    """Re-hash library entries (LOCAL — no RA calls). library_ids scopes to a
+    subset; unhashed_only = only entries with no hash; unmatched_only = only
+    not-yet-RA-matched entries (fixes disc/arcade/NDS that carry stale plain-MD5
+    hashes, without disturbing already-matched cartridge games)."""
     stmt = select(LibraryEntry)
     if library_ids:
         ids = [int(x) for x in library_ids.split(",") if x.strip().isdigit()]
         stmt = stmt.where(LibraryEntry.id.in_(ids))
     if unhashed_only:
         stmt = stmt.where(LibraryEntry.file_hash.is_(None))
+    if unmatched_only:
+        stmt = stmt.where(LibraryEntry.ra_matched == False)  # noqa: E712
     entries = session.exec(stmt).all()
 
     if not entries:
         return HTMLResponse('<span class="text-gray-400 text-xs">No matching entries to hash.</span>')
 
     background_tasks.add_task(_do_rehash, [e.id for e in entries])
-    applog.log_action("bulk_rehash", {"count": len(entries), "unhashed_only": unhashed_only})
-    label = "un-hashed" if unhashed_only else ""
-    return HTMLResponse(f'<span class="text-blue-400 text-xs">&#8635; Hashing {len(entries)} {label} ROM{"s" if len(entries) != 1 else ""}…</span>')
+    applog.log_action("bulk_rehash", {"count": len(entries), "unhashed_only": unhashed_only, "unmatched_only": unmatched_only})
+    label = "un-hashed" if unhashed_only else "unmatched" if unmatched_only else ""
+    return HTMLResponse(f'<span class="text-blue-400 text-xs">&#8635; Hashing {len(entries)} {label} ROM{"s" if len(entries) != 1 else ""}… (local, no RA calls)</span>')
 
 
 @router.post("/collection/bulk/verify", response_class=HTMLResponse)
@@ -518,6 +524,7 @@ async def _do_rehash(entry_ids: list[int]) -> None:
                 entry.hashed_at = datetime.utcnow()
                 entry.hash_verified = False
                 entry.ra_matched = False
+                entry.ra_checked_at = None   # hash changed → the old RA check is void; re-check it
                 session.add(entry)
                 processed += 1
             except Exception as exc:

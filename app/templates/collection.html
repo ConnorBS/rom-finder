@@ -163,6 +163,13 @@
                         title="Only hash ROMs that don't have a hash yet"
                     >Hash unhashed</button>
                     <button
+                        hx-post="/collection/bulk/rehash?unmatched_only=true"
+                        hx-target="#bulk-result" hx-swap="innerHTML"
+                        onclick="document.getElementById('hashes-dropdown').classList.add('hidden')"
+                        class="w-full text-left px-4 py-2 text-xs text-gray-300 hover:bg-gray-700 hover:text-white transition-colors"
+                        title="Re-hash only ROMs not yet RA-matched (local, no RA calls). Fixes disc/arcade/NDS that carry stale plain-MD5 hashes; leaves matched cartridge games alone."
+                    >Re-hash unmatched (fix stale hashes)</button>
+                    <button
                         hx-post="/collection/bulk/rehash"
                         hx-target="#bulk-result" hx-swap="innerHTML"
                         onclick="document.getElementById('hashes-dropdown').classList.add('hidden')"
