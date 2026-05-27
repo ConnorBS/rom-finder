@@ -18,6 +18,7 @@
                 {% if counts.library %}<span class="text-gray-400">{{ counts.library }} library only</span>{% endif %}
                 {% if counts.wanted %}<span class="text-yellow-500">{{ counts.wanted }} wanted</span>{% endif %}
                 {% if counts.no_ra %}<span class="text-orange-400">{{ counts.no_ra }} no RA match</span>{% endif %}
+                {% if counts.unsupported %}<span class="text-slate-500" title="Platforms RetroAchievements doesn't support — can't be hash-verified">{{ counts.unsupported }} unsupported</span>{% endif %}
             </div>
         </div>
 
@@ -70,7 +71,7 @@
 
             <!-- Status pills -->
             <div class="flex gap-1 flex-wrap">
-                {% set statuses = [("", "All"), ("verified", "Verified"), ("found", "Found"), ("library", "Library"), ("wanted", "Wanted"), ("no_ra", "No RA"), ("missing", "Missing")] %}
+                {% set statuses = [("", "All"), ("verified", "Verified"), ("found", "Found"), ("library", "Library"), ("wanted", "Wanted"), ("no_ra", "No RA"), ("unsupported", "Unsupported"), ("missing", "Missing")] %}
                 {% for val, label in statuses %}
                 <a href="?q={{ q }}&system={{ selected_system }}&status={{ val }}&view={{ view }}"
                    id="col-status"
@@ -308,6 +309,10 @@
                 <div class="absolute top-2 left-2 bg-red-900/80 border border-red-700 rounded-full px-2 py-0.5" title="File no longer on disk">
                     <span class="text-red-300 text-xs">⊘ Missing</span>
                 </div>
+                {% elif item.unsupported %}
+                <div class="absolute top-2 left-2 bg-slate-800/80 border border-slate-600 rounded-full px-2 py-0.5" title="RetroAchievements doesn't support this platform — can't be hash-verified">
+                    <span class="text-slate-300 text-xs">⊘ No RA platform</span>
+                </div>
                 {% endif %}
             </div>
 
@@ -326,6 +331,8 @@
                     <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>
                     RA Match
                 </span>
+                {% elif item.unsupported %}
+                <span class="text-slate-600 text-xs" title="RetroAchievements doesn't support this platform">Not on RA</span>
                 {% elif item.file_hash %}
                 <button
                     hx-post="/library/{{ item.library_id }}/verify-ra"

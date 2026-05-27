@@ -17,7 +17,7 @@ from app.db.models import (
 from app.db import repository
 from app.services import sources as source_registry
 from app.services.cover_sources import registry as cover_source_registry
-from app.services.ra_client import SYSTEMS
+from app.services.ra_client import SYSTEMS, RA_UNSUPPORTED_SYSTEMS
 from app.services.title_utils import clean_title, canonical_system
 from app.services import logger as applog
 
@@ -282,7 +282,8 @@ async def api_status(session: Session = Depends(get_session)):
         status["db"] = {
             "library_total": _count(session, LibraryEntry),
             "library_ra_matched": _count(session, LibraryEntry, LibraryEntry.ra_matched == True),  # noqa: E712
-            "no_ra": _count(session, LibraryEntry, LibraryEntry.file_hash != None, LibraryEntry.ra_matched == False),  # noqa: E711,E712
+            "no_ra": _count(session, LibraryEntry, LibraryEntry.file_hash != None, LibraryEntry.ra_matched == False, LibraryEntry.system.not_in(RA_UNSUPPORTED_SYSTEMS)),  # noqa: E711,E712
+            "unsupported": _count(session, LibraryEntry, LibraryEntry.system.in_(RA_UNSUPPORTED_SYSTEMS)),
             "library_unhashed": _count(session, LibraryEntry, LibraryEntry.file_hash == None),  # noqa: E711
             "wanted_total": _count(session, WantedGame),
             "wanted_verified": _count(session, WantedGame, WantedGame.status == HuntStatus.verified),

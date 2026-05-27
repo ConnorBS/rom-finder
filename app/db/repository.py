@@ -36,10 +36,13 @@ def unverified_library_entries(session: Session) -> list[LibraryEntry]:
     ).all())
 
 
-def library_pending_ra_check(session: Session, stale_days: int = 7, limit: Optional[int] = None) -> list[LibraryEntry]:
+def library_pending_ra_check(session: Session, stale_days: int = 7, limit: Optional[int] = None,
+                             exclude_systems: Optional[set[str]] = None) -> list[LibraryEntry]:
     """Hashed-but-unmatched entries due for an RA re-check: never checked, or last
     checked more than `stale_days` ago. The Phase 5 resumable-verify work set —
-    bounded so passes terminate and genuine misses aren't re-hammered daily."""
+    bounded so passes terminate and genuine misses aren't re-hammered daily.
+    `exclude_systems` drops platforms RA can't verify (passed by the caller so this
+    module stays db-pure — see ra_client.RA_UNSUPPORTED_SYSTEMS)."""
     from datetime import datetime, timedelta
     cutoff = datetime.utcnow() - timedelta(days=stale_days)
     stmt = select(LibraryEntry).where(
@@ -47,6 +50,8 @@ def library_pending_ra_check(session: Session, stale_days: int = 7, limit: Optio
         LibraryEntry.ra_matched == False,  # noqa: E712
         (LibraryEntry.ra_checked_at == None) | (LibraryEntry.ra_checked_at < cutoff),  # noqa: E711
     ).order_by(LibraryEntry.ra_checked_at)  # nulls (never-checked) first in SQLite
+    if exclude_systems:
+        stmt = stmt.where(LibraryEntry.system.not_in(exclude_systems))
     if limit:
         stmt = stmt.limit(limit)
     return list(session.exec(stmt).all())

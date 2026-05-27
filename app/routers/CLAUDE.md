@@ -44,7 +44,10 @@ All endpoints rendering `download_item.html` must pass `ra_configured = bool(ra_
 Must include `DownloadStatus.verifying` so the sidebar tray shows RA-lookup progress. If a new in-progress `DownloadStatus` is added, add it here too.
 
 ### Collection `no_ra` filter
-`status == "no_ra"` is a special filter condition handled separately from the four real statuses. Backend checks: `file_hash` is set AND `ra_matched` is False. Not a DB column value.
+`status == "no_ra"` is a special filter condition handled separately from the four real statuses. Backend checks: `file_hash` is set AND `ra_matched` is False AND **not unsupported**. Not a DB column value.
+
+### Collection `unsupported` filter (platforms RA can't verify)
+`status == "unsupported"` is another computed filter: the entry's `system` is in `ra_client.RA_UNSUPPORTED_SYSTEMS` (curated set, e.g. `Nintendo 3DS`, `Archipelago` — RA has no console for them, so they can NEVER hash-match). These are **excluded from the `no_ra` count/filter** (so they stop looking like failures) and get a slate `⊘ No RA platform` badge + an "Unsupported" filter chip + a count in the header bar. Every verify path skips them so RA is never called for an unverifiable platform: the resumable verify (`library_pending_ra_check(exclude_systems=...)`), `bulk_verify` (SQL `system.not_in(...)`), and the single `/library/{id}/verify-ra` (early return). Curated, not derived from `SYSTEMS` — misnamed-but-supported folders like `tg16`/`mega-duck-slash-cougar-boy` do verify, so a "not in SYSTEMS" heuristic would wrongly hide real matches.
 
 ### ROM scan is recursive
 All three scan paths (`bulk_scan`, `/library/scan`, `run_scan` in scheduler) use `subdir.rglob('*')` to find ROMs nested inside system subfolders (e.g. `NES/No-Intro/game.nes`). System name is always the top-level folder under `download_dir`.

@@ -15,6 +15,8 @@ Key methods:
 `SYSTEMS` dict maps RA numeric console IDs → display names (authoritative list).  
 `DEFAULT_FOLDER_MAP` maps system names → typical folder names on disk.
 
+`RA_UNSUPPORTED_SYSTEMS` (+ `is_ra_unsupported(system)`): curated set of platforms RA has **no** console/hashing support for (e.g. `Nintendo 3DS`, `Archipelago`). ROMs on these can never hash-match, so the collection shows them as "unsupported" (not `no_ra`) and **every verify path skips them** so RA is never called for an unverifiable platform. Curated, NOT derived from `SYSTEMS` — misnamed-but-supported folders (`tg16`, `mega-duck-slash-cougar-boy`) DO verify, so excluding everything absent from `SYSTEMS` would wrongly hide real matches. Extend the set as such platforms appear.
+
 **System name normalization (`title_utils.canonical_system(name, system_id)`)**: the RA console id is authoritative — resolve `SYSTEMS[id]` when present. Otherwise collapse an exact-doubled scraped name (`"WiiWii"` → `"Wii"`). It deliberately does NOT use an endswith/abbrev heuristic ("Super Nintendo Entertainment System" ends with NES's full name). Used by `api.py` (add-wanted + search) so corruption is fixed at the source regardless of what the Chrome extension posts; migration `0010` fixed existing rows, so the old every-startup WiiWii `UPDATE` is gone from `main.py` lifespan.
 
 ### Cover filenames

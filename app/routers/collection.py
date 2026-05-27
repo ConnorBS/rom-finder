@@ -22,6 +22,7 @@ from app.db.models import AppSetting, LibraryEntry, WantedGame, HuntStatus
 from app.services import logger as applog
 from app.services import cover_sources as cover_source_registry
 from app.services import settings as app_settings
+from app.services.ra_client import is_ra_unsupported, RA_UNSUPPORTED_SYSTEMS
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -65,6 +66,7 @@ def _build_collection(session: Session) -> list[dict]:
             "library_id": lib.id if lib else None,
             "wanted_id": w.id,
             "missing": lib.missing if lib else False,
+            "unsupported": is_ra_unsupported(w.system),
             "added_at": w.added_at,
         })
         if lib:
@@ -83,6 +85,7 @@ def _build_collection(session: Session) -> list[dict]:
                 "library_id": e.id,
                 "wanted_id": None,
                 "missing": e.missing,
+                "unsupported": is_ra_unsupported(e.system),
                 "added_at": e.added_at,
             })
 
@@ -110,7 +113,9 @@ async def collection_page(
     if system:
         filtered = [i for i in filtered if i["system"] == system]
     if status == "no_ra":
-        filtered = [i for i in filtered if i.get("file_hash") and not i.get("ra_matched")]
+        filtered = [i for i in filtered if i.get("file_hash") and not i.get("ra_matched") and not i.get("unsupported")]
+    elif status == "unsupported":
+        filtered = [i for i in filtered if i.get("unsupported")]
     elif status == "missing":
         filtered = [i for i in filtered if i.get("missing")]
     elif status:
@@ -161,7 +166,8 @@ async def collection_page(
                 "wanted": sum(1 for i in all_items if i["status"] == "wanted"),
                 "found": sum(1 for i in all_items if i["status"] == "found"),
                 "verified": sum(1 for i in all_items if i["status"] == "verified"),
-                "no_ra": sum(1 for i in all_items if i.get("file_hash") and not i.get("ra_matched")),
+                "no_ra": sum(1 for i in all_items if i.get("file_hash") and not i.get("ra_matched") and not i.get("unsupported")),
+                "unsupported": sum(1 for i in all_items if i.get("unsupported")),
             },
         },
     )
@@ -180,7 +186,8 @@ async def collection_counts(session: Session = Depends(get_session)):
         "wanted": sum(1 for i in all_items if i["status"] == "wanted"),
         "found": sum(1 for i in all_items if i["status"] == "found"),
         "verified": sum(1 for i in all_items if i["status"] == "verified"),
-        "no_ra": sum(1 for i in all_items if i.get("file_hash") and not i.get("ra_matched")),
+        "no_ra": sum(1 for i in all_items if i.get("file_hash") and not i.get("ra_matched") and not i.get("unsupported")),
+        "unsupported": sum(1 for i in all_items if i.get("unsupported")),
     }
     parts = [f'<span>{counts["total"]} total</span>']
     if counts["verified"]:
@@ -193,6 +200,8 @@ async def collection_counts(session: Session = Depends(get_session)):
         parts.append(f'<span class="text-yellow-500">{counts["wanted"]} wanted</span>')
     if counts["no_ra"]:
         parts.append(f'<span class="text-orange-400">{counts["no_ra"]} no RA match</span>')
+    if counts["unsupported"]:
+        parts.append(f'<span class="text-slate-500">{counts["unsupported"]} unsupported</span>')
     return HTMLResponse(" ".join(parts))
 
 
@@ -416,7 +425,10 @@ async def bulk_verify(
     if not username or not api_key:
         return HTMLResponse('<span class="text-yellow-400 text-xs">Add RetroAchievements credentials in Settings to verify hashes.</span>')
 
-    stmt = select(LibraryEntry).where(LibraryEntry.file_hash.is_not(None))
+    stmt = select(LibraryEntry).where(
+        LibraryEntry.file_hash.is_not(None),
+        LibraryEntry.system.not_in(RA_UNSUPPORTED_SYSTEMS),  # never call RA for unverifiable platforms
+    )
     if library_ids:
         ids = [int(x) for x in library_ids.split(",") if x.strip().isdigit()]
         stmt = stmt.where(LibraryEntry.id.in_(ids))

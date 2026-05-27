@@ -134,6 +134,21 @@ SYSTEMS: dict[int, str] = {
     89: "Uzebox",
 }
 
+# Platforms RetroAchievements has no console/hashing support for — ROMs here can
+# NEVER hash-match, so the UI shows them as "platform not supported" rather than
+# "no RA match" failures, and the resumable verify skips them (no wasted RA calls).
+# Curated, NOT derived from `SYSTEMS`: misnamed-but-supported folders (e.g. "tg16",
+# "mega-duck-slash-cougar-boy") do verify, so excluding everything absent from
+# SYSTEMS would wrongly hide real matches. Add entries here as such platforms appear.
+RA_UNSUPPORTED_SYSTEMS: set[str] = {
+    "Nintendo 3DS",
+    "Archipelago",
+}
+
+
+def is_ra_unsupported(system: str) -> bool:
+    return system in RA_UNSUPPORTED_SYSTEMS
+
 
 class RAClient:
     def __init__(self, username: str, api_key: str):

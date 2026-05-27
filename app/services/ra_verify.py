@@ -26,7 +26,7 @@ from app.db.models import LibraryEntry
 from app.services import settings as app_settings
 from app.services import logger as applog
 from app.services import activity as activity_store
-from app.services.ra_client import RAClient
+from app.services.ra_client import RAClient, RA_UNSUPPORTED_SYSTEMS
 from app.services.sources.errors import SourceRateLimitError
 
 _BACKOFF_STEPS = [60, 120, 300, 600]  # seconds — escalate on repeated 429
@@ -59,7 +59,8 @@ async def run_pass(max_entries: int | None = None, stale_days: int = 7) -> dict:
                 max_entries = int(app_settings.get(s, "ra_verify_batch_size", "500") or "500")
             except ValueError:
                 max_entries = 500
-        work = repository.library_pending_ra_check(s, stale_days=stale_days, limit=max_entries)
+        work = repository.library_pending_ra_check(s, stale_days=stale_days, limit=max_entries,
+                                                    exclude_systems=RA_UNSUPPORTED_SYSTEMS)
         snapshot = [(e.id, e.file_hash) for e in work]
 
     total = len(snapshot)
@@ -126,7 +127,8 @@ async def run_pass(max_entries: int | None = None, stale_days: int = 7) -> dict:
             app_settings.set(s, "ra_verify_last_run", datetime.utcnow().isoformat())
 
     with Session(engine) as s:
-        remaining = len(repository.library_pending_ra_check(s, stale_days=stale_days))
+        remaining = len(repository.library_pending_ra_check(s, stale_days=stale_days,
+                                                             exclude_systems=RA_UNSUPPORTED_SYSTEMS))
     applog.info("hash", f"RA re-verify pass: checked {checked}, matched {matched}, {remaining} pending",
                 {"checked": checked, "matched": matched, "remaining": remaining, "rate_limited": hit_rate_limit})
     return {"status": "rate_limited" if hit_rate_limit else "ok",

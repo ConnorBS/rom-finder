@@ -123,12 +123,14 @@ async def verify_ra_library_entry(
 ):
     """Look up a library entry's hash against RetroAchievements and update ra_matched."""
     from datetime import datetime
-    from app.services.ra_client import RAClient
+    from app.services.ra_client import RAClient, is_ra_unsupported
 
     entry = session.get(LibraryEntry, library_id)
     if not entry or not entry.file_hash:
         print(f"[verify-ra] lib={library_id} — no hash stored", flush=True)
         return HTMLResponse('<span class="text-gray-600 text-xs">No hash</span>')
+    if is_ra_unsupported(entry.system):
+        return HTMLResponse('<span class="text-slate-600 text-xs" title="RetroAchievements doesn\'t support this platform">Not on RA</span>')
 
     ra_username = _get_setting(session, "ra_username")
     ra_api_key = _get_setting(session, "ra_api_key")

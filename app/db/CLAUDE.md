@@ -115,6 +115,7 @@ Current functions (each existed in 3+ near-identical copies before extraction):
 - `mark_wanted_verified(session, ra_game_id)` — find wanted → set verified + touch `updated_at`; no-op when id is None/unmatched. Used by all three download-approval paths.
 - `create_library_entry_from_download(session, download, file_path, file_hash=None)` — the LibraryEntry construction copy-pasted into approve / approve-all / `_run_download`.
 - `unverified_library_entries(session)` — `file_hash IS NOT NULL AND ra_matched == False`; the `no_ra` set + the Phase 5 resumable-verify work set.
+- `library_pending_ra_check(session, stale_days, limit, exclude_systems=None)` — the resumable-verify work set. `exclude_systems` (a set of system names) drops platforms RA can't verify; the caller passes `ra_client.RA_UNSUPPORTED_SYSTEMS` so this module stays db-pure (no `app.services` import).
 
 **Rule:** only add a function here when a query/mutation repeats 3+ times AND drift risks correctness. Simple one-off queries (and genuinely different ones, e.g. hunter's mark-by-primary-key that sets `last_hunt_at`) stay inline.
 
