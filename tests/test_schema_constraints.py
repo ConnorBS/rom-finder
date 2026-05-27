@@ -1,10 +1,23 @@
 """Phase 3: schema uniqueness (migrations 0006-0008)."""
 
 import pytest
-from sqlmodel import Session
+from sqlmodel import Session, select
 from sqlalchemy.exc import IntegrityError
 
-from app.db.models import WantedGame, LibraryEntry, Download
+from app.db.models import WantedGame, LibraryEntry, Download, HuntAttempt
+
+
+def test_hunt_attempt_records_source_url(fresh_engine):
+    # Migration 0011 + model field: the resolved download URL is persisted so it
+    # can dedup re-downloads and be shown to users.
+    url = "https://archive.org/download/coll/Kirby (USA).zip"
+    with Session(fresh_engine) as s:
+        s.add(HuntAttempt(wanted_game_id=1, source_id="archive_org", identifier="coll",
+                          file_name="Kirby (USA).zip", source_url=url, result="bad_hash"))
+        s.commit()
+    with Session(fresh_engine) as s:
+        a = s.exec(select(HuntAttempt)).first()
+        assert a.source_url == url
 
 
 def test_wanted_ra_system_unique(fresh_engine):

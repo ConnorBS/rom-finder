@@ -102,6 +102,13 @@ def _m_0010_normalize_system_names(s: Session) -> None:
         s.exec(text(f"UPDATE {table} SET system = 'Wii' WHERE system = 'WiiWii'"))
 
 
+def _m_0011_hunt_attempt_source_url(s: Session) -> None:
+    # Record the resolved download URL on each hunt attempt — a stable per-file
+    # identity for dedup (don't re-download the same URL) and so users can see
+    # exactly what was attempted.
+    _add_column(s, "hunt_attempts", "source_url", "VARCHAR", "''")
+
+
 # (version_id, apply_fn) — applied in order, recorded once.
 MIGRATIONS: list[tuple[str, "callable"]] = [
     ("0001_download_source_id", _m_0001),
@@ -114,6 +121,7 @@ MIGRATIONS: list[tuple[str, "callable"]] = [
     ("0008_library_path_unique", _m_0008_library_path_unique),
     ("0009_library_ra_checked_at", _m_0009_library_ra_checked_at),
     ("0010_normalize_system_names", _m_0010_normalize_system_names),
+    ("0011_hunt_attempt_source_url", _m_0011_hunt_attempt_source_url),
 ]
 
 

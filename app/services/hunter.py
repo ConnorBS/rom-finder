@@ -244,12 +244,13 @@ async def auto_hunt(wanted_id: int) -> None:
 
         # Load previously attempted (source, identifier, file) combos to skip
         with Session(engine) as session:
+            prior = session.exec(
+                select(HuntAttempt).where(HuntAttempt.wanted_game_id == wanted_id)
+            ).all()
             past: set[tuple[str, str, str]] = {
-                (a.source_id, a.identifier, a.file_name)
-                for a in session.exec(
-                    select(HuntAttempt).where(HuntAttempt.wanted_game_id == wanted_id)
-                ).all()
+                (a.source_id, a.identifier, a.file_name) for a in prior
             }
+            past_urls: set[str] = {a.source_url for a in prior if a.source_url}
 
         tried = 0
         for score, src, identifier, file_info in candidates:
@@ -258,16 +259,17 @@ async def auto_hunt(wanted_id: int) -> None:
                 break
 
             file_name = file_info.get("name", f"rom_{tried}.zip")
+            # Resolve the actual download URL — a stable per-file identity used for
+            # dedup (skip re-downloading the same file) and recorded for audit.
+            # Extension sources store the CDN/mirror URL in the file's own identifier.
+            file_identifier = file_info.get("identifier") or identifier
+            source_url = src.get_download_url(file_identifier, file_name)
             key = (src.source_id, identifier, file_name)
-            if key in past:
+            if key in past or (source_url and source_url in past_urls):
                 continue
 
             tried += 1
             activity_store.update_label(task_id, f"Hunting: {game_title} (attempt {tried})")
-            # Extension sources store the CDN/mirror URL in the file's own identifier.
-            # Always use that over the collection identifier for the download URL.
-            file_identifier = file_info.get("identifier") or identifier
-            source_url = src.get_download_url(file_identifier, file_name)
 
             hunt_dir = Path(base_dir) / "_hunt" / system_folder
             hunt_dir.mkdir(parents=True, exist_ok=True)
@@ -279,7 +281,7 @@ async def auto_hunt(wanted_id: int) -> None:
             try:
                 applog.info("hunt", f"Trying: {file_name}", {
                     "wanted_id": wanted_id, "source": src.source_id,
-                    "identifier": identifier, "score": score,
+                    "identifier": identifier, "score": score, "url": source_url,
                 })
                 try:
                     await asyncio.wait_for(
@@ -330,7 +332,7 @@ async def auto_hunt(wanted_id: int) -> None:
                         session.add(HuntAttempt(
                             wanted_game_id=wanted_id, source_id=src.source_id,
                             identifier=identifier, file_name=final_path.name,
-                            file_hash=file_hash, result="verified",
+                            source_url=source_url, file_hash=file_hash, result="verified",
                         ))
                         g = session.get(WantedGame, wanted_id)
                         if g:
@@ -348,6 +350,7 @@ async def auto_hunt(wanted_id: int) -> None:
 
                     applog.info("hunt", f"Verified: {final_path.name} [{file_hash}]", {
                         "wanted_id": wanted_id, "source": src.source_id, "attempts": tried,
+                        "url": source_url,
                     })
                     return  # success
 
@@ -360,13 +363,14 @@ async def auto_hunt(wanted_id: int) -> None:
                              "expected_id": ra_game_id, "hash": file_hash},
                         )
                     result_code = "bad_hash"
-                    applog.info("hunt", f"Bad hash: {file_name} [{file_hash}]", {"wanted_id": wanted_id})
+                    applog.info("hunt", f"Bad hash: {file_name} [{file_hash}]",
+                                {"wanted_id": wanted_id, "url": source_url})
                     _cleanup(dest, rom_path)
 
             except Exception as exc:
                 result_code = "download_failed"
                 applog.warning("hunt", f"Attempt failed ({src.source_id}): {exc}", {
-                    "wanted_id": wanted_id, "file": file_name,
+                    "wanted_id": wanted_id, "file": file_name, "url": source_url,
                 })
                 _cleanup(dest, rom_path)
 
@@ -374,7 +378,7 @@ async def auto_hunt(wanted_id: int) -> None:
                 session.add(HuntAttempt(
                     wanted_game_id=wanted_id, source_id=src.source_id,
                     identifier=identifier, file_name=file_name,
-                    file_hash=file_hash, result=result_code,
+                    source_url=source_url, file_hash=file_hash, result=result_code,
                 ))
                 g = session.get(WantedGame, wanted_id)
                 if g:
@@ -382,6 +386,8 @@ async def auto_hunt(wanted_id: int) -> None:
                     session.add(g)
                 session.commit()
             past.add(key)
+            if source_url:
+                past_urls.add(source_url)
 
         if tried == 0:
             applog.info("hunt", f"All candidates already attempted: {game_title}", {"wanted_id": wanted_id})

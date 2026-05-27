@@ -70,6 +70,7 @@ class HuntAttempt(SQLModel, table=True):
     source_id: str = ""
     identifier: str = ""      # source-local key (vault ID, archive ID, etc.)
     file_name: str = ""
+    source_url: str = ""      # resolved download URL — stable per-file id for dedup + audit
     file_hash: Optional[str] = None
     result: str = ""          # "bad_hash" | "download_failed" | "verified"
     tried_at: datetime = Field(default_factory=datetime.utcnow)
