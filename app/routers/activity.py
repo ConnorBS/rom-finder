@@ -71,7 +71,7 @@ async def card_states():
     return JSONResponse(activity_store.get_card_states())
 
 
-@router.post("/activity/cancel/{task_id}", response_class=HTMLResponse)
+@router.post("/cancel/{task_id}", response_class=HTMLResponse)  # router prefix adds /activity
 async def cancel_task(task_id: str):
     activity_store.cancel(task_id)
     return HTMLResponse("")

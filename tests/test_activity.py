@@ -22,3 +22,10 @@ def test_complete_entry_drops_finished_card_overlay():
     # ...and progress still advances.
     assert activity._tasks["rehash-batch"].completed == 1
     activity._tasks.clear()
+
+
+def test_cancel_route_reachable(client):
+    # The route lives at /activity/cancel/{id} (router prefix + /cancel) — it had
+    # been mis-declared as /activity/activity/cancel/... so the UI button 404'd.
+    r = client.post("/activity/cancel/some-task")
+    assert r.status_code == 200
