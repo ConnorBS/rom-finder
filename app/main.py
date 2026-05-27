@@ -8,7 +8,10 @@ from sqlmodel import SQLModel, Session
 
 from app.db.database import engine
 from app.db.migrations import run_migrations
-from app.db.models import AppSetting, WantedGame, AppLog, HuntAttempt, InstalledExtension  # noqa: F401 — registers tables
+from app.db.models import (  # noqa: F401 — registers tables for create_all
+    AppSetting, WantedGame, AppLog, HuntAttempt, InstalledExtension,
+    RAAchievement, RAGameProgress, RAProfile,
+)
 from app.services import settings as app_settings
 from app.services.settings import DEFAULT_SETTINGS
 from app.routers import games, downloads, library, settings_router, wanted, api, logs, collection, activity, scheduler, export, extensions as extensions_router

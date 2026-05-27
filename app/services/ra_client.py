@@ -323,3 +323,57 @@ class RAClient:
             )
             resp.raise_for_status()
             return resp.json()
+
+    # --- User dashboard data (the configured account; all rate-limited) -----
+
+    async def get_user_profile(self, user: str | None = None) -> dict:
+        """API_GetUserProfile.php — lightweight profile (points hardcore/softcore,
+        rank, totals, MemberSince). Defaults to the configured account."""
+        await _limiter.wait()
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"{RA_BASE_URL}/API_GetUserProfile.php",
+                params=self._params({"u": user or self.username}),
+                timeout=15,
+            )
+            resp.raise_for_status()
+            return resp.json()
+
+    async def get_achievements_earned_between(self, from_ts: int, to_ts: int, user: str | None = None) -> list[dict]:
+        """API_GetAchievementsEarnedBetween.php — every unlock between two Unix
+        timestamps (seconds, UTC). The backbone of the dashboard's local mirror."""
+        await _limiter.wait()
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"{RA_BASE_URL}/API_GetAchievementsEarnedBetween.php",
+                params=self._params({"u": user or self.username, "f": int(from_ts), "t": int(to_ts)}),
+                timeout=30,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return data if isinstance(data, list) else []
+
+    async def get_user_completion_progress(self, count: int = 500, offset: int = 0, user: str | None = None) -> dict:
+        """API_GetUserCompletionProgress.php — paginated per-game completion.
+        Returns {Count, Total, Results:[...]}."""
+        await _limiter.wait()
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"{RA_BASE_URL}/API_GetUserCompletionProgress.php",
+                params=self._params({"u": user or self.username, "c": count, "o": offset}),
+                timeout=30,
+            )
+            resp.raise_for_status()
+            return resp.json()
+
+    async def get_user_awards(self, user: str | None = None) -> dict:
+        """API_GetUserAwards.php — mastery/beaten/event award counts + list."""
+        await _limiter.wait()
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"{RA_BASE_URL}/API_GetUserAwards.php",
+                params=self._params({"u": user or self.username}),
+                timeout=20,
+            )
+            resp.raise_for_status()
+            return resp.json()

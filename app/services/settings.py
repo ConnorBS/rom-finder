@@ -71,6 +71,10 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "ra_verify_paused_until": "",
     "ra_verify_last_run": "",
     "ra_verify_batch_size": "500",
+    # RetroAchievements dashboard — local mirror of the user's earned achievements.
+    # Manual refresh only (full re-pull + replace, to absorb retroactive RA changes).
+    "ra_dashboard_last_sync": "",
+    "ra_dashboard_window_days": "60",
 }
 
 

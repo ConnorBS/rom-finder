@@ -43,6 +43,9 @@ Simple key/value store. Defaults seeded in `main.py::DEFAULT_SETTINGS`.
 ### `AppLog` (table: `app_logs`)
 Structured log: `ts, level, category, message, details (JSON)`.
 
+### RA Dashboard mirror (`ra_achievement`, `ra_game_progress`, `ra_profile`)
+A **local mirror** of the configured RA user's data, powering the dashboard with zero RA calls while browsing. Populated by `app/services/ra_dashboard.py::refresh()` (manual only). **The refresh REPLACES `ra_achievement` + `ra_game_progress` wholesale each run** — that's how retroactive RA changes (repointed/removed/demoted achievements, backdated unlocks) reconcile; never treat the mirror as append-only. `ra_profile` is a single row (id=1). `ra_game_progress.owned` is set by matching `game_id` to a `LibraryEntry.ra_game_id` (the owned-library cross-link). New tables → created by `create_all` at startup; **no migration needed** (migrations here are only for ALTER/index on existing tables).
+
 ---
 
 ## Collection Status Vocabulary

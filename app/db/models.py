@@ -140,3 +140,67 @@ class LibraryEntry(SQLModel, table=True):
     missing: bool = False        # file gone from disk — flagged, not deleted (migration 0012)
     missing_at: Optional[datetime] = None       # when first detected missing
     added_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+# ---------------------------------------------------------------------------
+# RetroAchievements dashboard — a LOCAL mirror of the configured user's RA data.
+# A manual refresh (services/ra_dashboard.py) REPLACES these tables wholesale, so
+# retroactive RA changes (repointed/removed/demoted achievements, backdated
+# unlocks) reconcile cleanly — the mirror is never append-only. Created by
+# SQLModel.metadata.create_all at startup (no migration needed for new tables).
+# ---------------------------------------------------------------------------
+
+class RAAchievement(SQLModel, table=True):
+    """One earned achievement unlock (from API_GetAchievementsEarnedBetween).
+    The backbone the dashboard's metrics/graphs/search/time-filters derive from."""
+    __tablename__ = "ra_achievement"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    achievement_id: int = Field(index=True)
+    title: str = ""
+    description: str = ""
+    points: int = 0
+    true_ratio: int = 0          # RA "TrueRatio" — rarity-weighted points
+    type: str = ""               # progression | win_condition | missable | ""
+    game_id: int = Field(default=0, index=True)
+    game_title: str = ""
+    console_id: int = Field(default=0, index=True)
+    console_name: str = ""
+    badge_url: str = ""
+    earned_at: datetime = Field(index=True)
+    hardcore: bool = False
+
+
+class RAGameProgress(SQLModel, table=True):
+    """Per-game completion for the configured user (API_GetUserCompletionProgress).
+    `owned` is True when game_id matches a LibraryEntry.ra_game_id — the cross-link
+    to the owned ROM library."""
+    __tablename__ = "ra_game_progress"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    game_id: int = Field(index=True, unique=True)
+    title: str = ""
+    console_id: int = Field(default=0, index=True)
+    console_name: str = ""
+    image_icon: str = ""
+    max_possible: int = 0
+    num_awarded: int = 0
+    num_awarded_hardcore: int = 0
+    pct_complete: float = 0.0
+    highest_award_kind: str = ""    # mastered | completed | beaten | beaten-softcore | ""
+    highest_award_date: Optional[datetime] = None
+    most_recent_date: Optional[datetime] = None
+    owned: bool = False
+
+
+class RAProfile(SQLModel, table=True):
+    """Snapshot of the configured user's RA profile/headline stats. Single row (id=1)."""
+    __tablename__ = "ra_profile"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    username: str = ""
+    points: int = 0                 # hardcore points
+    points_softcore: int = 0
+    rank: int = 0
+    total_achievements: int = 0     # hardcore unlocks in the mirror
+    total_games: int = 0            # games with >=1 achievement earned
+    total_masteries: int = 0
+    member_since: Optional[datetime] = None
+    last_synced_at: Optional[datetime] = None

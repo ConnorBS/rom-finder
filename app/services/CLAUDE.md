@@ -52,6 +52,9 @@ On a persistent 429, `lookup_hash` now raises **`SourceRateLimitError`** (from `
 
 Wired as the scheduler **`verify`** task (`sched_verify_*`, default 05:00) and the `/scheduler` Run-now button. State surfaces in `/api/status.verify`. Settings: `ra_verify_in_progress`, `ra_verify_paused_until`, `ra_verify_last_run`, `ra_verify_batch_size`.
 
+### RA Dashboard mirror sync (`ra_dashboard.py`)
+`refresh()` builds the **local mirror** the dashboard reads from (so browsing makes zero RA calls). It fetches profile + every unlock (`get_achievements_earned_between`, member-since→now in `ra_dashboard_window_days` windows, de-duped on `(achievement_id, hardcore)`) + paginated completion (`get_user_completion_progress`) + awards, then **replaces `ra_achievement`/`ra_game_progress` in one transaction** — wholesale replace is how retroactive RA changes reconcile. Fresh `Session` per await-gap; all RA calls use the shared 2 req/s `_limiter`; progress reported via `activity_store` (`ra-sync`); stamps `ra_dashboard_last_sync`. **Manual only** (no scheduler task). New `RAClient` user methods it relies on: `get_user_profile`, `get_achievements_earned_between` (Unix `f`/`t`), `get_user_completion_progress` (paginated), `get_user_awards`.
+
 ### RA API gotchas
 
 **`API_GetGameInfoByMD5` is deprecated/broken**: Returns HTTP 404 for ALL hashes including ones confirmed in RA's database via `API_GetGameHashes.php`. `lookup_hash` now uses `dorequest.php?r=gameid&u={user}&m={hash}` instead, which returns `{"Success": true, "GameID": N}` (N=0 = not found, N>0 = found). This was confirmed by cross-checking: `API_GetGameHashes.php` returned hash `3132056c8f17e4088b95e4264ca59575` for game 724, but `API_GetGameInfoByMD5.php` returned 404 for that same hash.
