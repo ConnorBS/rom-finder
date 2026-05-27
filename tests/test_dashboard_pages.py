@@ -56,6 +56,31 @@ def test_timeline_console_and_mode_filter(client):
     assert "First Blood" in r.text and "Sharpshooter" not in r.text
 
 
+def test_games_page_owned_highlight_and_filter(client):
+    _seed_profile_and_unlocks()
+    r = client.get("/dashboard/games")
+    assert r.status_code == 200
+    assert "Contra" in r.text and ">owned<" in r.text     # owned badge rendered
+    # owned-only filter keeps Contra (it's owned)
+    r2 = client.get("/dashboard/games?owned=1")
+    assert "Contra" in r2.text
+
+
+def test_insights_page_renders(client):
+    _seed_profile_and_unlocks()
+    r = client.get("/dashboard/insights")
+    assert r.status_code == 200
+    assert "consoleChart" in r.text                       # chart wired
+    assert "NES" in r.text                                # by-console table
+    assert "Longest daily streak" in r.text
+
+
+def test_insights_empty_state(client):
+    r = client.get("/dashboard/insights")
+    assert r.status_code == 200
+    assert "No achievement data yet" in r.text
+
+
 def test_refresh_requires_credentials(client):
     r = client.post("/dashboard/refresh")
     assert r.status_code == 200

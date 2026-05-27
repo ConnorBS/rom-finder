@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Games — ROM Finder{% endblock %}
+{% block content %}
+<div class="p-4 md:p-6 max-w-6xl mx-auto">
+
+  <div class="flex flex-wrap items-center gap-3 mb-4">
+    <h1 class="text-xl font-bold text-white">RetroAchievements</h1>
+    {% set active_tab = "/dashboard/games" %}{% include "dashboard/_tabs.html" %}
+  </div>
+
+  <!-- Filters -->
+  <form method="get" action="/dashboard/games"
+        class="bg-gray-900 border border-gray-800 rounded-lg p-3 mb-4 flex flex-wrap items-end gap-3">
+    <label class="text-xs text-gray-400">Search
+      <input type="text" name="q" value="{{ f_q }}" placeholder="game title…"
+             class="block mt-1 w-44 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-200">
+    </label>
+    <label class="text-xs text-gray-400">Console
+      <select name="console" class="block mt-1 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-200">
+        <option value="">All</option>
+        {% for c in consoles %}<option value="{{ c }}" {% if c == f_console %}selected{% endif %}>{{ c }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="text-xs text-gray-400">Sort
+      <select name="sort" class="block mt-1 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-200">
+        {% for v, lbl in [("recent","Most recent"),("completion","Completion %"),("achievements","Achievements"),("title","Title")] %}
+        <option value="{{ v }}" {% if v == f_sort %}selected{% endif %}>{{ lbl }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="text-xs text-gray-400 flex items-center gap-1.5 pb-1.5">
+      <input type="checkbox" name="owned" value="1" {% if f_owned == "1" %}checked{% endif %} class="accent-blue-600"> Owned only
+    </label>
+    <label class="text-xs text-gray-400 flex items-center gap-1.5 pb-1.5">
+      <input type="checkbox" name="award" value="mastered" {% if f_award == "mastered" %}checked{% endif %} class="accent-pink-600"> Mastered/completed
+    </label>
+    <button type="submit" class="bg-blue-700 hover:bg-blue-600 text-white text-sm px-4 py-1.5 rounded">Apply</button>
+    <a href="/dashboard/games" class="text-xs text-gray-500 hover:text-gray-300 self-center">Clear</a>
+  </form>
+
+  <p class="text-sm text-gray-400 mb-3">{{ "{:,}".format(rows|length) }} games</p>
+
+  <div class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-gray-800/40 text-gray-500 text-xs">
+        <tr class="border-b border-gray-800">
+          <th class="text-left px-3 py-2 font-medium">Game</th>
+          <th class="text-left px-3 py-2 font-medium hidden md:table-cell">Console</th>
+          <th class="text-left px-3 py-2 font-medium w-48">Completion</th>
+          <th class="text-left px-3 py-2 font-medium">Award</th>
+          <th class="text-right px-3 py-2 font-medium hidden sm:table-cell">Last played</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for g in rows %}
+        <tr class="border-b border-gray-800/50 hover:bg-gray-800/40 {% if g.owned %}bg-blue-950/20{% endif %}">
+          <td class="px-3 py-1.5 text-gray-200">
+            <div class="flex items-center gap-2">
+              {% if g.image_icon %}<img src="{{ g.image_icon }}" class="w-8 h-8 rounded" loading="lazy">{% endif %}
+              <span>{{ g.title }}</span>
+              {% if g.owned %}<a href="/collection?q={{ g.title|urlencode }}" class="text-[10px] px-1.5 py-0.5 rounded bg-blue-600/20 border border-blue-700 text-blue-300" title="In your library">owned</a>{% endif %}
+            </div>
+          </td>
+          <td class="px-3 py-1.5 text-gray-500 hidden md:table-cell">{{ g.console_name }}</td>
+          <td class="px-3 py-1.5">
+            <div class="flex items-center gap-2">
+              <div class="flex-1 bg-gray-800 rounded-full h-2 overflow-hidden">
+                <div class="h-full {% if g.pct_complete == 100 %}bg-pink-500{% else %}bg-green-500{% endif %}" style="width: {{ g.pct_complete }}%"></div>
+              </div>
+              <span class="text-xs text-gray-400 whitespace-nowrap">{{ g.num_awarded }}/{{ g.max_possible }}</span>
+            </div>
+          </td>
+          <td class="px-3 py-1.5">
+            {% if g.highest_award_kind in ("mastered","completed") %}<span class="text-pink-400 text-xs">★ {{ g.highest_award_kind }}</span>
+            {% elif g.highest_award_kind in ("beaten-hardcore","beaten-softcore","beaten") %}<span class="text-amber-400 text-xs">beaten</span>
+            {% else %}<span class="text-gray-600 text-xs">—</span>{% endif %}
+          </td>
+          <td class="px-3 py-1.5 text-right text-gray-500 text-xs whitespace-nowrap hidden sm:table-cell">{{ g.most_recent_date.strftime("%Y-%m-%d") if g.most_recent_date else "—" }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="px-3 py-6 text-center text-gray-500">No games match — try a Refresh on the Overview tab.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

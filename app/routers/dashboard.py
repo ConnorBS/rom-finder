@@ -72,3 +72,30 @@ async def timeline_page(
         "f_date_from": date_from, "f_date_to": date_to, "f_q": q,
         "f_console": console, "f_hardcore": hardcore,
     })
+
+
+@router.get("/games", response_class=HTMLResponse)
+async def games_page(
+    request: Request,
+    console: str = Query(default=""),
+    q: str = Query(default=""),
+    owned: str = Query(default=""),        # "1" = owned only
+    award: str = Query(default=""),        # "mastered"
+    sort: str = Query(default="recent"),   # recent|completion|achievements|title
+    session: Session = Depends(get_session),
+):
+    data = ra_dashboard.games(session, console, q, owned == "1", award, sort)
+    return templates.TemplateResponse(request, "dashboard/games.html", {
+        **data,
+        "ra_configured": _ra_configured(session),
+        "f_console": console, "f_q": q, "f_owned": owned, "f_award": award, "f_sort": sort,
+    })
+
+
+@router.get("/insights", response_class=HTMLResponse)
+async def insights_page(request: Request, session: Session = Depends(get_session)):
+    data = ra_dashboard.insights(session)
+    return templates.TemplateResponse(request, "dashboard/insights.html", {
+        **data,
+        "ra_configured": _ra_configured(session),
+    })

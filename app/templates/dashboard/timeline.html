@@ -6,10 +6,7 @@
   <!-- Header -->
   <div class="flex flex-wrap items-center gap-3 mb-4">
     <h1 class="text-xl font-bold text-white">RetroAchievements</h1>
-    <nav class="flex gap-1 text-xs">
-      <a href="/dashboard" class="px-2.5 py-1 rounded border border-gray-700 text-gray-400 hover:text-white">Overview</a>
-      <a href="/dashboard/timeline" class="px-2.5 py-1 rounded bg-blue-600/20 border border-blue-600 text-blue-300">Timeline</a>
-    </nav>
+    {% set active_tab = "/dashboard/timeline" %}{% include "dashboard/_tabs.html" %}
   </div>
 
   <!-- Filters (plain GET form → full render; bulletproof for charts) -->

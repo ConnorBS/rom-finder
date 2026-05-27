@@ -1,0 +1,6 @@
+{% set _tabs = [("/dashboard","Overview"),("/dashboard/timeline","Timeline"),("/dashboard/games","Games"),("/dashboard/insights","Insights")] %}
+<nav class="flex gap-1 text-xs flex-wrap">
+  {% for href, label in _tabs %}
+  <a href="{{ href }}" class="px-2.5 py-1 rounded {% if href == active_tab %}bg-blue-600/20 border border-blue-600 text-blue-300{% else %}border border-gray-700 text-gray-400 hover:text-white{% endif %}">{{ label }}</a>
+  {% endfor %}
+</nav>

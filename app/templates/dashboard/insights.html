@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}Insights — ROM Finder{% endblock %}
+{% block content %}
+<div class="p-4 md:p-6 max-w-6xl mx-auto">
+
+  <div class="flex flex-wrap items-center gap-3 mb-4">
+    <h1 class="text-xl font-bold text-white">RetroAchievements</h1>
+    {% set active_tab = "/dashboard/insights" %}{% include "dashboard/_tabs.html" %}
+  </div>
+
+  {% if total_achievements == 0 %}
+  <div class="bg-gray-900 border border-gray-800 rounded-lg p-10 text-center text-gray-400">
+    No achievement data yet — run a Refresh on the <a href="/dashboard" class="text-blue-400 underline">Overview</a> tab.
+  </div>
+  {% else %}
+
+  <!-- Stat tiles -->
+  <div class="grid grid-cols-3 gap-3 mb-5">
+    <div class="bg-gray-900 border border-gray-800 rounded-lg p-3"><div class="text-2xl font-bold text-green-400">{{ "{:,}".format(total_achievements) }}</div><div class="text-xs text-gray-500">Achievements</div></div>
+    <div class="bg-gray-900 border border-gray-800 rounded-lg p-3"><div class="text-2xl font-bold text-blue-400">{{ "{:,}".format(active_days) }}</div><div class="text-xs text-gray-500">Active days</div></div>
+    <div class="bg-gray-900 border border-gray-800 rounded-lg p-3"><div class="text-2xl font-bold text-amber-400">{{ longest_streak }}</div><div class="text-xs text-gray-500">Longest daily streak</div></div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+    <div class="bg-gray-900 border border-gray-800 rounded-lg p-4">
+      <h2 class="text-sm font-semibold text-gray-300 mb-2">Achievements by console</h2>
+      <div id="consoleChart"></div>
+    </div>
+    <div class="bg-gray-900 border border-gray-800 rounded-lg p-4">
+      <h2 class="text-sm font-semibold text-gray-300 mb-2">Achievement types</h2>
+      <div id="typeChart"></div>
+    </div>
+  </div>
+
+  <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 mb-4">
+    <h2 class="text-sm font-semibold text-gray-300 mb-2">When you play (weekday × hour, UTC)</h2>
+    <div id="heatChart"></div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <div class="bg-gray-900 border border-gray-800 rounded-lg p-4">
+      <h2 class="text-sm font-semibold text-gray-300 mb-2">Points-value distribution</h2>
+      <div id="ptsDistChart"></div>
+    </div>
+    <div class="bg-gray-900 border border-gray-800 rounded-lg p-4">
+      <h2 class="text-sm font-semibold text-gray-300 mb-3">Rarest unlocks (by TrueRatio)</h2>
+      <div class="space-y-1.5">
+        {% for a in rarest %}
+        <div class="flex items-center gap-2 text-sm">
+          {% if a.badge_url %}<img src="{{ a.badge_url }}" class="w-6 h-6 rounded" loading="lazy">{% endif %}
+          <span class="text-gray-200 truncate">{{ a.title }}</span>
+          <span class="text-gray-600 truncate hidden sm:inline">— {{ a.game_title }}</span>
+          <span class="ml-auto text-purple-400 text-xs whitespace-nowrap">TR {{ a.true_ratio }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <!-- By-console table -->
+  <div class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden mt-4">
+    <table class="w-full text-sm">
+      <thead class="bg-gray-800/40 text-gray-500 text-xs">
+        <tr class="border-b border-gray-800">
+          <th class="text-left px-3 py-2 font-medium">Console</th>
+          <th class="text-right px-3 py-2 font-medium">Achievements</th>
+          <th class="text-right px-3 py-2 font-medium">Points</th>
+          <th class="text-right px-3 py-2 font-medium">Masteries</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in by_console %}
+        <tr class="border-b border-gray-800/50">
+          <td class="px-3 py-1.5 text-gray-200">{{ c.console }}</td>
+          <td class="px-3 py-1.5 text-right text-gray-300">{{ "{:,}".format(c.achievements) }}</td>
+          <td class="px-3 py-1.5 text-right text-amber-400">{{ "{:,}".format(c.points) }}</td>
+          <td class="px-3 py-1.5 text-right text-pink-400">{{ c.masteries }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <script>
+    (function () {
+      const dark = { mode: 'dark' }, noTb = { show: false }, grid = { borderColor: '#1f2937' };
+      const axc = { labels: { style: { colors: '#6b7280' } } };
+      new ApexCharts(document.querySelector("#consoleChart"), {
+        chart: { type: 'bar', height: 280, background: 'transparent', toolbar: noTb, animations: { enabled: false } },
+        theme: dark, colors: ['#8b5cf6'], dataLabels: { enabled: false }, grid: grid,
+        plotOptions: { bar: { horizontal: true } },
+        series: [{ name: 'Achievements', data: {{ by_console_chart | tojson }} }],
+        xaxis: axc, yaxis: axc,
+      }).render();
+      const ts = {{ type_split | tojson }};
+      new ApexCharts(document.querySelector("#typeChart"), {
+        chart: { type: 'donut', height: 280, background: 'transparent' },
+        theme: dark, colors: ['#10b981', '#3b82f6', '#ef4444', '#6b7280'],
+        series: ts.map(t => t.count), labels: ts.map(t => t.label),
+        legend: { position: 'bottom', labels: { colors: '#9ca3af' } },
+      }).render();
+      new ApexCharts(document.querySelector("#heatChart"), {
+        chart: { type: 'heatmap', height: 280, background: 'transparent', toolbar: noTb, animations: { enabled: false } },
+        theme: dark, colors: ['#3b82f6'], dataLabels: { enabled: false },
+        series: {{ heatmap | tojson }}, xaxis: axc,
+      }).render();
+      new ApexCharts(document.querySelector("#ptsDistChart"), {
+        chart: { type: 'bar', height: 240, background: 'transparent', toolbar: noTb, animations: { enabled: false } },
+        theme: dark, colors: ['#f59e0b'], dataLabels: { enabled: false }, grid: grid,
+        series: [{ name: 'Achievements', data: {{ points_dist | tojson }} }],
+        xaxis: axc, yaxis: axc,
+      }).render();
+    })();
+  </script>
+  {% endif %}
+</div>
+{% endblock %}

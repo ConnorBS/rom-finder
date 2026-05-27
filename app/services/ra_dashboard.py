@@ -49,6 +49,18 @@ def _int(v) -> int:
         return 0
 
 
+_RA_MEDIA = "https://media.retroachievements.org"
+
+
+def _img_url(s: str) -> str:
+    """RA returns image paths like '/Badge/12345.png'; make them absolute."""
+    if not s:
+        return ""
+    if s.startswith("http"):
+        return s
+    return _RA_MEDIA + (s if s.startswith("/") else "/" + s)
+
+
 async def refresh() -> dict:
     """Full re-pull + replace of the dashboard mirror. Returns a summary dict.
 
@@ -135,7 +147,7 @@ async def refresh() -> dict:
                     game_title=a.get("GameTitle", "") or "",
                     console_id=_int(a.get("ConsoleID")),
                     console_name=a.get("ConsoleName", "") or "",
-                    badge_url=a.get("BadgeURL", "") or "",
+                    badge_url=_img_url(a.get("BadgeURL", "") or ""),
                     earned_at=ts,
                     hardcore=hc,
                 ))
@@ -152,7 +164,7 @@ async def refresh() -> dict:
                     title=g.get("Title", "") or "",
                     console_id=_int(g.get("ConsoleID")),
                     console_name=g.get("ConsoleName", "") or "",
-                    image_icon=g.get("ImageIcon", "") or "",
+                    image_icon=_img_url(g.get("ImageIcon", "") or ""),
                     max_possible=maxp,
                     num_awarded=awarded,
                     num_awarded_hardcore=_int(g.get("NumAwardedHardcore")),
@@ -270,4 +282,94 @@ def timeline(session: Session, date_from: datetime | None = None, date_to: datet
         "points": pts,
         "activity": activity,
         "consoles": _console_names(session),
+    }
+
+
+def games(session: Session, console: str = "", q: str = "", owned_only: bool = False,
+          award: str = "", sort: str = "recent") -> dict:
+    """Per-game completion list with filters + sort (all local)."""
+    stmt = select(RAGameProgress)
+    if console:
+        stmt = stmt.where(RAGameProgress.console_name == console)
+    if q:
+        stmt = stmt.where(RAGameProgress.title.ilike(f"%{q}%"))
+    if owned_only:
+        stmt = stmt.where(RAGameProgress.owned == True)  # noqa: E712
+    if award == "mastered":
+        stmt = stmt.where(RAGameProgress.highest_award_kind.in_(["mastered", "completed"]))
+    rows = list(session.exec(stmt).all())
+
+    keymap = {
+        "recent": (lambda g: g.most_recent_date or datetime.min, True),
+        "completion": (lambda g: g.pct_complete, True),
+        "achievements": (lambda g: g.num_awarded, True),
+        "title": (lambda g: g.title.lower(), False),
+    }
+    key, reverse = keymap.get(sort, keymap["recent"])
+    rows.sort(key=key, reverse=reverse)
+    consoles = sorted({g.console_name for g in session.exec(select(RAGameProgress)).all() if g.console_name})
+    return {"rows": rows, "consoles": consoles}
+
+
+_TYPE_LABELS = {"progression": "Progression", "win_condition": "Win condition",
+                "missable": "Missable", "": "Standard"}
+_WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+
+def insights(session: Session) -> dict:
+    """Per-console / type / rarity / heatmap / streak insights (all local)."""
+    achs = session.exec(select(RAAchievement)).all()
+    games_ = session.exec(select(RAGameProgress)).all()
+
+    con_ach: dict[str, int] = defaultdict(int)
+    con_pts: dict[str, int] = defaultdict(int)
+    for a in achs:
+        con_ach[a.console_name] += 1
+        con_pts[a.console_name] += a.points
+    con_mast: dict[str, int] = defaultdict(int)
+    for g in games_:
+        if g.highest_award_kind in ("mastered", "completed"):
+            con_mast[g.console_name] += 1
+    consoles = sorted(con_ach, key=lambda c: -con_ach[c])
+    by_console = [{"console": c or "—", "achievements": con_ach[c],
+                   "points": con_pts[c], "masteries": con_mast.get(c, 0)} for c in consoles]
+
+    type_counts: dict[str, int] = defaultdict(int)
+    for a in achs:
+        type_counts[a.type or ""] += 1
+    type_split = [{"label": _TYPE_LABELS.get(t, t or "Standard"), "count": n}
+                  for t, n in sorted(type_counts.items(), key=lambda kv: -kv[1])]
+
+    pts_counts: dict[int, int] = defaultdict(int)
+    for a in achs:
+        pts_counts[a.points] += 1
+    points_dist = [{"x": str(p), "y": pts_counts[p]} for p in sorted(pts_counts)]
+
+    rarest = sorted(achs, key=lambda a: a.true_ratio, reverse=True)[:10]
+
+    # Heatmap: weekday × hour-of-day. Build bottom→top so Mon ends on top.
+    heat = [[0] * 24 for _ in range(7)]
+    for a in achs:
+        heat[a.earned_at.weekday()][a.earned_at.hour] += 1
+    heatmap = [{"name": _WEEKDAYS[d], "data": [{"x": str(h), "y": heat[d][h]} for h in range(24)]}
+               for d in range(6, -1, -1)]
+
+    days = sorted({a.earned_at.date() for a in achs})
+    longest = cur = 0
+    prev = None
+    for d in days:
+        cur = cur + 1 if (prev is not None and (d - prev).days == 1) else 1
+        longest = max(longest, cur)
+        prev = d
+
+    return {
+        "by_console": by_console,
+        "by_console_chart": [{"x": c["console"], "y": c["achievements"]} for c in by_console],
+        "type_split": type_split,
+        "points_dist": points_dist,
+        "rarest": rarest,
+        "heatmap": heatmap,
+        "longest_streak": longest,
+        "active_days": len(days),
+        "total_achievements": len(achs),
     }
