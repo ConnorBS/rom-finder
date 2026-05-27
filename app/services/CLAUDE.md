@@ -8,7 +8,7 @@
 Key methods:
 - `get_game_list(system_id)` → list of `{ID, Title, NumAchievements, DateModified}`
 - `get_game_hashes_full(game_id)` → list of `{MD5, Name, Labels}`
-- `lookup_hash(md5)` → game info dict if matched, else `None`
+- `lookup_hash(md5)` → game info dict if matched, else `None`. **Wrong-game guard:** a hash can match a *different* RA game than intended (a Solaris ROM downloaded during a Kirby hunt hashes to Solaris). BOTH verify paths must check the matched id equals the expected `ra_game_id` before marking verified — `downloads.py` (approval) and `hunter.py` (`_match_is_correct_game`, auto-hunt). A mismatch is recorded as `bad_hash` and the hunt continues.
 - `get_game_info(game_id)` → full game detail
 - `test_credentials()` → `(bool, message)`
 

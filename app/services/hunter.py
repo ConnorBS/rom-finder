@@ -99,6 +99,13 @@ def _mark_exhausted(wanted_id: int) -> None:
             session.commit()
 
 
+def _match_is_correct_game(matched_id, expected_id) -> bool:
+    """True only when the RA hash matched the EXPECTED game (or no expected id is
+    known). A match to a DIFFERENT game means the wrong dump was downloaded
+    (e.g. a Solaris ROM matching RA during a Kirby hunt) and must NOT verify."""
+    return bool(matched_id) and (expected_id is None or matched_id == expected_id)
+
+
 async def auto_hunt(wanted_id: int) -> None:
     """Run the full auto-hunt pipeline for a single wanted game."""
     task_id = f"hunt-{wanted_id}"
@@ -259,7 +266,12 @@ async def auto_hunt(wanted_id: int) -> None:
                 file_hash, _ = await ra_hash_or_fallback(rom_path, system)
 
                 match = await ra.lookup_hash(file_hash)
-                if match:
+                matched_id = match.get("ID") if match else None
+                # Only accept when the hash matches the EXPECTED game. A file whose
+                # hash matches a DIFFERENT RA game (e.g. a Solaris ROM downloaded
+                # during a Kirby hunt) is the wrong dump — must NOT verify the wanted
+                # game. Mirrors the downloads.py approval fix.
+                if _match_is_correct_game(matched_id, ra_game_id):
                     # Move verified file to normal staging dir
                     stage_dir = Path(base_dir) / system_folder
                     stage_dir.mkdir(parents=True, exist_ok=True)
@@ -267,7 +279,7 @@ async def auto_hunt(wanted_id: int) -> None:
                     shutil.move(str(rom_path), str(final_path))
                     _cleanup(dest, rom_path)
 
-                    matched_ra_id = ra_game_id or match.get("ID")
+                    matched_ra_id = matched_id
                     dl_status = DownloadStatus.pending_approval if use_review else DownloadStatus.completed
 
                     with Session(engine) as session:
@@ -304,6 +316,13 @@ async def auto_hunt(wanted_id: int) -> None:
                     return  # success
 
                 else:
+                    if matched_id:
+                        applog.warning(
+                            "hunt",
+                            f"Hash matched RA game {matched_id}, expected {ra_game_id} — wrong dump, skipping {file_name}",
+                            {"wanted_id": wanted_id, "matched_id": matched_id,
+                             "expected_id": ra_game_id, "hash": file_hash},
+                        )
                     result_code = "bad_hash"
                     applog.info("hunt", f"Bad hash: {file_name} [{file_hash}]", {"wanted_id": wanted_id})
                     _cleanup(dest, rom_path)
