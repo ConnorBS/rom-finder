@@ -16,6 +16,7 @@ Mirrors Sonarr/Radarr's grab logic:
 
 import asyncio
 import json
+import re
 import shutil
 import zipfile
 from datetime import datetime
@@ -52,30 +53,57 @@ def _enabled_srcs(session: Session) -> list:
     return source_registry.enabled_sources(enabled)
 
 
-def _file_score(file_name: str, ra_stems: set[str]) -> int:
-    """Score a candidate file by likelihood of being an RA-verified dump."""
+# Cap on candidate files actually downloaded per hunt — stops a loose source
+# match (e.g. a whole NDS romset) from triggering hundreds of download attempts.
+_MAX_CANDIDATES = 20
+
+_STOP_WORDS = {"the", "of", "and", "a", "an", "to"}
+
+
+def _significant_terms(title: str) -> set[str]:
+    """Significant lowercase words from a game title, for filename matching when
+    RA ROM-name stems are unavailable."""
+    return {w for w in re.findall(r"[a-z0-9]+", title.lower())
+            if len(w) > 2 and w not in _STOP_WORDS}
+
+
+def _file_score(file_name: str, ra_stems: set[str], title_terms: set[str]) -> int:
+    """Score a candidate by likelihood of being the right dump.
+
+    Returns 0 when the filename matches NEITHER an RA-accepted ROM name NOR the
+    game title — so score 0 reliably means "unrelated game" even when RA hashes
+    couldn't be loaded (previously a region freebie gave every file a nonzero
+    score, so unrelated NDS files for a Wii hunt slipped through)."""
     stem = Path(file_name).stem.lower()
-    score = 0
+    name_score = 0
 
     if stem in ra_stems:
-        score += 100
+        name_score = 100
     else:
         for rs in ra_stems:
-            if rs in stem or stem in rs:
-                score += 20
+            if rs and (rs in stem or stem in rs):
+                name_score = 20
                 break
+
+    # Fallback: require the game title's significant words to appear in the name.
+    if name_score == 0 and title_terms:
+        present = sum(1 for t in title_terms if t in stem)
+        if present == len(title_terms):
+            name_score = 30
+        elif len(title_terms) >= 3 and present >= len(title_terms) - 1:
+            name_score = 10
+
+    if name_score == 0:
+        return 0  # unrelated — never download
 
     low = file_name.lower()
     if "(usa)" in low or "(world)" in low:
-        score += 10
+        name_score += 10
     elif "(europe)" in low:
-        score += 3
+        name_score += 3
     elif "(japan)" in low:
-        score += 2
-    else:
-        score += 5  # no region tag (common on Vimm) is neutral-positive
-
-    return score
+        name_score += 2
+    return name_score
 
 
 def _cleanup(*paths: Path) -> None:
@@ -177,6 +205,7 @@ async def auto_hunt(wanted_id: int) -> None:
             search_results.extend(src_hits)
 
         # Expand to individual files and score
+        title_terms = _significant_terms(game_title)
         candidates: list[tuple[int, object, str, dict]] = []
         seen_keys: set[tuple[str, str, str]] = set()
         for src, result in search_results:
@@ -188,10 +217,11 @@ async def auto_hunt(wanted_id: int) -> None:
                     fname = f.get("name", "")
                     key = (src.source_id, identifier, fname)
                     if key not in seen_keys:
-                        score = _file_score(fname, ra_stems)
-                        # Skip files with no title match when we know the expected ROM names.
-                        # Prevents downloading unrelated games returned by loose source searches.
-                        if ra_stems and score == 0:
+                        score = _file_score(fname, ra_stems, title_terms)
+                        # score 0 = matches neither an RA ROM name nor the game
+                        # title → unrelated game from a loose/collection search.
+                        # Always skip (works even when RA stems failed to load).
+                        if score == 0:
                             continue
                         seen_keys.add(key)
                         candidates.append((score, src, identifier, f))
@@ -200,6 +230,12 @@ async def auto_hunt(wanted_id: int) -> None:
                 continue
 
         candidates.sort(key=lambda x: x[0], reverse=True)
+        # Hard cap: only attempt the best N. Stops a loose collection match from
+        # triggering hundreds of downloads (the "insane amount of downloads").
+        if len(candidates) > _MAX_CANDIDATES:
+            applog.info("hunt", f"Capping candidates: {len(candidates)} → {_MAX_CANDIDATES}",
+                        {"wanted_id": wanted_id})
+            candidates = candidates[:_MAX_CANDIDATES]
 
         if not candidates:
             applog.info("hunt", f"No downloadable files found: {game_title}", {"wanted_id": wanted_id})

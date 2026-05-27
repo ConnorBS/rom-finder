@@ -1,7 +1,39 @@
 """Auto-hunt wrong-game guard: a hash that matches a DIFFERENT RA game must not
 verify the wanted game (the Kirby-hunt-downloads-Solaris bug)."""
 
-from app.services.hunter import _match_is_correct_game
+from app.services.hunter import _match_is_correct_game, _file_score, _significant_terms
+
+
+# --- candidate scoring: "is this the game we want?" --------------------------
+
+_KIRBY = _significant_terms("Kirby's Return to Dream Land")
+
+
+def test_significant_terms_drops_stopwords():
+    assert _significant_terms("Kirby's Return to Dream Land") == {"kirby", "return", "dream", "land"}
+
+
+def test_ra_stem_exact_match_scores_high():
+    stems = {"kirby's return to dream land (usa) (en,fr,es)"}
+    assert _file_score("Kirby's Return to Dream Land (USA) (En,Fr,Es).rvz", stems, _KIRBY) >= 100
+
+
+def test_unrelated_file_scores_zero_with_ra_stems():
+    stems = {"kirby's return to dream land (usa)"}
+    assert _file_score("Ben 10 - Galactic Racing (USA).nds", stems, _KIRBY) == 0
+
+
+def test_unrelated_file_scores_zero_without_ra_stems():
+    # The key fix: even when RA hashes failed to load (empty stems), an unrelated
+    # NDS game for a Kirby hunt must score 0 (no region freebie).
+    assert _file_score("Ben 10 - Galactic Racing (USA).nds", set(), _KIRBY) == 0
+    assert _file_score("Solaris (USA).zip", set(), _KIRBY) == 0
+
+
+def test_title_fallback_matches_without_ra_stems():
+    # No RA stems, but the filename contains all the title's significant words.
+    assert _file_score("Kirbys Return to Dream Land (USA).rvz", set(), _KIRBY) > 0
+
 
 
 def test_correct_game_matches():

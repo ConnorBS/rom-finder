@@ -81,6 +81,13 @@ Each source extends `BaseSource`:
 
 Implemented: `archive_org`. Stubs: `vimm`, `romsfun`, `wowroms`.
 
+### Auto-hunt candidate matching (`hunter.py`)
+Each source returns candidate files; the hunter scores them against **RA's accepted ROM names** (`_file_score`) — that's the authoritative "is this the right dump?" check. Key rules:
+- A score of **0 = unrelated** (matches neither an RA ROM-name stem nor the game title's significant words). Always skipped — works even when RA hashes failed to load (no region freebie). Stops a loose collection match (e.g. an NDS romset for a Wii hunt) from being downloaded.
+- `_significant_terms(title)` provides a title fallback when RA stems are unavailable.
+- **Hard cap** `_MAX_CANDIDATES` (20) on files attempted per hunt — prevents the "hundreds of downloads" flood.
+- Token-CDN sources (ROMsFun, WowROMs) can 403 from anti-leech protection even with a fresh signed token; these surface as `SourceForbiddenError` and the hunt moves on. **Archive.org (direct download, no token) is the reliable backbone.**
+
 ---
 
 ## Cover Sources (`cover_sources/`)

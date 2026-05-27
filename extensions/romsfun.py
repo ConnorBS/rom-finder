@@ -270,6 +270,13 @@ class RomsfunSource(RomSource):
     async def download_file(self, url: str, dest: Path, progress_callback=None) -> None:
         dest.parent.mkdir(parents=True, exist_ok=True)
 
+        # Be robust to a stored bare path (older queue entries / hunt candidates
+        # stored the mirror path without a scheme → httpx "missing protocol").
+        if url.startswith("/"):
+            url = ROMSFUN_BASE + url
+        elif not url.startswith("http"):
+            url = f"{ROMSFUN_BASE}/{url.lstrip('/')}"
+
         async with httpx.AsyncClient(
             headers=_HEADERS, follow_redirects=True, timeout=60
         ) as client:
