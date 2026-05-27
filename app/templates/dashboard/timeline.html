@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Timeline — ROM Finder{% endblock %}
+{% block content %}
+<div class="p-4 md:p-6 max-w-6xl mx-auto">
+
+  <!-- Header -->
+  <div class="flex flex-wrap items-center gap-3 mb-4">
+    <h1 class="text-xl font-bold text-white">RetroAchievements</h1>
+    <nav class="flex gap-1 text-xs">
+      <a href="/dashboard" class="px-2.5 py-1 rounded border border-gray-700 text-gray-400 hover:text-white">Overview</a>
+      <a href="/dashboard/timeline" class="px-2.5 py-1 rounded bg-blue-600/20 border border-blue-600 text-blue-300">Timeline</a>
+    </nav>
+  </div>
+
+  <!-- Filters (plain GET form → full render; bulletproof for charts) -->
+  <form method="get" action="/dashboard/timeline"
+        class="bg-gray-900 border border-gray-800 rounded-lg p-3 mb-4 flex flex-wrap items-end gap-3">
+    <label class="text-xs text-gray-400">Search
+      <input type="text" name="q" value="{{ f_q }}" placeholder="achievement name…"
+             class="block mt-1 w-48 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-200">
+    </label>
+    <label class="text-xs text-gray-400">From
+      <input type="date" name="date_from" value="{{ f_date_from }}"
+             class="block mt-1 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-200">
+    </label>
+    <label class="text-xs text-gray-400">To
+      <input type="date" name="date_to" value="{{ f_date_to }}"
+             class="block mt-1 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-200">
+    </label>
+    <label class="text-xs text-gray-400">Console
+      <select name="console" class="block mt-1 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-200">
+        <option value="">All</option>
+        {% for c in consoles %}<option value="{{ c }}" {% if c == f_console %}selected{% endif %}>{{ c }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="text-xs text-gray-400">Mode
+      <select name="hardcore" class="block mt-1 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-200">
+        <option value="">All</option>
+        <option value="hardcore" {% if f_hardcore == "hardcore" %}selected{% endif %}>Hardcore</option>
+        <option value="softcore" {% if f_hardcore == "softcore" %}selected{% endif %}>Softcore</option>
+      </select>
+    </label>
+    <button type="submit" class="bg-blue-700 hover:bg-blue-600 text-white text-sm px-4 py-1.5 rounded">Apply</button>
+    <a href="/dashboard/timeline" class="text-xs text-gray-500 hover:text-gray-300 self-center">Clear</a>
+  </form>
+
+  <!-- Summary + activity chart -->
+  <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 mb-4">
+    <p class="text-sm text-gray-300 mb-2">
+      <span class="font-semibold text-white">{{ "{:,}".format(total) }}</span> unlocks
+      · <span class="text-amber-400">{{ "{:,}".format(points) }} pts</span>
+      {% if total > rows|length %}<span class="text-gray-600">(showing first {{ rows|length }})</span>{% endif %}
+    </p>
+    <div id="activityChart"></div>
+  </div>
+
+  <!-- Results table -->
+  <div class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-gray-800/40 text-gray-500 text-xs">
+        <tr class="border-b border-gray-800">
+          <th class="text-left px-3 py-2 font-medium">Achievement</th>
+          <th class="text-left px-3 py-2 font-medium">Game</th>
+          <th class="text-left px-3 py-2 font-medium hidden md:table-cell">Console</th>
+          <th class="text-right px-3 py-2 font-medium">Pts</th>
+          <th class="text-left px-3 py-2 font-medium">Mode</th>
+          <th class="text-right px-3 py-2 font-medium">Earned</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in rows %}
+        <tr class="border-b border-gray-800/50 hover:bg-gray-800/40">
+          <td class="px-3 py-1.5 text-gray-200">
+            <div class="flex items-center gap-2">
+              {% if a.badge_url %}<img src="{{ a.badge_url }}" class="w-6 h-6 rounded" loading="lazy">{% endif %}
+              {{ a.title }}
+            </div>
+          </td>
+          <td class="px-3 py-1.5 text-gray-400">{{ a.game_title }}</td>
+          <td class="px-3 py-1.5 text-gray-500 hidden md:table-cell">{{ a.console_name }}</td>
+          <td class="px-3 py-1.5 text-right text-amber-400">{{ a.points }}</td>
+          <td class="px-3 py-1.5">{% if a.hardcore %}<span class="text-orange-500 text-xs">HC</span>{% else %}<span class="text-gray-600 text-xs">SC</span>{% endif %}</td>
+          <td class="px-3 py-1.5 text-right text-gray-500 text-xs whitespace-nowrap">{{ a.earned_at.strftime("%Y-%m-%d %H:%M") }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="px-3 py-6 text-center text-gray-500">No unlocks match these filters.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <script>
+    (function () {
+      const data = {{ activity | tojson }};
+      if (!data.length) return;
+      new ApexCharts(document.querySelector("#activityChart"), {
+        chart: { type: 'bar', height: 200, background: 'transparent', toolbar: { show: false }, animations: { enabled: false } },
+        theme: { mode: 'dark' }, colors: ['#3b82f6'], dataLabels: { enabled: false },
+        grid: { borderColor: '#1f2937' },
+        series: [{ name: 'Unlocks', data: data }],
+        xaxis: { type: 'datetime', labels: { style: { colors: '#6b7280' } } },
+        yaxis: { labels: { style: { colors: '#6b7280' } } },
+      }).render();
+    })();
+  </script>
+</div>
+{% endblock %}

@@ -7,6 +7,8 @@
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <!-- ApexCharts — only the dashboard uses it; loaded globally for simplicity -->
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts@3.49.1"></script>
     <script>
         tailwind.config = { darkMode: 'class' }
     </script>
@@ -46,6 +48,7 @@
         <div class="flex-1 min-h-0 overflow-y-auto flex flex-col">
             <nav class="flex-shrink-0 p-3 space-y-0.5 text-sm">
                 <a href="/collection" class="nav-item block px-3 py-2 rounded-md text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">Collection</a>
+                <a href="/dashboard"  class="nav-item block px-3 py-2 rounded-md text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">Dashboard</a>
                 <a href="/wanted"     class="nav-item block px-3 py-2 rounded-md text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">Wanted</a>
                 <a href="/search"     class="nav-item block px-3 py-2 rounded-md text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">Search</a>
                 <a href="/downloads"  class="nav-item block px-3 py-2 rounded-md text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">Downloads</a>
