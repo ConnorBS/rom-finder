@@ -185,6 +185,33 @@ async def reject_download(
         p = Path(download.file_path)
         if p.exists():
             p.unlink()
+
+    # If this was the copy that satisfied a wanted game and no other library copy
+    # remains, move the wanted game back to hunting so it can be re-hunted.
+    wanted = None
+    if download.ra_game_id:
+        wanted = repository.wanted_by_ra_game_id(session, download.ra_game_id)
+    if wanted is None:
+        wanted = session.exec(
+            select(WantedGame).where(
+                WantedGame.game_title == download.game_title,
+                WantedGame.system == download.system,
+            )
+        ).first()
+    if wanted and wanted.status == HuntStatus.verified:
+        if download.ra_game_id:
+            lib_q = select(LibraryEntry).where(LibraryEntry.ra_game_id == download.ra_game_id)
+        else:
+            lib_q = select(LibraryEntry).where(
+                LibraryEntry.game_title == download.game_title,
+                LibraryEntry.system == download.system,
+            )
+        if not session.exec(lib_q).first():
+            wanted.status = HuntStatus.hunting
+            wanted.updated_at = datetime.utcnow()
+            session.add(wanted)
+            applog.log_action("rehunt_after_reject", {"game": wanted.game_title, "system": wanted.system})
+
     session.delete(download)
     session.commit()
     return HTMLResponse("")

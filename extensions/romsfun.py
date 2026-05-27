@@ -3,10 +3,10 @@
 EXTENSION_INFO = {
     "id": "romsfun",
     "name": "ROMsFun",
-    "version": "1.5.0",
+    "version": "1.6.0",
     "type": "rom_source",
     "author": "ConnorBS",
-    "description": "Downloads ROMs from ROMsFun.com. Uses WordPress AJAX to get fresh signed CDN URLs.",
+    "description": "Downloads ROMs from ROMsFun.com (WordPress AJAX → signed CDN URL). Note: ROMsFun is behind Cloudflare, which can 403 automated downloads.",
 }
 
 EXTENSION_SETTINGS = []
@@ -54,7 +54,7 @@ _SYSTEM_MAP: dict[str, str] = {
     "Game Boy Advance":             "game-boy-advance",
     "Nintendo DS":                  "nintendo-ds",
     "GameCube":                     "gamecube",
-    "Wii":                          "wii",
+    "Wii":                          "nintendo-wii",
     "Sega Genesis / Mega Drive":    "sega-genesis",
     "Sega CD":                      "sega-cd",
     "Sega 32X":                     "sega-32x",
