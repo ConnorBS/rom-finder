@@ -55,9 +55,12 @@ async def ping():
 
 
 @router.get("/diag/rahasher")
-async def diag_rahasher(system: str = "PlayStation", session: Session = Depends(get_session)):
-    """Diagnose disc/arcade/NDS no-RA-match: run RAHasher on one no_ra entry for
-    `system` and compare to the stored hash. ZERO RA calls — purely local."""
+async def diag_rahasher(system: str = "PlayStation", verify: bool = False,
+                        session: Session = Depends(get_session)):
+    """Validate a system's RA hashing: run RAHasher on one no_ra entry for
+    `system` and compare to the stored hash. With verify=true, do a SINGLE RA
+    lookup of the freshly-computed hash to confirm RA actually accepts it (one
+    RA call — use to validate each system before mass re-hashing)."""
     import time
     from pathlib import Path
     from app.services.rahasher import compute_ra_hash, _rahasher_available, get_ra_system_id
@@ -92,6 +95,25 @@ async def diag_rahasher(system: str = "PlayStation", session: Session = Depends(
             else "stored hash is stale/wrong; re-hash will fix" if ra_hash != e.file_hash
             else "RAHasher hash == stored but RA has no match (dump genuinely not in RA?)"
         )
+        # Optional single RA lookup to PROVE the recomputed hash is RA-accepted.
+        if verify and ra_hash:
+            from app.services.ra_client import RAClient
+            u = _get_setting(session, "ra_username")
+            k = _get_setting(session, "ra_api_key")
+            if u and k:
+                try:
+                    match = await RAClient(u, k).lookup_hash(ra_hash)
+                    info["ra_lookup_matched"] = bool(match and match.get("ID"))
+                    info["ra_matched_game_id"] = match.get("ID") if match else None
+                    info["system_verdict"] = (
+                        "HASHING CORRECT — RA accepts the recomputed hash"
+                        if (match and match.get("ID")) else
+                        "HASHING SUSPECT — recomputed hash still not in RA (dump variant, or this system needs a different input/algorithm)"
+                    )
+                except Exception as exc:
+                    info["ra_lookup_error"] = str(exc)
+            else:
+                info["ra_lookup"] = "no RA credentials"
     return info
 
 
