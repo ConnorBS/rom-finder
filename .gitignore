@@ -31,3 +31,6 @@ ROMs/
 # OS
 .DS_Store
 Thumbs.db
+
+# Claude Code runtime locks (not source)
+.claude/scheduled_tasks.lock
