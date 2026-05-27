@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Reports — ROM Finder{% endblock %}
+{% block content %}
+<div class="p-4 md:p-6 max-w-6xl mx-auto">
+
+  <div class="flex flex-wrap items-center gap-3 mb-4">
+    <h1 class="text-xl font-bold text-white">RetroAchievements</h1>
+    {% set active_tab = "/dashboard/reports" %}{% include "dashboard/_tabs.html" %}
+  </div>
+
+  <form hx-get="/dashboard/reports/preview" hx-target="#report-output" hx-swap="innerHTML" hx-trigger="submit, change"
+        class="bg-gray-900 border border-gray-800 rounded-lg p-4 mb-4">
+    <div class="flex flex-wrap items-end gap-3">
+      <label class="text-xs text-gray-400">Report
+        <select name="report_type" id="report_type" onchange="toggleFields()"
+                class="block mt-1 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-200">
+          <option value="recap">Time-period recap</option>
+          <option value="lifetime">Lifetime profile showcase</option>
+          <option value="per_game">Per-game writeup</option>
+          <option value="custom">Custom (filtered slice)</option>
+        </select>
+      </label>
+
+      <span class="field-grp" data-for="recap custom">
+        <label class="text-xs text-gray-400">From
+          <input type="date" name="date_from" class="block mt-1 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-200">
+        </label>
+      </span>
+      <span class="field-grp" data-for="recap custom">
+        <label class="text-xs text-gray-400">To
+          <input type="date" name="date_to" class="block mt-1 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-200">
+        </label>
+      </span>
+
+      <span class="field-grp hidden" data-for="per_game">
+        <label class="text-xs text-gray-400">Game
+          <select name="game_id" class="block mt-1 w-56 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-200">
+            <option value="0">— select —</option>
+            {% for g in games %}<option value="{{ g.game_id }}">{{ g.title }} ({{ g.console_name }})</option>{% endfor %}
+          </select>
+        </label>
+      </span>
+
+      <span class="field-grp hidden" data-for="custom">
+        <label class="text-xs text-gray-400">Search
+          <input type="text" name="q" placeholder="achievement name…" class="block mt-1 w-40 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-200">
+        </label>
+      </span>
+      <span class="field-grp hidden" data-for="custom">
+        <label class="text-xs text-gray-400">Console
+          <select name="console" class="block mt-1 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-200">
+            <option value="">All</option>
+            {% for c in consoles %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+          </select>
+        </label>
+      </span>
+      <span class="field-grp hidden" data-for="custom">
+        <label class="text-xs text-gray-400">Mode
+          <select name="hardcore" class="block mt-1 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-200">
+            <option value="">All</option><option value="hardcore">Hardcore</option><option value="softcore">Softcore</option>
+          </select>
+        </label>
+      </span>
+
+      <button type="submit" class="bg-blue-700 hover:bg-blue-600 text-white text-sm px-4 py-1.5 rounded">Generate</button>
+    </div>
+  </form>
+
+  <div id="report-output" class="bg-gray-900 border border-gray-800 rounded-lg p-4">
+    <p class="text-gray-500 text-sm">Pick a report type and click <span class="text-gray-300">Generate</span>. Output is RetroAchievements forum markup — copy or download it.</p>
+  </div>
+
+  <script>
+    function toggleFields() {
+      const t = document.getElementById('report_type').value;
+      document.querySelectorAll('.field-grp').forEach(function (el) {
+        el.classList.toggle('hidden', !el.dataset.for.split(' ').includes(t));
+      });
+    }
+    toggleFields();
+  </script>
+</div>
+{% endblock %}

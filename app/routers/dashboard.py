@@ -7,12 +7,14 @@ via the activity tray.
 from datetime import datetime
 
 from fastapi import APIRouter, Request, Depends, BackgroundTasks, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.db.database import get_session
+from app.db.models import RAGameProgress
 from app.services import ra_dashboard
+from app.services import ra_report
 from app.services import settings as app_settings
 
 router = APIRouter(prefix="/dashboard")
@@ -99,3 +101,58 @@ async def insights_page(request: Request, session: Session = Depends(get_session
         **data,
         "ra_configured": _ra_configured(session),
     })
+
+
+# --- Reports (RetroAchievements forum markup) ------------------------------
+
+def _build_report(session, report_type, date_from, date_to, game_id, q, console, hardcore):
+    hc = True if hardcore == "hardcore" else (False if hardcore == "softcore" else None)
+    return ra_report.build(
+        session, report_type,
+        date_from=_parse_date(date_from), date_to=_parse_date(date_to),
+        game_id=game_id or 0, q=q, console=console, hardcore=hc,
+    )
+
+
+@router.get("/reports", response_class=HTMLResponse)
+async def reports_page(request: Request, session: Session = Depends(get_session)):
+    games = session.exec(select(RAGameProgress).order_by(RAGameProgress.title)).all()
+    return templates.TemplateResponse(request, "dashboard/reports.html", {
+        "games": games,
+        "consoles": ra_dashboard._console_names(session),
+        "ra_configured": _ra_configured(session),
+    })
+
+
+@router.get("/reports/preview", response_class=HTMLResponse)
+async def reports_preview(
+    request: Request,
+    report_type: str = Query(default="recap"),
+    date_from: str = Query(default=""), date_to: str = Query(default=""),
+    game_id: int = Query(default=0), q: str = Query(default=""),
+    console: str = Query(default=""), hardcore: str = Query(default=""),
+    session: Session = Depends(get_session),
+):
+    markup = _build_report(session, report_type, date_from, date_to, game_id, q, console, hardcore)
+    from urllib.parse import urlencode
+    download_qs = urlencode({
+        "report_type": report_type, "date_from": date_from, "date_to": date_to,
+        "game_id": game_id, "q": q, "console": console, "hardcore": hardcore,
+    })
+    return templates.TemplateResponse(request, "dashboard/_report_output.html",
+                                      {"markup": markup, "download_qs": download_qs})
+
+
+@router.get("/reports/download")
+async def reports_download(
+    report_type: str = Query(default="recap"),
+    date_from: str = Query(default=""), date_to: str = Query(default=""),
+    game_id: int = Query(default=0), q: str = Query(default=""),
+    console: str = Query(default=""), hardcore: str = Query(default=""),
+    session: Session = Depends(get_session),
+):
+    markup = _build_report(session, report_type, date_from, date_to, game_id, q, console, hardcore)
+    return StreamingResponse(
+        iter([markup]), media_type="text/markdown",
+        headers={"Content-Disposition": f"attachment; filename=ra-{report_type}-report.md"},
+    )
