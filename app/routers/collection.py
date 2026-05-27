@@ -483,11 +483,11 @@ async def _do_rehash(entry_ids: list[int]) -> None:
                 break
             entry = session.get(LibraryEntry, eid)
             if not entry:
-                activity_store.increment(batch_id)
+                activity_store.complete_entry(batch_id, eid)
                 continue
             p = Path(entry.file_path)
             if not p.exists():
-                activity_store.increment(batch_id)
+                activity_store.complete_entry(batch_id, eid)
                 continue
             try:
                 old_hash = entry.file_hash
@@ -508,7 +508,7 @@ async def _do_rehash(entry_ids: list[int]) -> None:
                 processed += 1
             except Exception as exc:
                 applog.warning("hash", f"Rehash failed for {entry.file_name}: {exc}")
-            activity_store.increment(batch_id)
+            activity_store.complete_entry(batch_id, eid)
         session.commit()
     activity_store.finish(batch_id)
     applog.log_action("bulk_rehash_done", {"count": processed, "cancelled": activity_store.is_cancelled(batch_id)})
@@ -626,7 +626,7 @@ async def _do_verify(entry_ids: list[int], username: str, api_key: str) -> None:
                 break
             entry = session.get(LibraryEntry, eid)
             if not entry or not entry.file_hash:
-                activity_store.increment(batch_id)
+                activity_store.complete_entry(batch_id, eid)
                 continue
             try:
                 match = await ra.lookup_hash(entry.file_hash)
@@ -639,7 +639,7 @@ async def _do_verify(entry_ids: list[int], username: str, api_key: str) -> None:
                 checked += 1
             except Exception as exc:
                 applog.warning("hash", f"RA verify failed for {entry.file_name}: {exc}")
-            activity_store.increment(batch_id)
+            activity_store.complete_entry(batch_id, eid)
         session.commit()
     activity_store.finish(batch_id)
     applog.log_action("bulk_verify_done", {"checked": checked, "matched": matched})

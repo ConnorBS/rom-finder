@@ -82,7 +82,8 @@ FastAPI `BackgroundTasks` runs after the HTTP response in the same event loop. C
 ### Activity Store API (`app/services/activity.py`)
 - `start(task_id, label, task_type)` — individual task
 - `start_batch(task_id, label, total, task_type, entry_ids=None)` — batch with progress
-- `increment(task_id)` — advance batch counter
+- `increment(task_id)` — advance batch counter (use when there are no per-card overlays)
+- `complete_entry(task_id, entry_id)` — advance AND drop that entry's per-card overlay. Use this (not `increment`) in `rehash`/`verify` batches so a finished card stops showing its spinner while the batch continues. Otherwise every entry stays lit until the whole batch ends.
 - `finish(task_id)` — mark done (auto-pruned after 5s)
 - `get_card_states()` → `{states: {"lib-N": "cover|rehash|verify", ...}, batch_types: []}`
 

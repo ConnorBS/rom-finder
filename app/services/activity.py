@@ -45,6 +45,15 @@ def increment(task_id: str) -> None:
         _tasks[task_id].completed += 1
 
 
+def complete_entry(task_id: str, entry_id) -> None:
+    """Advance a batch by one AND drop that entry's per-card overlay, so a card
+    whose item is done stops showing the spinner while the batch continues."""
+    t = _tasks.get(task_id)
+    if t:
+        t.completed += 1
+        t.entry_ids.discard(entry_id)
+
+
 def update_label(task_id: str, label: str) -> None:
     if task_id in _tasks:
         _tasks[task_id].label = label
