@@ -22,6 +22,16 @@ def test_crlf_and_lf_hash_identically(tmp_path):
     assert hashlib.md5(crlf.read_bytes()).hexdigest() != md5_arduboy(crlf)
 
 
+def test_arduboy_trailing_newline_always_appended(tmp_path):
+    # rc_hash_text appends '\n' after every line, so a file with no trailing
+    # newline hashes the same as one with it (and as the CRLF variant).
+    no_nl = tmp_path / "a.hex"; no_nl.write_bytes(b":00000001FF")
+    with_nl = tmp_path / "b.hex"; with_nl.write_bytes(b":00000001FF\n")
+    crlf = tmp_path / "c.hex"; crlf.write_bytes(b":00000001FF\r\n")
+    assert md5_arduboy(no_nl) == md5_arduboy(with_nl) == md5_arduboy(crlf)
+    assert md5_arduboy(no_nl) == hashlib.md5(b":00000001FF\n").hexdigest()
+
+
 def test_arduboy_registered():
     assert _SYSTEM_HASHERS.get("Arduboy") is md5_arduboy
 

@@ -107,15 +107,29 @@ def md5_a7800(path: Path) -> str:
 
 
 def md5_arduboy(path: Path) -> str:
-    """Arduboy: MD5 of the Intel-HEX text with carriage returns stripped.
+    """Arduboy: hash the Intel-HEX as text, per RA's canonical algorithm.
 
-    RA (rcheevos) reads the .hex as text and normalizes line endings, so a CRLF
-    dump and an LF dump of the same program hash identically. Hashing the raw bytes
-    makes every CRLF repack (e.g. the 'Erwin's Collection' set) miss. Verified
-    against RA: stripping \\r reproduces RA's accepted hash exactly."""
+    Faithful port of rcheevos `rc_hash_text` (the function `rc_hash_arduboy` calls)
+    — src/rhash/hash_rom.c. It emits each line's content followed by a single '\\n',
+    so \\r\\n / \\r / \\n all normalize to '\\n' AND a trailing newline is always
+    appended. Hashing raw bytes makes every CRLF dump (e.g. the 'Erwin's Collection'
+    set) miss; verified to reproduce RA's accepted hash exactly (game 9286).
+    Source of truth for hashers is rcheevos rc_hash — see services/CLAUDE.md."""
     with open(path, "rb") as f:
         data = f.read()
-    return hashlib.md5(data.replace(b"\r", b"")).hexdigest()
+    h = hashlib.md5()
+    i, n = 0, len(data)
+    while i < n:
+        start = i
+        while i < n and data[i] != 0x0D and data[i] != 0x0A:   # not \r or \n
+            i += 1
+        h.update(data[start:i])
+        h.update(b"\n")
+        if i < n and data[i] == 0x0D:   # skip \r
+            i += 1
+        if i < n and data[i] == 0x0A:   # skip \n (handles \r\n)
+            i += 1
+    return h.hexdigest()
 
 
 def md5_n64(path: Path) -> str:
