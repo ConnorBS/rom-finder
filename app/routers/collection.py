@@ -212,7 +212,7 @@ async def collection_counts(session: Session = Depends(get_session)):
 @router.post("/collection/bulk/scan", response_class=HTMLResponse)
 async def bulk_scan(session: Session = Depends(get_session)):
     """Scan the ROM directory and import untracked files into the library."""
-    from app.routers.library import ROM_EXTENSIONS, _build_folder_to_system_map, _rom_title
+    from app.routers.library import ROM_EXTENSIONS, _build_folder_to_system_map, _rom_title, is_disc_track
 
     download_dir = _get_setting(session, "download_dir", "")
     if not download_dir:
@@ -229,6 +229,7 @@ async def bulk_scan(session: Session = Depends(get_session)):
     existing_paths = {e.file_path for e in existing_entries}
 
     # --- Import new ROMs on disk -------------------------------------------
+    cue_cache: dict[str, bool] = {}
     added = 0
     scanned = 0
     folders = 0
@@ -240,6 +241,8 @@ async def bulk_scan(session: Session = Depends(get_session)):
         for f in sorted(subdir.rglob('*')):
             if not f.is_file() or f.suffix.lower() not in ROM_EXTENSIONS:
                 continue
+            if is_disc_track(f, cue_cache):
+                continue   # a .bin/.img track of a .cue disc — the .cue is the entry
             scanned += 1
             fp = str(f)
             if fp in existing_paths:
@@ -250,7 +253,22 @@ async def bulk_scan(session: Session = Depends(get_session)):
             existing_paths.add(fp)
             added += 1
 
+    # --- Clean up disc-track artifacts already in the library --------------
+    # Tracks imported before this rule are real files on disk (so they'd never be
+    # flagged "missing"), but they're not games — drop the unmatched ones so they
+    # stop sitting in no_ra. (Never touch an RA-matched entry, just in case.)
+    removed_tracks = 0
+    track_ids: set[int] = set()
+    for e in existing_entries:
+        p = Path(e.file_path)
+        if not e.ra_matched and p.exists() and is_disc_track(p, cue_cache):
+            track_ids.add(e.id)
+            session.delete(e)
+            removed_tracks += 1
+    live_entries = [e for e in existing_entries if e.id not in track_ids]
+
     # --- Reconcile against disk: flag missing / resurrect reappeared ------
+    existing_entries = live_entries
     on_disk = {id(e): Path(e.file_path).exists() for e in existing_entries}
     restored = 0
     for e in existing_entries:
@@ -282,8 +300,9 @@ async def bulk_scan(session: Session = Depends(get_session)):
 
     session.commit()
     applog.log_action("bulk_scan", {
-        "download_dir": download_dir, "scanned": scanned,
-        "folders": folders, "added": added, "flagged_missing": flagged, "restored": restored,
+        "download_dir": download_dir, "scanned": scanned, "folders": folders,
+        "added": added, "flagged_missing": flagged, "restored": restored,
+        "removed_tracks": removed_tracks,
     })
 
     summary = f"Scanned {scanned:,} file{'s' if scanned != 1 else ''} across {folders} folder{'s' if folders != 1 else ''}"
@@ -294,6 +313,8 @@ async def bulk_scan(session: Session = Depends(get_session)):
         parts.append(f"{flagged} marked missing")
     if restored:
         parts.append(f"{restored} restored")
+    if removed_tracks:
+        parts.append(f"{removed_tracks} disc-track artifacts removed")
     detail = " — " + ", ".join(parts) if parts else " — no changes"
     return HTMLResponse(f'<span class="text-green-400 text-xs">&#10003; {summary}{detail}.</span>')
 

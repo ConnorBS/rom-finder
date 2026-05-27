@@ -46,7 +46,7 @@ def _should_run(last_run_str: str, time_str: str) -> bool:
 async def run_scan() -> dict:
     """Scan for new ROMs, then hash + fetch covers + RA-verify each newly-found file."""
     import json
-    from app.routers.library import ROM_EXTENSIONS, _build_folder_to_system_map, _rom_title
+    from app.routers.library import ROM_EXTENSIONS, _build_folder_to_system_map, _rom_title, is_disc_track
     from app.services.hasher import hash_rom
     from app.services.rahasher import compute_ra_hash
     from app.services import activity as activity_store
@@ -70,6 +70,7 @@ async def run_scan() -> dict:
         existing_paths = set(session.exec(select(LibraryEntry.file_path)).all())
 
     # --- Step 1: find new files ---
+    cue_cache: dict[str, bool] = {}
     new_files: list[tuple[str, str, str, str]] = []  # (title, system, fname, fpath)
     for subdir in sorted(base.iterdir()):
         if not subdir.is_dir():
@@ -78,6 +79,8 @@ async def run_scan() -> dict:
         for f in sorted(subdir.rglob('*')):
             if not f.is_file() or f.suffix.lower() not in ROM_EXTENSIONS:
                 continue
+            if is_disc_track(f, cue_cache):
+                continue   # .bin/.img track of a .cue disc — not a standalone ROM
             fp = str(f)
             if fp in existing_paths:
                 continue

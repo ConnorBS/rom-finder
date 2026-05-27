@@ -41,6 +41,32 @@ ROM_EXTENSIONS = {
 
 ARCHIVE_EXTENSIONS = {".zip", ".7z"}
 
+# Files that are CD tracks of a cuesheet, not standalone ROMs.
+_DISC_TRACK_EXTS = {".bin", ".img"}
+
+
+def is_disc_track(f: "Path", _cue_cache: dict | None = None) -> bool:
+    """True if `f` is a CD track belonging to a .cue/.gdi sheet in the same folder.
+
+    A disc rip is one logical game: a `.cue` (the canonical, hashable entry) plus
+    one or more `.bin`/`.img` tracks — including audio tracks. Those tracks must NOT
+    be imported as separate ROMs (they can never RA-hash-match and clutter the
+    library as no_ra). This shows up when a disc is unzipped — e.g. for an Android
+    handheld — so the recursive scan walks each track file individually.
+
+    `_cue_cache` (a dict the caller reuses across one scan) memoises the per-folder
+    cuesheet check so a big folder isn't globbed once per file.
+    """
+    if f.suffix.lower() not in _DISC_TRACK_EXTS:
+        return False
+    d = f.parent
+    if _cue_cache is None:
+        return any(d.glob("*.cue")) or any(d.glob("*.gdi"))
+    key = str(d)
+    if key not in _cue_cache:
+        _cue_cache[key] = any(d.glob("*.cue")) or any(d.glob("*.gdi"))
+    return _cue_cache[key]
+
 
 def _rom_title(f: "Path") -> str:
     """Strip archive suffix from title when a zip wraps a named ROM (e.g. game.nes.zip → game)."""
@@ -209,6 +235,7 @@ async def scan_rom_folder(session: Session = Depends(get_session)):
         )
 
     added = 0
+    cue_cache: dict[str, bool] = {}
     for subdir in sorted(base.iterdir()):
         if not subdir.is_dir():
             continue
@@ -216,6 +243,8 @@ async def scan_rom_folder(session: Session = Depends(get_session)):
         for f in sorted(subdir.rglob('*')):
             if not f.is_file() or f.suffix.lower() not in ROM_EXTENSIONS:
                 continue
+            if is_disc_track(f, cue_cache):
+                continue   # .bin/.img track of a .cue disc — not a standalone ROM
             file_path_str = str(f)
             if file_path_str in existing_paths:
                 continue
