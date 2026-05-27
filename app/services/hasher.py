@@ -44,6 +44,7 @@ _ROM_EXTENSIONS = {
     ".int",                                              # Intellivision
     ".vb",                                               # Virtual Boy
     ".min",                                              # Pokemon Mini
+    ".hex",                                              # Arduboy
     ".bin", ".rom",                                      # Generic cartridge
     ".iso", ".cue", ".chd", ".bin",                      # Disc images
     ".psp", ".cso",                                      # PSP
@@ -105,6 +106,18 @@ def md5_a7800(path: Path) -> str:
     return hashlib.md5(data).hexdigest()
 
 
+def md5_arduboy(path: Path) -> str:
+    """Arduboy: MD5 of the Intel-HEX text with carriage returns stripped.
+
+    RA (rcheevos) reads the .hex as text and normalizes line endings, so a CRLF
+    dump and an LF dump of the same program hash identically. Hashing the raw bytes
+    makes every CRLF repack (e.g. the 'Erwin's Collection' set) miss. Verified
+    against RA: stripping \\r reproduces RA's accepted hash exactly."""
+    with open(path, "rb") as f:
+        data = f.read()
+    return hashlib.md5(data.replace(b"\r", b"")).hexdigest()
+
+
 def md5_n64(path: Path) -> str:
     """N64: MD5 of ROM data, byte-swap v64 (byte-swapped) or n64 (word-swapped) to z64 first."""
     with open(path, "rb") as f:
@@ -146,6 +159,9 @@ _SYSTEM_HASHERS = {
 
     # Atari 7800
     "Atari 7800": md5_a7800,
+
+    # Arduboy (.hex text — line-ending normalized)
+    "Arduboy": md5_arduboy,
 
     # All other cartridge systems fall through to md5_file (the default)
 }

@@ -31,6 +31,7 @@ ROM_EXTENSIONS = {
     ".ws", ".wsc",                           # WonderSwan
     ".a26", ".a52", ".a78",                  # Atari
     ".lnx",                                  # Atari Lynx
+    ".hex",                                  # Arduboy
     ".iso", ".cue", ".bin", ".img",          # Disc-based (PS1/PS2/Saturn/etc.)
     ".chd",                                  # Compressed Hunks of Data
     ".cso", ".pbp",                          # PSP
