@@ -137,4 +137,6 @@ class LibraryEntry(SQLModel, table=True):
     cover_path: str = ""
     hashed_at: Optional[datetime] = None
     ra_checked_at: Optional[datetime] = None   # last RA hash lookup (migration 0009)
+    missing: bool = False        # file gone from disk — flagged, not deleted (migration 0012)
+    missing_at: Optional[datetime] = None       # when first detected missing
     added_at: datetime = Field(default_factory=datetime.utcnow)

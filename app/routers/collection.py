@@ -64,6 +64,7 @@ def _build_collection(session: Session) -> list[dict]:
             "ra_game_id": w.ra_game_id,
             "library_id": lib.id if lib else None,
             "wanted_id": w.id,
+            "missing": lib.missing if lib else False,
             "added_at": w.added_at,
         })
         if lib:
@@ -81,6 +82,7 @@ def _build_collection(session: Session) -> list[dict]:
                 "ra_game_id": e.ra_game_id,
                 "library_id": e.id,
                 "wanted_id": None,
+                "missing": e.missing,
                 "added_at": e.added_at,
             })
 
@@ -109,6 +111,8 @@ async def collection_page(
         filtered = [i for i in filtered if i["system"] == system]
     if status == "no_ra":
         filtered = [i for i in filtered if i.get("file_hash") and not i.get("ra_matched")]
+    elif status == "missing":
+        filtered = [i for i in filtered if i.get("missing")]
     elif status:
         filtered = [i for i in filtered if i["status"] == status]
 
@@ -237,50 +241,91 @@ async def bulk_scan(session: Session = Depends(get_session)):
             existing_paths.add(fp)
             added += 1
 
-    # --- Detect ROMs removed from disk -------------------------------------
+    # --- Reconcile against disk: flag missing / resurrect reappeared ------
     on_disk = {id(e): Path(e.file_path).exists() for e in existing_entries}
-    orphans = [e for e in existing_entries if not on_disk[id(e)]]
-    removed = 0
-    if orphans and len(orphans) > max(5, len(existing_entries) // 2):
-        # More than half the library looks missing — almost certainly an
-        # unmounted share or wrong path, not real deletions. Don't wipe; warn.
+    restored = 0
+    for e in existing_entries:
+        if e.missing and on_disk[id(e)]:
+            # ROM reappeared on disk → bring it back to life.
+            e.missing = False
+            e.missing_at = None
+            session.add(e)
+            restored += 1
+
+    # Entries whose file is gone and not already flagged.
+    gone = [e for e in existing_entries if not on_disk[id(e)] and not e.missing]
+    flagged = 0
+    present_count = sum(1 for e in existing_entries if not e.missing)
+    if gone and len(gone) > max(5, present_count // 2):
+        # More than half the present library looks missing — almost certainly an
+        # unmounted share or wrong path. Don't flag en masse; warn instead.
         applog.warning(
             "library",
-            f"Scan: {len(orphans)} of {len(existing_entries)} files missing — "
-            "skipping removal (possible unmounted drive). Check the ROMs directory.",
+            f"Scan: {len(gone)} of {present_count} files missing — skipping "
+            "missing-flag (possible unmounted drive). Check the ROMs directory.",
         )
     else:
-        # Games that still have an on-disk copy after removals.
-        still_present = {e.ra_game_id for e in existing_entries
-                         if e.ra_game_id and on_disk[id(e)]}
-        for e in orphans:
-            # If this was the verified copy for a wanted game and no other copy
-            # remains, move it back to hunting (mirrors the reject behaviour).
-            if e.ra_game_id and e.ra_game_id not in still_present:
-                w = session.exec(
-                    select(WantedGame).where(WantedGame.ra_game_id == e.ra_game_id)
-                ).first()
-                if w and w.status == HuntStatus.verified:
-                    w.status = HuntStatus.hunting
-                    w.updated_at = datetime.utcnow()
-                    session.add(w)
-            session.delete(e)
-            removed += 1
+        for e in gone:
+            e.missing = True
+            e.missing_at = datetime.utcnow()
+            session.add(e)
+            flagged += 1
 
     session.commit()
     applog.log_action("bulk_scan", {
         "download_dir": download_dir, "scanned": scanned,
-        "folders": folders, "added": added, "removed": removed,
+        "folders": folders, "added": added, "flagged_missing": flagged, "restored": restored,
     })
 
     summary = f"Scanned {scanned:,} file{'s' if scanned != 1 else ''} across {folders} folder{'s' if folders != 1 else ''}"
     parts = []
     if added:
         parts.append(f"{added} imported")
-    if removed:
-        parts.append(f"{removed} removed (no longer on disk)")
+    if flagged:
+        parts.append(f"{flagged} marked missing")
+    if restored:
+        parts.append(f"{restored} restored")
     detail = " — " + ", ".join(parts) if parts else " — no changes"
     return HTMLResponse(f'<span class="text-green-400 text-xs">&#10003; {summary}{detail}.</span>')
+
+
+@router.post("/collection/library/{library_id}/delete", response_class=HTMLResponse)
+async def delete_library_entry(library_id: int, session: Session = Depends(get_session)):
+    """Permanently remove a library entry (the 'Delete' action on a missing ROM)."""
+    e = session.get(LibraryEntry, library_id)
+    if e:
+        applog.log_action("library_delete", {
+            "game": e.game_title, "system": e.system, "was_missing": e.missing,
+        })
+        session.delete(e)
+        session.commit()
+    return HTMLResponse("")
+
+
+@router.post("/collection/library/{library_id}/to-wanted", response_class=HTMLResponse)
+async def library_to_wanted(library_id: int, session: Session = Depends(get_session)):
+    """Move a (missing) library entry to the Wanted hunt list, then remove it."""
+    e = session.get(LibraryEntry, library_id)
+    if not e:
+        return HTMLResponse("")
+    if not e.ra_game_id:
+        return HTMLResponse(
+            '<span class="text-yellow-400 text-xs">No RetroAchievements ID on this entry — can\'t add it to Wanted.</span>'
+        )
+    w = session.exec(select(WantedGame).where(WantedGame.ra_game_id == e.ra_game_id)).first()
+    if w:
+        w.status = HuntStatus.hunting
+        w.updated_at = datetime.utcnow()
+        session.add(w)
+    else:
+        session.add(WantedGame(
+            game_title=e.game_title, system=e.system, ra_game_id=e.ra_game_id,
+            cover_path=e.cover_path or "", status=HuntStatus.hunting,
+        ))
+    applog.log_action("library_to_wanted", {"game": e.game_title, "system": e.system})
+    session.delete(e)
+    session.commit()
+    return HTMLResponse("")
 
 
 @router.post("/collection/bulk/fetch-covers", response_class=HTMLResponse)

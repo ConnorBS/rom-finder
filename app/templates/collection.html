@@ -70,7 +70,7 @@
 
             <!-- Status pills -->
             <div class="flex gap-1 flex-wrap">
-                {% set statuses = [("", "All"), ("verified", "Verified"), ("found", "Found"), ("library", "Library"), ("wanted", "Wanted"), ("no_ra", "No RA")] %}
+                {% set statuses = [("", "All"), ("verified", "Verified"), ("found", "Found"), ("library", "Library"), ("wanted", "Wanted"), ("no_ra", "No RA"), ("missing", "Missing")] %}
                 {% for val, label in statuses %}
                 <a href="?q={{ q }}&system={{ selected_system }}&status={{ val }}&view={{ view }}"
                    id="col-status"
@@ -269,6 +269,11 @@
                     <span class="text-yellow-500 text-xs">Wanted</span>
                 </div>
                 {% endif %}
+                {% if item.missing %}
+                <div class="absolute top-2 left-2 bg-red-900/80 border border-red-700 rounded-full px-2 py-0.5" title="File no longer on disk">
+                    <span class="text-red-300 text-xs">⊘ Missing</span>
+                </div>
+                {% endif %}
             </div>
 
             <!-- Info -->
@@ -295,7 +300,21 @@
                     title="Check against RetroAchievements"
                 >? No RA</button>
                 {% endif %}
-                {% if item.status == 'wanted' and item.wanted_id %}
+                {% if item.missing %}
+                <div class="mt-auto flex gap-1">
+                    <button
+                        hx-post="/collection/library/{{ item.library_id }}/to-wanted"
+                        hx-target="closest .group" hx-swap="outerHTML"
+                        class="flex-1 bg-gray-800 hover:bg-blue-700 border border-gray-700 text-gray-300 hover:text-white text-xs px-2 py-1.5 rounded transition-colors"
+                        title="Add to the Wanted hunt list and remove this entry">&rarr; Wanted</button>
+                    <button
+                        hx-post="/collection/library/{{ item.library_id }}/delete"
+                        hx-target="closest .group" hx-swap="outerHTML"
+                        hx-confirm="Permanently delete this library entry?"
+                        class="flex-1 bg-gray-800 hover:bg-red-700 border border-gray-700 text-gray-300 hover:text-white text-xs px-2 py-1.5 rounded transition-colors"
+                        title="Permanently remove this entry">Delete</button>
+                </div>
+                {% elif item.status == 'wanted' and item.wanted_id %}
                 <button
                     class="mt-auto w-full bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 hover:text-white text-xs px-2 py-1.5 rounded transition-colors"
                     hx-get="/wanted/{{ item.wanted_id }}/sources"

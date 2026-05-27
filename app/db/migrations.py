@@ -109,6 +109,14 @@ def _m_0011_hunt_attempt_source_url(s: Session) -> None:
     _add_column(s, "hunt_attempts", "source_url", "VARCHAR", "''")
 
 
+def _m_0012_library_missing(s: Session) -> None:
+    # Soft "missing" flag for library entries whose file left disk — flagged
+    # (with options to delete / move to wanted), not hard-deleted, and resurrected
+    # automatically if the ROM reappears on a rescan.
+    _add_column(s, "library", "missing", "BOOLEAN", "0")
+    _add_column(s, "library", "missing_at", "TIMESTAMP", None)
+
+
 # (version_id, apply_fn) — applied in order, recorded once.
 MIGRATIONS: list[tuple[str, "callable"]] = [
     ("0001_download_source_id", _m_0001),
@@ -122,6 +130,7 @@ MIGRATIONS: list[tuple[str, "callable"]] = [
     ("0009_library_ra_checked_at", _m_0009_library_ra_checked_at),
     ("0010_normalize_system_names", _m_0010_normalize_system_names),
     ("0011_hunt_attempt_source_url", _m_0011_hunt_attempt_source_url),
+    ("0012_library_missing", _m_0012_library_missing),
 ]
 
 
