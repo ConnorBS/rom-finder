@@ -115,6 +115,21 @@ def _rahasher_available() -> bool:
     return shutil.which(_RAHASHER_BIN) is not None
 
 
+def _applog_fail(system_name: str, ra_id, rom_path: Path, reason: str) -> None:
+    """Surface a RAHasher failure to the HTTP-visible app log (not just Docker
+    stdout) — so an agent can diagnose why a system/format won't hash."""
+    try:
+        from app.services import logger as applog
+        applog.warning(
+            "hash",
+            f"RAHasher could not hash '{rom_path.name}' (system {system_name}, id {ra_id}, "
+            f"{rom_path.suffix or 'no-ext'}): {reason}",
+            {"system": system_name, "ra_id": ra_id, "file": rom_path.name, "suffix": rom_path.suffix},
+        )
+    except Exception:
+        pass
+
+
 def rahasher_status() -> dict:
     """Availability of the RAHasher binary — for /api/status and the disc guard.
 
@@ -205,6 +220,7 @@ async def compute_ra_hash(rom_path: Path, system_name: str) -> str | None:
         if proc.returncode != 0:
             print(f"[rahasher] exit {proc.returncode} for {rom_path.name}: {stderr_text}", flush=True)
             logger.warning("RAHasher exited %d for %s: %s", proc.returncode, rom_path.name, stderr_text)
+            _applog_fail(system_name, ra_id, rom_path, f"exit {proc.returncode}: {stderr_text[:300]}")
             return None
         if stderr_text:
             # Log any stderr even on success — CHD/format warnings appear here
@@ -215,6 +231,7 @@ async def compute_ra_hash(rom_path: Path, system_name: str) -> str | None:
             return ra_hash
         print(f"[rahasher] unexpected output for {rom_path.name}: {ra_hash!r}", flush=True)
         logger.warning("RAHasher returned unexpected output for %s: %r", rom_path.name, ra_hash)
+        _applog_fail(system_name, ra_id, rom_path, f"unexpected output: {ra_hash[:80]!r}; stderr: {stderr_text[:200]}")
         return None
     except asyncio.TimeoutError:
         logger.warning("RAHasher timed out for %s", rom_path.name)
