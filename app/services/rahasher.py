@@ -46,6 +46,8 @@ SYSTEM_NAME_TO_RA_ID: dict[str, int] = {
     "Game Gear": 15,
     "Atari Jaguar": 17,
     "Nintendo DS": 18,
+    "Wii": 19,
+    "Wii U": 20,
     "PlayStation 2": 21,
     "Magnavox Odyssey 2": 23,
     "Pokemon Mini": 24,

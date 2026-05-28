@@ -47,6 +47,7 @@ _ROM_EXTENSIONS = {
     ".hex",                                              # Arduboy
     ".bin", ".rom",                                      # Generic cartridge
     ".iso", ".cue", ".chd", ".bin",                      # Disc images
+    ".rvz", ".wbfs", ".wia", ".gcz",                     # GameCube / Wii disc images
     ".psp", ".cso",                                      # PSP
 }
 
@@ -227,6 +228,8 @@ DISC_SYSTEMS = {
     "PC-FX",
     "TurboGrafx CD",
     "GameCube",
+    "Wii",
+    "Wii U",
     "Atari Jaguar CD",
 }
 
