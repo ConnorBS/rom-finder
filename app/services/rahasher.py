@@ -111,8 +111,46 @@ _FULL_MAP = {**SYSTEM_NAME_TO_RA_ID, **_ALIASES}
 _RAHASHER_BIN = "RAHasher"  # expected on PATH
 
 
+_NODTOOL_BIN = "nodtool"
+# GameCube/Wii systems whose compressed disc images RAHasher can't read directly.
+_GC_WII_SYSTEMS = {"GameCube", "Wii", "Wii U"}
+# Compressed disc formats nodtool decompresses to raw ISO (.iso is read by RAHasher).
+_NODTOOL_FORMATS = {".rvz", ".wbfs", ".wia", ".gcz", ".ciso", ".nfs", ".tgc"}
+
+
 def _rahasher_available() -> bool:
     return shutil.which(_RAHASHER_BIN) is not None
+
+
+def _nodtool_available() -> bool:
+    return shutil.which(_NODTOOL_BIN) is not None
+
+
+async def _convert_to_iso(src: Path, system_name: str, ra_id) -> Path | None:
+    """Decompress a GameCube/Wii disc image to a temporary raw ISO via nodtool, so
+    RAHasher can hash it. Returns the temp ISO path (caller must delete it) or None.
+    Wii ISOs are large, so the temp lands next to the source (same volume) and the
+    conversion gets a generous timeout."""
+    dst = src.parent / (src.stem + ".rahash.iso")
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            _NODTOOL_BIN, "convert", str(src), str(dst),
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=900)  # 15 min
+        if proc.returncode == 0 and dst.exists() and dst.stat().st_size > 0:
+            return dst
+        _applog_fail(system_name, ra_id, src,
+                     f"nodtool convert exit {proc.returncode}: {stderr.decode()[:200]}")
+    except asyncio.TimeoutError:
+        _applog_fail(system_name, ra_id, src, "nodtool convert timed out (15 min)")
+    except Exception as exc:
+        _applog_fail(system_name, ra_id, src, f"nodtool convert error: {exc}")
+    try:
+        dst.unlink(missing_ok=True)
+    except OSError:
+        pass
+    return None
 
 
 def _applog_fail(system_name: str, ra_id, rom_path: Path, reason: str) -> None:
@@ -209,13 +247,24 @@ async def compute_ra_hash(rom_path: Path, system_name: str) -> str | None:
         logger.debug("No RA system ID for %r — skipping RAHasher", system_name)
         return None
 
+    # RAHasher can't read compressed GameCube/Wii images (RVZ/WBFS/WIA/GCZ/CISO).
+    # Decompress to a temporary raw ISO with nodtool first, then hash the ISO.
+    hash_target = rom_path
+    temp_iso: Path | None = None
+    if (system_name in _GC_WII_SYSTEMS
+            and rom_path.suffix.lower() in _NODTOOL_FORMATS
+            and _nodtool_available()):
+        temp_iso = await _convert_to_iso(rom_path, system_name, ra_id)
+        if temp_iso is not None:
+            hash_target = temp_iso
+
     try:
         proc = await asyncio.create_subprocess_exec(
-            _RAHASHER_BIN, str(ra_id), str(rom_path),
+            _RAHASHER_BIN, str(ra_id), str(hash_target),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60)
         stderr_text = stderr.decode().strip()
         if proc.returncode != 0:
             print(f"[rahasher] exit {proc.returncode} for {rom_path.name}: {stderr_text}", flush=True)
@@ -239,3 +288,9 @@ async def compute_ra_hash(rom_path: Path, system_name: str) -> str | None:
     except Exception as exc:
         logger.warning("RAHasher error for %s: %s", rom_path.name, exc)
         return None
+    finally:
+        if temp_iso is not None:
+            try:
+                temp_iso.unlink(missing_ok=True)
+            except OSError:
+                pass

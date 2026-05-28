@@ -33,6 +33,8 @@ RA doesn't always use plain MD5 — many systems use platform-specific algorithm
 `https://github.com/RetroAchievements/RALibretro/releases/latest` → `RAHasher-x64-Linux-{version}.zip`
 The Dockerfile downloads it at build time. Without it, disc-based systems (Saturn, PS1/2, Dreamcast, Sega CD, etc.) hash as plain MD5 of the image file and will never match RA's database.
 
+**Wii/GameCube need nodtool**: RAHasher (RALibretro) **cannot read compressed GC/Wii images** (RVZ/WBFS/WIA/GCZ/CISO — RALibretro issue #415 is unimplemented; in RetroArch the Dolphin core decompresses for rc_hash, but the standalone hasher has no decoder). `compute_ra_hash` detects a `_GC_WII_SYSTEMS` ROM in a `_NODTOOL_FORMATS` container and **decompresses it to a temporary raw ISO via `nodtool`** (nod-rs, bundled in the Dockerfile) before running RAHasher, then deletes the temp. Raw `.iso` is hashed directly. The temp ISO is multi-GB and lands next to the source (download/check volume), with a 15-min conversion timeout. RAHasher failures (incl. unsupported formats and nodtool errors) now log to `applog` category `hash` (HTTP-visible), not just stdout.
+
 **Availability is surfaced (Phase 6), not silent:** `rahasher_status()` powers `/api/status.rahasher`; `main.py` startup also writes an `applog` info/warning (HTTP-visible via `/logs`, not just Docker stdout); and `/settings` shows an amber banner when it's missing. **Disc guard:** all hashing goes through `ra_hash_or_fallback(path, system) -> (hash, used_rahasher)`, which logs a clear WARNING when a `DISC_SYSTEMS` ROM falls back to MD5 because RAHasher is absent (`disc_without_rahasher()`), so it's diagnosable instead of masquerading as "not in RA database".
 
 ### Rate limiting

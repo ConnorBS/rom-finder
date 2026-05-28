@@ -9,10 +9,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # RAHasher is distributed via RALibretro releases (not a standalone repo).
 # Without it, disc-based systems (Saturn, PS1/2, Dreamcast, Wii/GameCube, etc.) fall
 # back to a plain MD5 of the image file, which will never match RA's disc hash.
-# This layer sits before the code COPY, so it's cached across code-only deploys —
-# a stale cache shipped an old RAHasher that couldn't read .rvz (Wii/GC) and failed
-# Wii verification. Bump RAHASHER_REFRESH to force a re-fetch of the latest binary
-# (1.8.3+ supports RVZ).
+# This layer sits before the code COPY, so it's cached across code-only deploys.
+# Bump RAHASHER_REFRESH to force a re-fetch of the latest binary.
 ARG RAHASHER_REFRESH=2026-05-28
 RUN echo "RAHasher fetch (refresh ${RAHASHER_REFRESH})" \
     && HASHER_URL=$(curl -fsSL \
@@ -26,6 +24,16 @@ RUN echo "RAHasher fetch (refresh ${RAHASHER_REFRESH})" \
        | head -1 | xargs -I{} install -m 755 {} /usr/local/bin/RAHasher \
     && rm -rf /tmp/RAHasher.zip /tmp/rahasher \
     || echo "RAHasher download failed — Python fallback hashing will be used"
+
+# nodtool (nod-rs): RAHasher cannot read compressed GameCube/Wii disc images
+# (RVZ/WBFS/WIA/GCZ/CISO — RALibretro issue #415 unimplemented). nodtool decompresses
+# them to a raw ISO so RAHasher can then produce the correct RA disc hash.
+ARG NODTOOL_VERSION=v2.0.0-alpha.9
+RUN curl -fsSL \
+      "https://github.com/encounter/nod/releases/download/${NODTOOL_VERSION}/nodtool-linux-x86_64" \
+      -o /usr/local/bin/nodtool \
+    && chmod 755 /usr/local/bin/nodtool \
+    || echo "nodtool download failed — compressed Wii/GameCube dumps won't be hashable"
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
