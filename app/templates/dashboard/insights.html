@@ -35,7 +35,7 @@
 
   <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 mb-4">
     <h2 class="text-sm font-semibold text-gray-300 mb-2">When you play (weekday × hour, UTC)</h2>
-    <div id="heatChart"></div>
+    <div class="overflow-x-auto"><div id="heatChart" class="min-w-[640px]"></div></div>
   </div>
 
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -59,8 +59,8 @@
   </div>
 
   <!-- By-console table -->
-  <div class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden mt-4">
-    <table class="w-full text-sm">
+  <div class="bg-gray-900 border border-gray-800 rounded-lg overflow-x-auto mt-4">
+    <table class="w-full text-sm min-w-[460px]">
       <thead class="bg-gray-800/40 text-gray-500 text-xs">
         <tr class="border-b border-gray-800">
           <th class="text-left px-3 py-2 font-medium">Console</th>
