@@ -7,9 +7,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # RAHasher is distributed via RALibretro releases (not a standalone repo).
-# Without it, disc-based systems (Saturn, PS1/2, Dreamcast, etc.) fall back to
-# a plain MD5 of the image file, which will never match RA's disc hash.
-RUN HASHER_URL=$(curl -fsSL \
+# Without it, disc-based systems (Saturn, PS1/2, Dreamcast, Wii/GameCube, etc.) fall
+# back to a plain MD5 of the image file, which will never match RA's disc hash.
+# This layer sits before the code COPY, so it's cached across code-only deploys —
+# a stale cache shipped an old RAHasher that couldn't read .rvz (Wii/GC) and failed
+# Wii verification. Bump RAHASHER_REFRESH to force a re-fetch of the latest binary
+# (1.8.3+ supports RVZ).
+ARG RAHASHER_REFRESH=2026-05-28
+RUN echo "RAHasher fetch (refresh ${RAHASHER_REFRESH})" \
+    && HASHER_URL=$(curl -fsSL \
         "https://api.github.com/repos/RetroAchievements/RALibretro/releases/latest" \
       | grep -o '"browser_download_url": "[^"]*RAHasher-x64-Linux[^"]*"' \
       | head -1 | sed 's/.*"browser_download_url": "//;s/"$//') \
