@@ -59,7 +59,7 @@ DEFAULT_FOLDER_MAP: dict[str, str] = {
     "Game Boy Advance":            "Nintendo Game Boy Advanced",
     "Game Boy Color":              "Nintendo Game Boy Color",
     "GameCube":                    "Nintendo Gamecube",
-    "Wii":                         "Wii",
+    "Wii":                         "Nintendo Wii",
     "PlayStation":                 "Sony Playstation",
     "PlayStation 2":               "Sony Playstation 2",
     "PlayStation Portable":        "Playstation Portable",

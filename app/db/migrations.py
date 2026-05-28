@@ -117,6 +117,14 @@ def _m_0012_library_missing(s: Session) -> None:
     _add_column(s, "library", "missing_at", "TIMESTAMP", None)
 
 
+def _m_0013_normalize_wii(s: Session) -> None:
+    # Folder "Nintendo Wii" mapped to a non-canonical system "Nintendo Wii" before
+    # DEFAULT_FOLDER_MAP was fixed, splitting Wii into two groups. Canonicalize to
+    # "Wii" (RA's name) so it matches and displays as one console.
+    for table in ("library", "wanted_games"):
+        s.exec(text(f"UPDATE {table} SET system = 'Wii' WHERE system = 'Nintendo Wii'"))
+
+
 # (version_id, apply_fn) — applied in order, recorded once.
 MIGRATIONS: list[tuple[str, "callable"]] = [
     ("0001_download_source_id", _m_0001),
@@ -131,6 +139,7 @@ MIGRATIONS: list[tuple[str, "callable"]] = [
     ("0010_normalize_system_names", _m_0010_normalize_system_names),
     ("0011_hunt_attempt_source_url", _m_0011_hunt_attempt_source_url),
     ("0012_library_missing", _m_0012_library_missing),
+    ("0013_normalize_wii", _m_0013_normalize_wii),
 ]
 
 

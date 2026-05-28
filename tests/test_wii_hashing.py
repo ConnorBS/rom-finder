@@ -27,6 +27,16 @@ def test_wii_mapped_to_rahasher():
     assert SYSTEM_NAME_TO_RA_ID["Wii"] == 19
 
 
+def test_folder_style_names_resolve():
+    # Folder-derived system names (user names folders "Nintendo X") must still resolve.
+    assert get_ra_system_id("Nintendo Wii") == 19
+    assert get_ra_system_id("Nintendo Gamecube") == 80
+
+
+def test_wad_is_a_rom_extension():
+    assert ".wad" in _ROM_EXTENSIONS and ".wad" in ROM_EXTENSIONS
+
+
 def test_wii_is_a_disc_system():
     # So the disc-guard treats it correctly and it never silently plain-MD5s.
     assert "Wii" in DISC_SYSTEMS and "Wii U" in DISC_SYSTEMS
@@ -39,7 +49,8 @@ def test_wii_gc_formats_recognized():
 
 
 def test_rvz_converted_to_iso_before_rahasher(monkeypatch, tmp_path):
-    # A Wii .rvz must be decompressed to ISO (nodtool) and RAHasher runs on the ISO.
+    # A "Nintendo Wii"-folder .rvz (non-canonical system name) must still convert —
+    # the trigger is the resolved RA id, not the exact system string.
     rvz = tmp_path / "Kirby.rvz"; rvz.write_bytes(b"rvz")
     iso = tmp_path / "Kirby.rahash.iso"; iso.write_bytes(b"iso")
     monkeypatch.setattr(rahasher, "_rahasher_available", lambda: True)
@@ -58,7 +69,7 @@ def test_rvz_converted_to_iso_before_rahasher(monkeypatch, tmp_path):
         return _FakeProc()
 
     monkeypatch.setattr(rahasher.asyncio, "create_subprocess_exec", fake_exec)
-    out = asyncio.run(rahasher.compute_ra_hash(rvz, "Wii"))
+    out = asyncio.run(rahasher.compute_ra_hash(rvz, "Nintendo Wii"))
     assert out == "ad50325115bee56a6ec875fed32aa711"
     assert conv["src"] == rvz                       # conversion attempted on the .rvz
     assert str(iso) in cap["args"]                  # RAHasher hashed the ISO, not the .rvz

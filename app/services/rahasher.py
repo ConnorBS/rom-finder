@@ -112,8 +112,10 @@ _RAHASHER_BIN = "RAHasher"  # expected on PATH
 
 
 _NODTOOL_BIN = "nodtool"
-# GameCube/Wii systems whose compressed disc images RAHasher can't read directly.
-_GC_WII_SYSTEMS = {"GameCube", "Wii", "Wii U"}
+# GameCube(80)/Wii(19)/Wii U(20) — matched by resolved RA id (not exact system name)
+# so folder-derived names like "Nintendo Wii" / "Nintendo Gamecube" still trigger the
+# decompress step (get_ra_system_id resolves those via substring).
+_GC_WII_RA_IDS = {19, 20, 80}
 # Compressed disc formats nodtool decompresses to raw ISO (.iso is read by RAHasher).
 _NODTOOL_FORMATS = {".rvz", ".wbfs", ".wia", ".gcz", ".ciso", ".nfs", ".tgc"}
 
@@ -251,7 +253,7 @@ async def compute_ra_hash(rom_path: Path, system_name: str) -> str | None:
     # Decompress to a temporary raw ISO with nodtool first, then hash the ISO.
     hash_target = rom_path
     temp_iso: Path | None = None
-    if (system_name in _GC_WII_SYSTEMS
+    if (ra_id in _GC_WII_RA_IDS
             and rom_path.suffix.lower() in _NODTOOL_FORMATS
             and _nodtool_available()):
         temp_iso = await _convert_to_iso(rom_path, system_name, ra_id)

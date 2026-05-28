@@ -35,6 +35,7 @@ ROM_EXTENSIONS = {
     ".iso", ".cue", ".bin", ".img",          # Disc-based (PS1/PS2/Saturn/etc.)
     ".chd",                                  # Compressed Hunks of Data
     ".rvz", ".wbfs", ".wia", ".gcz",         # GameCube / Wii disc images
+    ".wad",                                  # WiiWare
     ".cso", ".pbp",                          # PSP
     ".rom",                                  # Generic ROM
     ".zip", ".7z",                           # Archives

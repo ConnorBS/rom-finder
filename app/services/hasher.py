@@ -48,6 +48,7 @@ _ROM_EXTENSIONS = {
     ".bin", ".rom",                                      # Generic cartridge
     ".iso", ".cue", ".chd", ".bin",                      # Disc images
     ".rvz", ".wbfs", ".wia", ".gcz",                     # GameCube / Wii disc images
+    ".wad",                                              # WiiWare
     ".psp", ".cso",                                      # PSP
 }
 
