@@ -261,16 +261,13 @@ async def compute_ra_hash(rom_path: Path, system_name: str) -> str | None:
     the system ID is unknown, or execution fails (caller should fall back to
     the Python hasher).
     """
-    if not _rahasher_available():
-        return None
-
     ra_id = get_ra_system_id(system_name)
     if ra_id is None:
         logger.debug("No RA system ID for %r — skipping RAHasher", system_name)
         return None
 
-    # RAHasher can't read compressed GameCube/Wii images (RVZ/WBFS/WIA/GCZ/CISO).
-    # Decompress to a temporary raw ISO with nodtool first, then hash the ISO.
+    # GameCube/Wii compressed images (RVZ/WBFS/WIA/GCZ/CISO) — decompress to a
+    # temporary raw ISO with nodtool first, then hash the ISO.
     hash_target = rom_path
     temp_iso: Path | None = None
     if (ra_id in _GC_WII_RA_IDS
@@ -281,6 +278,19 @@ async def compute_ra_hash(rom_path: Path, system_name: str) -> str | None:
             hash_target = temp_iso
 
     try:
+        # GameCube: the standalone RALibretro RAHasher's GameCube hash does NOT match
+        # RA's server (it lags), so use a faithful Python port of rc_hash's GameCube
+        # method (partition header + main.dol segments) on the (converted) ISO.
+        if ra_id == 16:
+            from app.services.hasher import md5_gamecube
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, md5_gamecube, hash_target)
+            if not result:
+                _applog_fail(system_name, ra_id, rom_path, "not a GameCube disc / parse failed")
+            return result or None
+
+        if not _rahasher_available():
+            return None
         proc = await asyncio.create_subprocess_exec(
             _RAHASHER_BIN, str(ra_id), str(hash_target),
             stdout=asyncio.subprocess.PIPE,

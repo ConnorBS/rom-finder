@@ -155,6 +155,54 @@ def md5_arduboy(path: Path) -> str:
     return h.hexdigest()
 
 
+def md5_gamecube(path: Path) -> str:
+    """GameCube: faithful port of rcheevos rc_hash_gamecube /
+    rc_hash_nintendo_disc_partition (src/rhash/hash_disc.c). Hashes the partition
+    header + the main.dol code/data segments — NOT the whole disc — which is why a
+    losslessly-decompressed ISO (e.g. nodtool's RVZ→ISO output) matches RA. Returns
+    the hash, or '' if the file isn't a GameCube disc. (The standalone RALibretro
+    RAHasher's GameCube hash lags RA's server, so we compute it ourselves.)"""
+    base_header = 0x2440
+    max_header = 1024 * 1024
+    chunk = 1024 * 1024
+    h = hashlib.md5()
+    with open(path, "rb") as f:
+        f.seek(0x1c)
+        if f.read(4) != b"\xc2\x33\x9f\x3d":          # GameCube magic word
+            return ""
+        # Apploader sizes (big-endian) → total header size.
+        f.seek(base_header + 0x14)
+        body = struct.unpack(">I", f.read(4))[0]
+        trailer = struct.unpack(">I", f.read(4))[0]
+        header_size = min(base_header + 0x20 + body + trailer, max_header)
+        # 1) hash the partition header
+        f.seek(0)
+        header = f.read(header_size)
+        h.update(header)
+        # main.dol offset is big-endian at 0x420 within the header
+        dol_offset = struct.unpack_from(">I", header, 0x420)[0]
+        # DOL header: 7 code + 11 data segments — offsets at 0x00.., sizes at 0x90..
+        f.seek(dol_offset)
+        addr = f.read(0xD8)
+        if len(addr) < 0xD8:
+            return ""
+        # 2) hash each non-empty segment, in order
+        for ix in range(18):
+            off = struct.unpack_from(">I", addr, ix * 4)[0]
+            size = struct.unpack_from(">I", addr, 0x90 + ix * 4)[0]
+            if size == 0:
+                continue
+            f.seek(off)
+            remaining = size
+            while remaining > 0:
+                data = f.read(min(remaining, chunk))
+                if not data:
+                    break
+                h.update(data)
+                remaining -= len(data)
+    return h.hexdigest()
+
+
 def md5_n64(path: Path) -> str:
     """N64: MD5 of ROM data, byte-swap v64 (byte-swapped) or n64 (word-swapped) to z64 first."""
     with open(path, "rb") as f:

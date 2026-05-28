@@ -33,6 +33,41 @@ def test_gamecube_ra_id_is_16():
     assert SYSTEM_NAME_TO_RA_ID["GameCube"] == 16
 
 
+def test_md5_gamecube_hashes_header_plus_dol_segments(tmp_path):
+    # Faithful rc_hash GameCube: hash partition header + non-empty main.dol segments,
+    # in order. Synthetic disc validates the offsets/endianness/order of the port.
+    import struct
+    import hashlib as _hl
+    from app.services.hasher import md5_gamecube
+    size = 0x6000
+    disc = bytearray(i % 251 for i in range(size))
+    disc[0x1c:0x20] = b"\xc2\x33\x9f\x3d"                      # GameCube magic
+    body, trailer = 0x40, 0x10
+    disc[0x2440 + 0x14:0x2440 + 0x18] = struct.pack(">I", body)
+    disc[0x2440 + 0x18:0x2440 + 0x1c] = struct.pack(">I", trailer)
+    header_size = 0x2440 + 0x20 + body + trailer
+    dol = 0x3000
+    disc[0x420:0x424] = struct.pack(">I", dol)                 # main.dol offset
+    disc[dol:dol + 0xD8] = bytes(0xD8)                         # clear DOL header
+    disc[dol + 0x00:dol + 0x04] = struct.pack(">I", 0x4000)    # code seg 0 offset
+    disc[dol + 0x90:dol + 0x94] = struct.pack(">I", 0x80)      # code seg 0 size
+    disc[dol + 0x1c:dol + 0x20] = struct.pack(">I", 0x5000)    # data seg (ix 7) offset
+    disc[dol + 0xAC:dol + 0xB0] = struct.pack(">I", 0x40)      # data seg (ix 7) size
+    f = tmp_path / "game.iso"; f.write_bytes(bytes(disc))
+
+    exp = _hl.md5()
+    exp.update(bytes(disc[0:header_size]))
+    exp.update(bytes(disc[0x4000:0x4000 + 0x80]))
+    exp.update(bytes(disc[0x5000:0x5000 + 0x40]))
+    assert md5_gamecube(f) == exp.hexdigest()
+
+
+def test_md5_gamecube_rejects_non_gamecube(tmp_path):
+    from app.services.hasher import md5_gamecube
+    f = tmp_path / "notgc.iso"; f.write_bytes(b"\x00" * 0x3000)   # no magic word
+    assert md5_gamecube(f) == ""
+
+
 def test_folder_style_names_resolve():
     # Folder-derived system names (user names folders "Nintendo X") must still resolve.
     assert get_ra_system_id("Nintendo Wii") == 19
