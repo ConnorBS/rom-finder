@@ -27,10 +27,16 @@ def test_wii_mapped_to_rahasher():
     assert SYSTEM_NAME_TO_RA_ID["Wii"] == 19
 
 
+def test_gamecube_ra_id_is_16():
+    # RA's GameCube console is 16 (was wrongly mapped to 80 → never matched).
+    assert get_ra_system_id("GameCube") == 16
+    assert SYSTEM_NAME_TO_RA_ID["GameCube"] == 16
+
+
 def test_folder_style_names_resolve():
     # Folder-derived system names (user names folders "Nintendo X") must still resolve.
     assert get_ra_system_id("Nintendo Wii") == 19
-    assert get_ra_system_id("Nintendo Gamecube") == 80
+    assert get_ra_system_id("Nintendo Gamecube") == 16
 
 
 def test_wad_is_a_rom_extension():
@@ -74,6 +80,19 @@ def test_rvz_converted_to_iso_before_rahasher(monkeypatch, tmp_path):
     assert conv["src"] == rvz                       # conversion attempted on the .rvz
     assert str(iso) in cap["args"]                  # RAHasher hashed the ISO, not the .rvz
     assert str(rvz) not in cap["args"]
+
+
+def test_convert_scratch_dir_is_check_dir_not_rom_library(fresh_engine, tmp_path):
+    # Temp ISOs must land in the review/staging area, never the curated ROM library.
+    from sqlmodel import Session
+    from app.db.database import engine
+    from app.services import settings as app_settings
+    with Session(engine) as s:
+        app_settings.set(s, "check_dir", str(tmp_path))
+        s.commit()
+    d = rahasher._convert_scratch_dir()
+    assert d == tmp_path / "_convert"
+    assert d.exists()
 
 
 def test_plain_iso_not_converted(monkeypatch, tmp_path):

@@ -130,7 +130,7 @@ SYSTEMS: dict[int, str] = {
     72: "WASM-4",
     76: "PC Engine CD",
     78: "Nintendo DSi",
-    80: "GameCube",
+    16: "GameCube",
     89: "Uzebox",
 }
 

@@ -73,7 +73,7 @@ SYSTEM_NAME_TO_RA_ID: dict[str, int] = {
     "Philips CD-i": 57,
     "PC Engine CD": 76,
     "Nintendo DSi": 78,
-    "GameCube": 80,
+    "GameCube": 16,
 }
 
 # Additional aliases for common abbreviated names
@@ -112,10 +112,10 @@ _RAHASHER_BIN = "RAHasher"  # expected on PATH
 
 
 _NODTOOL_BIN = "nodtool"
-# GameCube(80)/Wii(19)/Wii U(20) — matched by resolved RA id (not exact system name)
+# GameCube(16)/Wii(19)/Wii U(20) — matched by resolved RA id (not exact system name)
 # so folder-derived names like "Nintendo Wii" / "Nintendo Gamecube" still trigger the
 # decompress step (get_ra_system_id resolves those via substring).
-_GC_WII_RA_IDS = {19, 20, 80}
+_GC_WII_RA_IDS = {16, 19, 20}
 # Compressed disc formats nodtool decompresses to raw ISO (.iso is read by RAHasher).
 _NODTOOL_FORMATS = {".rvz", ".wbfs", ".wia", ".gcz", ".ciso", ".nfs", ".tgc"}
 
@@ -128,12 +128,32 @@ def _nodtool_available() -> bool:
     return shutil.which(_NODTOOL_BIN) is not None
 
 
+def _convert_scratch_dir() -> Path:
+    """Where temporary decompressed ISOs go — the review/staging area (`check_dir`),
+    NEVER the curated ROM library (`download_dir`). Falls back to the OS temp dir if
+    check_dir isn't configured. The dir is created if missing."""
+    import tempfile
+    check_dir = ""
+    try:
+        from sqlmodel import Session
+        from app.db.database import engine
+        from app.services import settings as app_settings
+        with Session(engine) as s:
+            check_dir = app_settings.get(s, "check_dir", "")
+    except Exception:
+        pass
+    base = Path(check_dir) if check_dir else Path(tempfile.gettempdir())
+    scratch = base / "_convert"
+    scratch.mkdir(parents=True, exist_ok=True)
+    return scratch
+
+
 async def _convert_to_iso(src: Path, system_name: str, ra_id) -> Path | None:
     """Decompress a GameCube/Wii disc image to a temporary raw ISO via nodtool, so
     RAHasher can hash it. Returns the temp ISO path (caller must delete it) or None.
-    Wii ISOs are large, so the temp lands next to the source (same volume) and the
-    conversion gets a generous timeout."""
-    dst = src.parent / (src.stem + ".rahash.iso")
+    The temp ISO is written to the review/staging scratch dir (NOT the ROM library),
+    and the conversion gets a generous timeout (Wii ISOs are large)."""
+    dst = _convert_scratch_dir() / (src.stem + ".rahash.iso")
     try:
         proc = await asyncio.create_subprocess_exec(
             _NODTOOL_BIN, "convert", str(src), str(dst),
