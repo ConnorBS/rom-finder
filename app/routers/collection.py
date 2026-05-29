@@ -66,6 +66,8 @@ def _build_collection(session: Session) -> list[dict]:
             "library_id": lib.id if lib else None,
             "wanted_id": w.id,
             "missing": lib.missing if lib else False,
+            "duplicate": bool(lib and lib.duplicate_of),
+            "duplicate_of": lib.duplicate_of if lib else None,
             "unsupported": is_ra_unsupported(w.system),
             "added_at": w.added_at,
         })
@@ -85,6 +87,8 @@ def _build_collection(session: Session) -> list[dict]:
                 "library_id": e.id,
                 "wanted_id": None,
                 "missing": e.missing,
+                "duplicate": bool(e.duplicate_of),
+                "duplicate_of": e.duplicate_of,
                 "unsupported": is_ra_unsupported(e.system),
                 "added_at": e.added_at,
             })
@@ -118,6 +122,8 @@ async def collection_page(
         filtered = [i for i in filtered if i.get("unsupported")]
     elif status == "missing":
         filtered = [i for i in filtered if i.get("missing")]
+    elif status == "duplicate":
+        filtered = [i for i in filtered if i.get("duplicate")]
     elif status:
         filtered = [i for i in filtered if i["status"] == status]
 
@@ -168,6 +174,7 @@ async def collection_page(
                 "verified": sum(1 for i in all_items if i["status"] == "verified"),
                 "no_ra": sum(1 for i in all_items if i.get("file_hash") and not i.get("ra_matched") and not i.get("unsupported")),
                 "unsupported": sum(1 for i in all_items if i.get("unsupported")),
+                "duplicate": sum(1 for i in all_items if i.get("duplicate")),
             },
         },
     )
@@ -188,6 +195,7 @@ async def collection_counts(session: Session = Depends(get_session)):
         "verified": sum(1 for i in all_items if i["status"] == "verified"),
         "no_ra": sum(1 for i in all_items if i.get("file_hash") and not i.get("ra_matched") and not i.get("unsupported")),
         "unsupported": sum(1 for i in all_items if i.get("unsupported")),
+        "duplicate": sum(1 for i in all_items if i.get("duplicate")),
     }
     parts = [f'<span>{counts["total"]} total</span>']
     if counts["verified"]:
@@ -202,12 +210,27 @@ async def collection_counts(session: Session = Depends(get_session)):
         parts.append(f'<span class="text-orange-400">{counts["no_ra"]} no RA match</span>')
     if counts["unsupported"]:
         parts.append(f'<span class="text-slate-500">{counts["unsupported"]} unsupported</span>')
+    if counts["duplicate"]:
+        parts.append(f'<span class="text-purple-400">{counts["duplicate"]} duplicate</span>')
     return HTMLResponse(" ".join(parts))
 
 
 # ---------------------------------------------------------------------------
 # Bulk actions
 # ---------------------------------------------------------------------------
+
+@router.post("/collection/recompute-duplicates", response_class=HTMLResponse)
+async def recompute_duplicates_endpoint(session: Session = Depends(get_session)):
+    """Re-derive the duplicate tags across the whole library (LOCAL — no RA calls)."""
+    from app.services.duplicates import recompute_duplicates
+    result = recompute_duplicates(session)
+    applog.log_action("recompute_duplicates", result)
+    n = result["duplicates"]
+    msg = (f'&#10003; Tagged {n} duplicate{"s" if n != 1 else ""} '
+           f'across {result["groups"]} group{"s" if result["groups"] != 1 else ""}.'
+           if n else "&#10003; No duplicates found.")
+    return HTMLResponse(f'<span class="text-green-400 text-xs">{msg}</span>')
+
 
 @router.post("/collection/bulk/scan", response_class=HTMLResponse)
 async def bulk_scan(session: Session = Depends(get_session)):
@@ -299,6 +322,9 @@ async def bulk_scan(session: Session = Depends(get_session)):
             flagged += 1
 
     session.commit()
+    if added or restored:
+        from app.services.duplicates import recompute_duplicates
+        recompute_duplicates(session)
     applog.log_action("bulk_scan", {
         "download_dir": download_dir, "scanned": scanned, "folders": folders,
         "added": added, "flagged_missing": flagged, "restored": restored,
@@ -566,6 +592,7 @@ async def _do_rehash(entry_ids: list[int]) -> None:
         session.commit()
     activity_store.finish(batch_id)
     applog.log_action("bulk_rehash_done", {"count": processed, "cancelled": activity_store.is_cancelled(batch_id)})
+    _refresh_duplicates()
 
 
 async def _fetch_cover_for_library(library_id: int, ra_game_id: int, game_title: str, system: str, batch_id: str = "") -> None:
@@ -714,3 +741,15 @@ async def _do_verify(entry_ids: list[int], username: str, api_key: str) -> None:
         activity_store.complete_entry(batch_id, eid)
     activity_store.finish(batch_id)
     applog.log_action("bulk_verify_done", {"checked": checked, "matched": matched})
+    _refresh_duplicates()
+
+
+def _refresh_duplicates() -> None:
+    """Re-derive duplicate tags after a pass that may change hashes/RA ids. Best-effort
+    — a tagging hiccup must never fail the hashing/verify batch that just succeeded."""
+    try:
+        from app.services.duplicates import recompute_duplicates
+        with Session(engine) as session:
+            recompute_duplicates(session)
+    except Exception as exc:
+        applog.warning("hash", f"recompute_duplicates failed: {exc}")

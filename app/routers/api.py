@@ -284,6 +284,7 @@ async def api_status(session: Session = Depends(get_session)):
             "library_ra_matched": _count(session, LibraryEntry, LibraryEntry.ra_matched == True),  # noqa: E712
             "no_ra": _count(session, LibraryEntry, LibraryEntry.file_hash != None, LibraryEntry.ra_matched == False, LibraryEntry.system.not_in(RA_UNSUPPORTED_SYSTEMS)),  # noqa: E711,E712
             "unsupported": _count(session, LibraryEntry, LibraryEntry.system.in_(RA_UNSUPPORTED_SYSTEMS)),
+            "duplicates": _count(session, LibraryEntry, LibraryEntry.duplicate_of != None),  # noqa: E711
             "library_unhashed": _count(session, LibraryEntry, LibraryEntry.file_hash == None),  # noqa: E711
             "wanted_total": _count(session, WantedGame),
             "wanted_verified": _count(session, WantedGame, WantedGame.status == HuntStatus.verified),

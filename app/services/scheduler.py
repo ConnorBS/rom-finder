@@ -167,6 +167,11 @@ async def run_scan() -> dict:
                     applog.warning("scheduler", f"RA verify failed for {entry.file_name}: {exc}")
             session.commit()
 
+    if added or hashed or verified:
+        from app.services.duplicates import recompute_duplicates
+        with Session(engine) as session:
+            recompute_duplicates(session)
+
     _set_last_run("sched_scan_last_run")
     applog.info("scheduler", f"Scan pipeline: {added} added, {hashed} hashed, {verified} RA matched")
     return {"added": added, "hashed": hashed, "verified": verified}
