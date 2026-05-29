@@ -132,6 +132,14 @@ def _m_0014_library_duplicate_of(s: Session) -> None:
     _add_column(s, "library", "duplicate_of", "INTEGER", None)
 
 
+def _m_0015_library_saves(s: Session) -> None:
+    # Read-only save-file detection: which games have an emulator save, matched by
+    # filename stem. Populated by services/saves.py::scan_saves; never edited/deleted.
+    _add_column(s, "library", "save_count", "INTEGER", "0")
+    _add_column(s, "library", "save_files", "VARCHAR", "''")
+    _add_column(s, "library", "save_updated_at", "TIMESTAMP", None)
+
+
 # (version_id, apply_fn) — applied in order, recorded once.
 MIGRATIONS: list[tuple[str, "callable"]] = [
     ("0001_download_source_id", _m_0001),
@@ -148,6 +156,7 @@ MIGRATIONS: list[tuple[str, "callable"]] = [
     ("0012_library_missing", _m_0012_library_missing),
     ("0013_normalize_wii", _m_0013_normalize_wii),
     ("0014_library_duplicate_of", _m_0014_library_duplicate_of),
+    ("0015_library_saves", _m_0015_library_saves),
 ]
 
 

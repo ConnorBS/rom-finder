@@ -57,6 +57,9 @@ its `.cue` sibling's hash and get tagged. `.bin`/`.img` tracks and different dis
 tagged (subsets — deleting a track would break its `.cue`). Card view shows a purple
 `⧉ Duplicate` badge; `/api/status.db.duplicates` carries the count.
 
+### Collection `has_save` filter + save detection (read-only)
+`status == "has_save"` filters to entries with `LibraryEntry.save_count > 0`. Saves are matched to ROMs by filename stem in `services/saves.py::scan_saves`, run after scan/folder-scan and via **`POST /collection/scan-saves`** (the "Scan saves" button). A 💾 **Save** badge shows on cards, a header count ("N with save"), and the card detail slide-over lists the actual save filenames + kind (battery/state). **There is deliberately NO save edit/delete UI or endpoint — saves are read-only.** The delete-file action (`_delete_rom_file`) only removes ROM/disc-track extensions, never `.srm`/`.sav`/`.state`/etc.
+
 ### Collection `unsupported` filter (platforms RA can't verify)
 `status == "unsupported"` is another computed filter: the entry's `system` is in `ra_client.RA_UNSUPPORTED_SYSTEMS` (curated set, e.g. `Nintendo 3DS`, `Archipelago` — RA has no console for them, so they can NEVER hash-match). These are **excluded from the `no_ra` count/filter** (so they stop looking like failures) and get a slate `⊘ No RA platform` badge + an "Unsupported" filter chip + a count in the header bar. Every verify path skips them so RA is never called for an unverifiable platform: the resumable verify (`library_pending_ra_check(exclude_systems=...)`), `bulk_verify` (SQL `system.not_in(...)`), and the single `/library/{id}/verify-ra` (early return). Curated, not derived from `SYSTEMS` — misnamed-but-supported folders like `tg16`/`mega-duck-slash-cougar-boy` do verify, so a "not in SYSTEMS" heuristic would wrongly hide real matches.
 

@@ -141,6 +141,10 @@ class LibraryEntry(SQLModel, table=True):
     missing_at: Optional[datetime] = None       # when first detected missing
     duplicate_of: Optional[int] = None   # canonical sibling's library id when this entry is a
                                          # redundant copy (same content/game); None = canonical/unique (migration 0014)
+    save_count: int = 0          # matched emulator save files; >0 = game has a save (migration 0015)
+    save_files: str = ""         # JSON [{name,kind,size,mtime}] of matched saves — READ-ONLY,
+                                 # the app never edits or deletes saves
+    save_updated_at: Optional[datetime] = None   # newest matched save's mtime
     added_at: datetime = Field(default_factory=datetime.utcnow)
 
 

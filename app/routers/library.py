@@ -149,10 +149,15 @@ async def library_detail(
     if siblings:
         canonical = session.get(LibraryEntry, canonical_id) or entry
         dup_group = [canonical] + list(siblings)
+    # Matched save files (read-only — listed so the user can see the naming).
+    try:
+        saves = json.loads(entry.save_files) if entry.save_files else []
+    except ValueError:
+        saves = []
     return templates.TemplateResponse(
         request, "partials/library_detail.html",
         {"entry": entry, "downloads": downloads,
-         "dup_group": dup_group, "canonical_id": canonical_id},
+         "dup_group": dup_group, "canonical_id": canonical_id, "saves": saves},
     )
 
 
