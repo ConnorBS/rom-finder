@@ -2,10 +2,16 @@
 
 Two entries are duplicates when they hold the SAME content (identical hash) OR are the
 SAME game in a different container/copy (same normalized title + system). They are NOT
-duplicates when they are different discs of a multi-disc game (the disc marker lives in
-the title, so "(Disc 1)" and "(Disc 2)" never merge), and a `.bin`/`.img` track (a
-*component* of a `.cue`/`.gdi`) is never tagged — those are "subsets", and deleting one
-would break the disc it belongs to.
+duplicates when:
+
+  * they are different discs of a multi-disc game (the disc marker lives in the title,
+    so "(Disc 1)" and "(Disc 2)" never merge);
+  * one is a `.bin`/`.img` track (a *component* of a `.cue`/`.gdi`) — deleting a track
+    would break its descriptor; or
+  * one is a **RetroAchievements Subset** entry (filename/title contains "(Subset" /
+    "[Subset"). A Subset is an intentional second library copy of the same ROM kept to
+    track a separate RA achievement set (e.g. "(Subset - Glitch Showcase)"); the user
+    wants both copies, so neither is tagged and neither causes its sibling to be tagged.
 
 **`ra_game_id` is deliberately NOT a grouping key.** RA files many genuinely DIFFERENT
 ROMs under one game id — hack collections and "subset" games (e.g. dozens of distinct
@@ -19,6 +25,7 @@ so resolved/removed duplicates clear cleanly (never append-only). Cheap enough t
 after any hashing/verify/scan pass that can change hashes.
 """
 
+import re
 from pathlib import PurePath
 
 from sqlmodel import Session, select
@@ -30,6 +37,14 @@ from app.db.models import LibraryEntry
 _TRACK_EXTS = {".bin", ".img"}
 # Archive containers rank below real disc images when choosing which copy to keep.
 _ARCHIVE_EXTS = {".zip", ".7z"}
+# RetroAchievements "Subset" entries — same ROM kept twice on purpose to track a
+# separate achievement set (e.g. "Zelda no Densetsu - Kamigami no Triforce (Subset -
+# Glitch Showcase)" beside the main "(Japan)" copy). Both must stay; neither is tagged.
+_SUBSET_RE = re.compile(r"[(\[]\s*subset\b", re.IGNORECASE)
+
+
+def _is_subset(e: LibraryEntry) -> bool:
+    return bool(_SUBSET_RE.search(e.game_title or "") or _SUBSET_RE.search(e.file_name or ""))
 
 
 def _norm_title(t: str) -> str:
@@ -70,10 +85,11 @@ def recompute_duplicates(session: Session) -> dict:
     for e in entries:                         # full rebuild — clear, then re-derive
         e.duplicate_of = None
 
-    # Only present, non-track entries are candidates (tracks are subsets, see above).
+    # Candidates: present, non-track, non-Subset entries (see module docstring).
     pool = [e for e in entries
             if not e.missing
             and PurePath(e.file_name).suffix.lower() not in _TRACK_EXTS
+            and not _is_subset(e)
             and e.id is not None]
 
     uf = _UnionFind()

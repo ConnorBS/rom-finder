@@ -155,6 +155,25 @@ def test_same_ra_game_id_different_titles_not_duplicate(fresh_engine):
         assert a.duplicate_of is None and b.duplicate_of is None
 
 
+def test_ra_subset_not_tagged_even_with_identical_hash(fresh_engine):
+    # A "(Subset - …)" entry is an intentional second copy of the same ROM kept to
+    # track a separate RA achievement set. Same hash, same game — must NOT be tagged
+    # as a duplicate, and must NOT cause its main sibling to be tagged either.
+    with Session(fresh_engine) as s:
+        main = _add(s, title="Zelda no Densetsu - Kamigami no Triforce (Japan)",
+                    system="SNES",
+                    file_name="Zelda no Densetsu - Kamigami no Triforce (Japan).zip",
+                    file_hash="03a63945", ra_game_id=24137, ra_matched=True)
+        subset = _add(s, title="Zelda no Densetsu - Kamigami no Triforce (Subset - Glitch Showcase)",
+                      system="SNES",
+                      file_name="Zelda no Densetsu - Kamigami no Triforce (Subset - Glitch Showcase).zip",
+                      file_hash="03a63945", ra_game_id=99999, ra_matched=True)
+        s.commit()
+        recompute_duplicates(s)
+        s.refresh(main); s.refresh(subset)
+        assert main.duplicate_of is None and subset.duplicate_of is None
+
+
 def test_bin_track_not_tagged(fresh_engine):
     # A .bin track shares its .cue's hash but is a COMPONENT — never tag it (deleting
     # it would break the .cue).
