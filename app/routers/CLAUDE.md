@@ -48,7 +48,7 @@ Must include `DownloadStatus.verifying` so the sidebar tray shows RA-lookup prog
 
 ### Collection `duplicate` filter + tag
 `status == "duplicate"` filters to entries whose `LibraryEntry.duplicate_of` is set —
-redundant copies (same content by hash, or same RA game on the same disc). Computed by
+redundant copies (same content by hash, or same title+system — `ra_game_id` is NOT used, since RA files many distinct ROMs under one id). Computed by
 `services/duplicates.py::recompute_duplicates` (full rebuild; LOCAL, no RA calls), which
 is auto-run after `bulk_scan`/`_do_rehash`/`_do_verify`/scheduler `run_scan`, and on demand
 via **`POST /collection/recompute-duplicates`** (the "Find duplicates" button). The fix that

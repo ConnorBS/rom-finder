@@ -13,7 +13,7 @@ ra_matched       — True if file_hash exists in RA's hash list
 cover_path       — relative path under static/, e.g. "covers/1234.png"
 hashed_at        — UTC datetime when hash was computed; used for stale detection
 duplicate_of     — canonical sibling's library id when this entry is a redundant copy
-                   (same content/game/disc); None = canonical/unique (migration 0014)
+                   (same content by hash, or same title+system); None = canonical/unique (migration 0014)
 added_at
 ```
 

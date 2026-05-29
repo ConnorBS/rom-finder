@@ -127,7 +127,7 @@ def _m_0013_normalize_wii(s: Session) -> None:
 
 def _m_0014_library_duplicate_of(s: Session) -> None:
     # Tag redundant library copies: a duplicate's canonical sibling id (same content
-    # by hash, or same RA game on the same disc). Recomputed by services/duplicates.py;
+    # by hash, or same title+system). Recomputed by services/duplicates.py;
     # NULL = canonical/unique.
     _add_column(s, "library", "duplicate_of", "INTEGER", None)
 

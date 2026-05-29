@@ -1,17 +1,24 @@
 """Tag redundant library copies via `LibraryEntry.duplicate_of`.
 
-Two entries are duplicates when they hold the SAME content (identical hash) OR
-represent the SAME game on the SAME disc (matched to one RA game id, or the same
-title+system). They are NOT duplicates when they are different discs of a multi-disc
-game, and a `.bin`/`.img` track (a *component* of a `.cue`/`.gdi`) is never tagged —
-those are "subsets", and deleting one would break the disc it belongs to.
+Two entries are duplicates when they hold the SAME content (identical hash) OR are the
+SAME game in a different container/copy (same normalized title + system). They are NOT
+duplicates when they are different discs of a multi-disc game (the disc marker lives in
+the title, so "(Disc 1)" and "(Disc 2)" never merge), and a `.bin`/`.img` track (a
+*component* of a `.cue`/`.gdi`) is never tagged — those are "subsets", and deleting one
+would break the disc it belongs to.
+
+**`ra_game_id` is deliberately NOT a grouping key.** RA files many genuinely DIFFERENT
+ROMs under one game id — hack collections and "subset" games (e.g. dozens of distinct
+SM64 romhacks all map to one id) — so grouping by it tagged unrelated games as
+duplicates of each other (and, with the delete buttons, invited deleting the wrong one).
+Identical-hash + same-title is the safe signal; once the archive-unwrap fix re-hashes a
+`.7z`/`.chd` copy to match its `.cue` sibling, identical-hash catches it anyway.
 
 `recompute_duplicates` is a full rebuild: it clears every flag then re-derives them,
 so resolved/removed duplicates clear cleanly (never append-only). Cheap enough to run
-after any hashing/verify/scan pass that can change hashes or RA ids.
+after any hashing/verify/scan pass that can change hashes.
 """
 
-import re
 from pathlib import PurePath
 
 from sqlmodel import Session, select
@@ -23,15 +30,6 @@ from app.db.models import LibraryEntry
 _TRACK_EXTS = {".bin", ".img"}
 # Archive containers rank below real disc images when choosing which copy to keep.
 _ARCHIVE_EXTS = {".zip", ".7z"}
-# Disc/side marker, so different discs of one game are kept apart (not merged as dups).
-_DISC_RE = re.compile(r"\((?:dis[ck]|cd)\s*([0-9]+)\)|\(side\s*([ab])\)", re.IGNORECASE)
-
-
-def _disc_no(name: str) -> str:
-    m = _DISC_RE.search(name)
-    if not m:
-        return ""
-    return (m.group(1) or m.group(2) or "").lower()
 
 
 def _norm_title(t: str) -> str:
@@ -85,8 +83,6 @@ def recompute_duplicates(session: Session) -> dict:
         keys: list[tuple] = [("title", _norm_title(e.game_title), e.system)]
         if e.file_hash:
             keys.append(("hash", e.file_hash))
-        if e.ra_game_id:
-            keys.append(("ra", e.ra_game_id, _disc_no(e.file_name)))
         for k in keys:
             other = by_key.get(k)
             if other is not None:
