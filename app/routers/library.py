@@ -139,9 +139,20 @@ async def library_detail(
         .where(Download.file_path == entry.file_path)
         .order_by(Download.created_at.desc())
     ).all()
+    # Duplicate group: the canonical sibling + every copy that points at it. Built so
+    # the user can confirm exactly which files are duplicates of each other.
+    canonical_id = entry.duplicate_of or entry.id
+    siblings = session.exec(
+        select(LibraryEntry).where(LibraryEntry.duplicate_of == canonical_id)
+    ).all()
+    dup_group = []
+    if siblings:
+        canonical = session.get(LibraryEntry, canonical_id) or entry
+        dup_group = [canonical] + list(siblings)
     return templates.TemplateResponse(
         request, "partials/library_detail.html",
-        {"entry": entry, "downloads": downloads},
+        {"entry": entry, "downloads": downloads,
+         "dup_group": dup_group, "canonical_id": canonical_id},
     )
 
 
