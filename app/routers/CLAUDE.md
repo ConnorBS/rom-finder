@@ -46,6 +46,17 @@ Must include `DownloadStatus.verifying` so the sidebar tray shows RA-lookup prog
 ### Collection `no_ra` filter
 `status == "no_ra"` is a special filter condition handled separately from the four real statuses. Backend checks: `file_hash` is set AND `ra_matched` is False AND **not unsupported**. Not a DB column value.
 
+### Collection `duplicate` filter + tag
+`status == "duplicate"` filters to entries whose `LibraryEntry.duplicate_of` is set —
+redundant copies (same content by hash, or same RA game on the same disc). Computed by
+`services/duplicates.py::recompute_duplicates` (full rebuild; LOCAL, no RA calls), which
+is auto-run after `bulk_scan`/`_do_rehash`/`_do_verify`/scheduler `run_scan`, and on demand
+via **`POST /collection/recompute-duplicates`** (the "Find duplicates" button). The fix that
+made archive-wrapped discs hashable (`rahasher` unwrap) is what lets a `.7z`/`.zip` copy match
+its `.cue` sibling's hash and get tagged. `.bin`/`.img` tracks and different discs are never
+tagged (subsets — deleting a track would break its `.cue`). Card view shows a purple
+`⧉ Duplicate` badge; `/api/status.db.duplicates` carries the count.
+
 ### Collection `unsupported` filter (platforms RA can't verify)
 `status == "unsupported"` is another computed filter: the entry's `system` is in `ra_client.RA_UNSUPPORTED_SYSTEMS` (curated set, e.g. `Nintendo 3DS`, `Archipelago` — RA has no console for them, so they can NEVER hash-match). These are **excluded from the `no_ra` count/filter** (so they stop looking like failures) and get a slate `⊘ No RA platform` badge + an "Unsupported" filter chip + a count in the header bar. Every verify path skips them so RA is never called for an unverifiable platform: the resumable verify (`library_pending_ra_check(exclude_systems=...)`), `bulk_verify` (SQL `system.not_in(...)`), and the single `/library/{id}/verify-ra` (early return). Curated, not derived from `SYSTEMS` — misnamed-but-supported folders like `tg16`/`mega-duck-slash-cougar-boy` do verify, so a "not in SYSTEMS" heuristic would wrongly hide real matches.
 

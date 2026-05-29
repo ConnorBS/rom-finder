@@ -119,6 +119,14 @@ _GC_WII_RA_IDS = {16, 19, 20}
 # Compressed disc formats nodtool decompresses to raw ISO (.iso is read by RAHasher).
 _NODTOOL_FORMATS = {".rvz", ".wbfs", ".wia", ".gcz", ".ciso", ".nfs", ".tgc"}
 
+# Archive containers a disc image can be shipped inside. RAHasher (and md5_gamecube)
+# cannot mount a disc from WITHIN an archive, so for disc systems we extract first.
+_ARCHIVE_FORMATS = {".zip", ".7z"}
+# Disc descriptors/images we point the hasher at, in preference order — a .cue/.gdi
+# is preferred because it references its data track(s) sitting alongside it.
+_DISC_DESCRIPTORS = (".cue", ".gdi", ".chd", ".iso", ".rvz", ".wbfs", ".wia", ".gcz",
+                     ".ciso", ".nrg", ".cdi", ".img", ".bin")
+
 
 def _rahasher_available() -> bool:
     return shutil.which(_RAHASHER_BIN) is not None
@@ -170,6 +178,65 @@ async def _convert_to_iso(src: Path, system_name: str, ra_id) -> Path | None:
         _applog_fail(system_name, ra_id, src, f"nodtool convert error: {exc}")
     try:
         dst.unlink(missing_ok=True)
+    except OSError:
+        pass
+    return None
+
+
+def _is_disc_system(system_name: str) -> bool:
+    """Disc systems whose images may ship inside a .zip/.7z and must be unwrapped
+    before hashing (RAHasher can't mount a disc from within an archive)."""
+    from app.services.hasher import DISC_SYSTEMS
+    if system_name in DISC_SYSTEMS:
+        return True
+    # Folder-derived names ("Nintendo Wii") resolve to a disc RA id.
+    return get_ra_system_id(system_name) in _GC_WII_RA_IDS
+
+
+async def _extract_disc_from_archive(src: Path, system_name: str, ra_id) -> Path | None:
+    """Extract a .zip/.7z disc image to the review/staging scratch dir and return the
+    disc descriptor to hash (.cue/.gdi preferred so its data tracks resolve alongside).
+    Returns the extracted file path (caller removes its parent dir) or None. Extraction
+    runs in an executor so the blocking unzip doesn't stall the event loop."""
+    import shutil
+    dest = _convert_scratch_dir() / (src.stem + ".extract")
+
+    def _do_extract() -> Path | None:
+        if dest.exists():
+            shutil.rmtree(dest, ignore_errors=True)
+        dest.mkdir(parents=True, exist_ok=True)
+        suffix = src.suffix.lower()
+        if suffix == ".zip":
+            import zipfile
+            with zipfile.ZipFile(src, "r") as zf:
+                zf.extractall(dest)
+        elif suffix == ".7z":
+            import py7zr
+            with py7zr.SevenZipFile(src, mode="r") as zf:
+                zf.extractall(path=dest)
+        else:
+            return None
+        files = [f for f in dest.rglob("*") if f.is_file()]
+        if not files:
+            return None
+        # Prefer a disc descriptor by extension order; .cue first so RAHasher reads
+        # the multi-track disc. Fall back to the largest file if nothing recognized.
+        for ext in _DISC_DESCRIPTORS:
+            matches = [f for f in files if f.suffix.lower() == ext]
+            if matches:
+                return max(matches, key=lambda f: f.stat().st_size)
+        return max(files, key=lambda f: f.stat().st_size)
+
+    try:
+        loop = asyncio.get_event_loop()
+        chosen = await loop.run_in_executor(None, _do_extract)
+        if chosen is not None:
+            return chosen
+        _applog_fail(system_name, ra_id, src, "archive had no disc image to hash")
+    except Exception as exc:
+        _applog_fail(system_name, ra_id, src, f"archive extract error: {exc}")
+    try:
+        shutil.rmtree(dest, ignore_errors=True)
     except OSError:
         pass
     return None
@@ -266,16 +333,28 @@ async def compute_ra_hash(rom_path: Path, system_name: str) -> str | None:
         logger.debug("No RA system ID for %r — skipping RAHasher", system_name)
         return None
 
-    # GameCube/Wii compressed images (RVZ/WBFS/WIA/GCZ/CISO) — decompress to a
-    # temporary raw ISO with nodtool first, then hash the ISO.
+    # Disc images can arrive wrapped in steps that the hasher can't read in place;
+    # unwrap them into the review/staging scratch dir (never the ROM library), hash
+    # the result, and clean up. `cleanup` holds temp files (unlink) and dirs (rmtree).
     hash_target = rom_path
-    temp_iso: Path | None = None
+    cleanup: list[Path] = []
+
+    # 1. Disc image inside a .zip/.7z → extract; RAHasher can't mount it from inside.
+    if rom_path.suffix.lower() in _ARCHIVE_FORMATS and _is_disc_system(system_name):
+        extracted = await _extract_disc_from_archive(rom_path, system_name, ra_id)
+        if extracted is not None:
+            hash_target = extracted
+            cleanup.append(extracted.parent)   # remove the whole extract dir
+
+    # 2. GameCube/Wii compressed image (RVZ/WBFS/WIA/GCZ/CISO) → decompress to a raw
+    #    ISO with nodtool, then hash the ISO. Runs on the (possibly extracted) target.
     if (ra_id in _GC_WII_RA_IDS
-            and rom_path.suffix.lower() in _NODTOOL_FORMATS
+            and hash_target.suffix.lower() in _NODTOOL_FORMATS
             and _nodtool_available()):
-        temp_iso = await _convert_to_iso(rom_path, system_name, ra_id)
+        temp_iso = await _convert_to_iso(hash_target, system_name, ra_id)
         if temp_iso is not None:
             hash_target = temp_iso
+            cleanup.append(temp_iso)
 
     try:
         # GameCube: the standalone RALibretro RAHasher's GameCube hash does NOT match
@@ -321,8 +400,12 @@ async def compute_ra_hash(rom_path: Path, system_name: str) -> str | None:
         logger.warning("RAHasher error for %s: %s", rom_path.name, exc)
         return None
     finally:
-        if temp_iso is not None:
+        import shutil
+        for p in cleanup:
             try:
-                temp_iso.unlink(missing_ok=True)
+                if p.is_dir():
+                    shutil.rmtree(p, ignore_errors=True)
+                else:
+                    p.unlink(missing_ok=True)
             except OSError:
                 pass

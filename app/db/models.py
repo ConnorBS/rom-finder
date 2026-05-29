@@ -139,6 +139,8 @@ class LibraryEntry(SQLModel, table=True):
     ra_checked_at: Optional[datetime] = None   # last RA hash lookup (migration 0009)
     missing: bool = False        # file gone from disk — flagged, not deleted (migration 0012)
     missing_at: Optional[datetime] = None       # when first detected missing
+    duplicate_of: Optional[int] = None   # canonical sibling's library id when this entry is a
+                                         # redundant copy (same content/game); None = canonical/unique (migration 0014)
     added_at: datetime = Field(default_factory=datetime.utcnow)
 
 

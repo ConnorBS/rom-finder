@@ -125,6 +125,13 @@ def _m_0013_normalize_wii(s: Session) -> None:
         s.exec(text(f"UPDATE {table} SET system = 'Wii' WHERE system = 'Nintendo Wii'"))
 
 
+def _m_0014_library_duplicate_of(s: Session) -> None:
+    # Tag redundant library copies: a duplicate's canonical sibling id (same content
+    # by hash, or same RA game on the same disc). Recomputed by services/duplicates.py;
+    # NULL = canonical/unique.
+    _add_column(s, "library", "duplicate_of", "INTEGER", None)
+
+
 # (version_id, apply_fn) — applied in order, recorded once.
 MIGRATIONS: list[tuple[str, "callable"]] = [
     ("0001_download_source_id", _m_0001),
@@ -140,6 +147,7 @@ MIGRATIONS: list[tuple[str, "callable"]] = [
     ("0011_hunt_attempt_source_url", _m_0011_hunt_attempt_source_url),
     ("0012_library_missing", _m_0012_library_missing),
     ("0013_normalize_wii", _m_0013_normalize_wii),
+    ("0014_library_duplicate_of", _m_0014_library_duplicate_of),
 ]
 
 

@@ -12,8 +12,14 @@ ra_game_id       — RA's numeric game ID, if known
 ra_matched       — True if file_hash exists in RA's hash list
 cover_path       — relative path under static/, e.g. "covers/1234.png"
 hashed_at        — UTC datetime when hash was computed; used for stale detection
+duplicate_of     — canonical sibling's library id when this entry is a redundant copy
+                   (same content/game/disc); None = canonical/unique (migration 0014)
 added_at
 ```
+
+`duplicate_of` is derived, not authoritative — `services/duplicates.py::recompute_duplicates`
+fully rebuilds it (clear + re-derive) after any scan/rehash/verify pass. A `.bin`/`.img`
+track and different discs of a multi-disc game are never tagged (they're subsets).
 
 ### `WantedGame` (table: `wanted_games`)
 Games the user is hunting for.
@@ -60,6 +66,7 @@ The `/collection` page unifies `LibraryEntry` and `WantedGame`. Each item gets a
 | `wanted` | WantedGame only, no LibraryEntry yet |
 
 `no_ra` is a special **filter condition** (not a real status): `file_hash` set + `ra_matched` is False.
+`duplicate` is another filter condition: `LibraryEntry.duplicate_of is not None`.
 
 ---
 
