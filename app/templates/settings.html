@@ -134,6 +134,20 @@
                         Read-only: the app will not make any edits, deletes, or writes to this directory.
                     </p>
                 </div>
+
+                <!-- Saves directory (always read-only) -->
+                <div>
+                    <label class="block text-sm text-gray-300 mb-1.5" for="saves_dir">Saves directory</label>
+                    <input
+                        type="text"
+                        id="saves_dir"
+                        name="saves_dir"
+                        value="{{ settings.saves_dir }}"
+                        class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 font-mono"
+                        placeholder="/saves   (e.g. your RetroArch savefile directory)"
+                    >
+                    <p class="text-gray-600 text-xs mt-1.5">Where emulator saves live. ROM Finder scans it (and your ROM folders) to flag which games have a save, matching by filename. <span class="text-cyan-500">Always read-only — saves are never edited or deleted.</span> Mount this path into the container if it lives elsewhere.</p>
+                </div>
             </div>
         </section>
 

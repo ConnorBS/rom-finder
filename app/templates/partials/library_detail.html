@@ -56,6 +56,24 @@
   {% endif %}
 </div>
 
+<!-- Saves (read-only) -->
+{% if saves %}
+<h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+  Save files <span class="text-cyan-400 normal-case font-normal">({{ saves|length }} · read-only)</span>
+</h3>
+<div class="bg-gray-900 border border-gray-800 rounded-lg p-3 mb-2 space-y-2 text-xs">
+  {% for s in saves %}
+  <div class="flex items-center justify-between gap-2">
+    <span class="text-gray-300 font-mono break-all">{{ s.name }}</span>
+    <span class="flex-shrink-0 {% if s.kind == 'state' %}bg-indigo-900/50 border-indigo-700 text-indigo-200{% else %}bg-cyan-900/50 border-cyan-700 text-cyan-200{% endif %} border px-1.5 py-0.5 rounded-full">
+      {% if s.kind == 'state' %}save state{% else %}battery{% endif %}
+    </span>
+  </div>
+  {% endfor %}
+</div>
+<p class="text-gray-600 text-xs mb-5">ROM Finder never edits or deletes save files — these are shown for reference only.</p>
+{% endif %}
+
 <!-- Duplicates -->
 {% if dup_group %}
 <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">

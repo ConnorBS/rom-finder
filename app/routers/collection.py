@@ -68,6 +68,8 @@ def _build_collection(session: Session) -> list[dict]:
             "missing": lib.missing if lib else False,
             "duplicate": bool(lib and lib.duplicate_of),
             "duplicate_of": lib.duplicate_of if lib else None,
+            "has_save": bool(lib and lib.save_count),
+            "save_count": lib.save_count if lib else 0,
             "unsupported": is_ra_unsupported(w.system),
             "added_at": w.added_at,
         })
@@ -89,6 +91,8 @@ def _build_collection(session: Session) -> list[dict]:
                 "missing": e.missing,
                 "duplicate": bool(e.duplicate_of),
                 "duplicate_of": e.duplicate_of,
+                "has_save": bool(e.save_count),
+                "save_count": e.save_count,
                 "unsupported": is_ra_unsupported(e.system),
                 "added_at": e.added_at,
             })
@@ -124,6 +128,8 @@ async def collection_page(
         filtered = [i for i in filtered if i.get("missing")]
     elif status == "duplicate":
         filtered = [i for i in filtered if i.get("duplicate")]
+    elif status == "has_save":
+        filtered = [i for i in filtered if i.get("has_save")]
     elif status:
         filtered = [i for i in filtered if i["status"] == status]
 
@@ -175,6 +181,7 @@ async def collection_page(
                 "no_ra": sum(1 for i in all_items if i.get("file_hash") and not i.get("ra_matched") and not i.get("unsupported")),
                 "unsupported": sum(1 for i in all_items if i.get("unsupported")),
                 "duplicate": sum(1 for i in all_items if i.get("duplicate")),
+                "has_save": sum(1 for i in all_items if i.get("has_save")),
             },
         },
     )
@@ -196,6 +203,7 @@ async def collection_counts(session: Session = Depends(get_session)):
         "no_ra": sum(1 for i in all_items if i.get("file_hash") and not i.get("ra_matched") and not i.get("unsupported")),
         "unsupported": sum(1 for i in all_items if i.get("unsupported")),
         "duplicate": sum(1 for i in all_items if i.get("duplicate")),
+        "has_save": sum(1 for i in all_items if i.get("has_save")),
     }
     parts = [f'<span>{counts["total"]} total</span>']
     if counts["verified"]:
@@ -212,6 +220,8 @@ async def collection_counts(session: Session = Depends(get_session)):
         parts.append(f'<span class="text-slate-500">{counts["unsupported"]} unsupported</span>')
     if counts["duplicate"]:
         parts.append(f'<span class="text-purple-400">{counts["duplicate"]} duplicate</span>')
+    if counts["has_save"]:
+        parts.append(f'<span class="text-cyan-400">{counts["has_save"]} with save</span>')
     return HTMLResponse(" ".join(parts))
 
 
@@ -230,6 +240,22 @@ async def recompute_duplicates_endpoint(session: Session = Depends(get_session))
            f'across {result["groups"]} group{"s" if result["groups"] != 1 else ""}.'
            if n else "&#10003; No duplicates found.")
     return HTMLResponse(f'<span class="text-green-400 text-xs">{msg}</span>')
+
+
+@router.post("/collection/scan-saves", response_class=HTMLResponse)
+async def scan_saves_endpoint(session: Session = Depends(get_session)):
+    """Detect which games have an emulator save (LOCAL, READ-ONLY — saves are never
+    edited or deleted). Matches saves to ROMs by filename stem."""
+    from app.services.saves import scan_saves
+    result = scan_saves(session)
+    applog.log_action("scan_saves", result)
+    if not result["roots"]:
+        return HTMLResponse('<span class="text-yellow-400 text-xs">No saves/ROM directory found — set a Saves directory in Settings.</span>')
+    g = result["games"]
+    return HTMLResponse(
+        f'<span class="text-green-400 text-xs">&#10003; {g} game{"s" if g != 1 else ""} with a save '
+        f'({result["matched"]} save file{"s" if result["matched"] != 1 else ""} matched of {result["found"]} found).</span>'
+    )
 
 
 @router.post("/collection/bulk/scan", response_class=HTMLResponse)
@@ -325,6 +351,8 @@ async def bulk_scan(session: Session = Depends(get_session)):
     if added or restored:
         from app.services.duplicates import recompute_duplicates
         recompute_duplicates(session)
+    from app.services.saves import scan_saves   # refresh save flags (read-only)
+    scan_saves(session)
     applog.log_action("bulk_scan", {
         "download_dir": download_dir, "scanned": scanned, "folders": folders,
         "added": added, "flagged_missing": flagged, "restored": restored,

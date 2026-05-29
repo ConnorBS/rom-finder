@@ -20,6 +20,7 @@
                 {% if counts.no_ra %}<span class="text-orange-400">{{ counts.no_ra }} no RA match</span>{% endif %}
                 {% if counts.unsupported %}<span class="text-slate-500" title="Platforms RetroAchievements doesn't support — can't be hash-verified">{{ counts.unsupported }} unsupported</span>{% endif %}
                 {% if counts.duplicate %}<span class="text-purple-400" title="Redundant copies — same content or same game/disc as another entry">{{ counts.duplicate }} duplicate</span>{% endif %}
+                {% if counts.has_save %}<span class="text-cyan-400" title="Games with a matched emulator save file (read-only)">{{ counts.has_save }} with save</span>{% endif %}
             </div>
         </div>
 
@@ -72,7 +73,7 @@
 
             <!-- Status pills -->
             <div class="flex gap-1 flex-wrap">
-                {% set statuses = [("", "All"), ("verified", "Verified"), ("found", "Found"), ("library", "Library"), ("wanted", "Wanted"), ("no_ra", "No RA"), ("unsupported", "Unsupported"), ("missing", "Missing"), ("duplicate", "Duplicate")] %}
+                {% set statuses = [("", "All"), ("verified", "Verified"), ("found", "Found"), ("library", "Library"), ("wanted", "Wanted"), ("no_ra", "No RA"), ("unsupported", "Unsupported"), ("missing", "Missing"), ("duplicate", "Duplicate"), ("has_save", "Has Save")] %}
                 {% for val, label in statuses %}
                 <a href="?q={{ q }}&system={{ selected_system }}&status={{ val }}&view={{ view }}"
                    id="col-status"
@@ -114,6 +115,20 @@
             >
                 <svg id="dup-spin" class="htmx-indicator animate-spin w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
                 Find duplicates
+            </button>
+
+            <!-- Scan saves (read-only) -->
+            <button
+                hx-post="/collection/scan-saves"
+                hx-target="#bulk-result"
+                hx-swap="innerHTML"
+                hx-indicator="#saves-spin"
+                hx-disabled-elt="this"
+                class="bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed text-gray-300 text-xs px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5"
+                title="Detect which games have an emulator save (matched by filename). Read-only — saves are never modified."
+            >
+                <svg id="saves-spin" class="htmx-indicator animate-spin w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
+                Scan saves
             </button>
 
             <!-- Fetch covers — disabled when no cover source is enabled -->
@@ -329,6 +344,9 @@
                     {% if item.duplicate %}
                     <span class="bg-purple-900/80 border border-purple-700 rounded-full px-2 py-0.5 text-purple-200 text-xs" title="Redundant copy of another library entry (id {{ item.duplicate_of }}) — same content or same game/disc">⧉ Duplicate</span>
                     {% endif %}
+                    {% if item.has_save %}
+                    <span class="bg-cyan-900/80 border border-cyan-700 rounded-full px-2 py-0.5 text-cyan-200 text-xs" title="{{ item.save_count }} emulator save file{{ 's' if item.save_count != 1 else '' }} (read-only)">💾 Save</span>
+                    {% endif %}
                 </div>
             </div>
 
@@ -423,6 +441,9 @@
                         {% endif %}
                         {% if item.duplicate %}
                         <span class="ml-1 inline-flex items-center text-purple-400 text-xs" title="Redundant copy of library entry {{ item.duplicate_of }}">⧉ dup</span>
+                        {% endif %}
+                        {% if item.has_save %}
+                        <span class="ml-1 inline-flex items-center text-cyan-400 text-xs" title="{{ item.save_count }} save file(s) — read-only">💾</span>
                         {% endif %}
                     </td>
                     <td class="px-4 py-3">

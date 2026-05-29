@@ -41,6 +41,10 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "diagnostics_recent_hours": "24",
     # When true, downloads stage in check_dir for manual review before moving to download_dir.
     "use_review_dir": "true",
+    # Emulator save-file directory (e.g. RetroAchievements/RetroArch savefile dir). READ-ONLY:
+    # the app only scans it to flag which games have saves — it never edits or deletes saves.
+    # Saves alongside ROMs (download_dir/check_dir) are also detected, so this is optional.
+    "saves_dir": "",
     # Per-directory read-only locks — prevent any edits, deletes, or writes within the app
     "download_dir_readonly": "false",
     "check_dir_readonly": "false",

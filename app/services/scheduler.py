@@ -171,6 +171,9 @@ async def run_scan() -> dict:
         from app.services.duplicates import recompute_duplicates
         with Session(engine) as session:
             recompute_duplicates(session)
+    from app.services.saves import scan_saves   # refresh save flags (read-only)
+    with Session(engine) as session:
+        scan_saves(session)
 
     _set_last_run("sched_scan_last_run")
     applog.info("scheduler", f"Scan pipeline: {added} added, {hashed} hashed, {verified} RA matched")

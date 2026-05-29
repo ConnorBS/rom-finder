@@ -14,8 +14,15 @@ cover_path       — relative path under static/, e.g. "covers/1234.png"
 hashed_at        — UTC datetime when hash was computed; used for stale detection
 duplicate_of     — canonical sibling's library id when this entry is a redundant copy
                    (same content by hash, or same title+system); None = canonical/unique (migration 0014)
+save_count       — # of emulator save files matched to this ROM (migration 0015); >0 = has a save
+save_files       — JSON [{name,kind,size,mtime}] of matched saves; kind = battery|state
+save_updated_at  — newest matched save's mtime
 added_at
 ```
+
+`save_*` are derived (read-only) — `services/saves.py::scan_saves` matches saves to ROMs
+by filename stem and rebuilds them. **ROM Finder never edits or deletes a save**; these
+columns are display-only.
 
 `duplicate_of` is derived, not authoritative — `services/duplicates.py::recompute_duplicates`
 fully rebuilds it (clear + re-derive) after any scan/rehash/verify pass. A `.bin`/`.img`
@@ -76,6 +83,8 @@ The `/collection` page unifies `LibraryEntry` and `WantedGame`. Each item gets a
 download_dir            — root ROMs directory (system subfolders inside)
 check_dir               — staging area for ROMs awaiting approval
 covers_dir              — where cover PNGs are saved (default: static/covers)
+saves_dir               — emulator save directory (optional); scanned READ-ONLY to flag
+                          which games have a save. Saves beside ROMs are also detected.
 *_readonly              — locks: download_dir_readonly, check_dir_readonly, covers_dir_readonly
 ra_username / ra_api_key
 ra_enabled              — hash-verify downloads against RA after completion
