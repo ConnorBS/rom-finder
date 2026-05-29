@@ -345,17 +345,70 @@ async def bulk_scan(session: Session = Depends(get_session)):
     return HTMLResponse(f'<span class="text-green-400 text-xs">&#10003; {summary}{detail}.</span>')
 
 
+def _delete_rom_file(session: Session, e: LibraryEntry) -> tuple[bool, str, int]:
+    """Delete the ROM file (and, for a .cue/.gdi, its sibling data/audio tracks) from
+    disk. Refuses if the file sits under a read-only root. Returns (ok, error, removed)."""
+    import glob
+    from pathlib import Path
+    if not e.file_path:
+        return True, "", 0
+    p = Path(e.file_path)
+
+    def _under(root: str) -> bool:
+        if not root:
+            return False
+        try:
+            return Path(root) == p.parent or Path(root) in p.parents
+        except Exception:
+            return False
+
+    if _under(_get_setting(session, "download_dir", "")) and _get_setting(session, "download_dir_readonly", "false") == "true":
+        return False, "ROMs directory is read-only (Settings → locks) — file not deleted.", 0
+    if _under(_get_setting(session, "check_dir", "")) and _get_setting(session, "check_dir_readonly", "false") == "true":
+        return False, "Review directory is read-only (Settings → locks) — file not deleted.", 0
+
+    removed = 0
+    try:
+        if p.exists():
+            p.unlink()
+            removed += 1
+        # A disc descriptor is only half the rip — drop its same-stem tracks too.
+        if p.suffix.lower() in (".cue", ".gdi", ".ccd"):
+            for sib in p.parent.glob(glob.escape(p.stem) + ".*"):
+                if sib != p and sib.suffix.lower() in (".bin", ".img", ".iso", ".sub", ".ccd", ".cue") and sib.exists():
+                    sib.unlink()
+                    removed += 1
+    except OSError as exc:
+        return False, f"Could not delete file: {exc}", removed
+    return True, "", removed
+
+
 @router.post("/collection/library/{library_id}/delete", response_class=HTMLResponse)
-async def delete_library_entry(library_id: int, session: Session = Depends(get_session)):
-    """Permanently remove a library entry (the 'Delete' action on a missing ROM)."""
+async def delete_library_entry(
+    library_id: int,
+    delete_file: bool = Query(default=False),
+    session: Session = Depends(get_session),
+):
+    """Remove a library entry. `delete_file=true` also deletes the ROM file from disk
+    (refused if its root is read-only). On success, HX-Refresh updates the grid/counts;
+    on a file-delete refusal the entry is kept and the reason is returned."""
     e = session.get(LibraryEntry, library_id)
-    if e:
-        applog.log_action("library_delete", {
-            "game": e.game_title, "system": e.system, "was_missing": e.missing,
+    if not e:
+        return HTMLResponse("", headers={"HX-Refresh": "true"})
+    if delete_file:
+        ok, err, removed = _delete_rom_file(session, e)
+        if not ok:
+            return HTMLResponse(f'<span class="text-red-400 text-xs">{err}</span>')
+        applog.log_action("library_delete_file", {
+            "game": e.game_title, "file": e.file_name, "removed_files": removed,
         })
-        session.delete(e)
-        session.commit()
-    return HTMLResponse("")
+    applog.log_action("library_delete", {
+        "game": e.game_title, "system": e.system, "was_missing": e.missing, "file_deleted": delete_file,
+    })
+    session.delete(e)
+    session.commit()
+    _refresh_duplicates()   # a group may collapse or re-elect its canonical
+    return HTMLResponse("", headers={"HX-Refresh": "true"})
 
 
 @router.post("/collection/library/{library_id}/to-wanted", response_class=HTMLResponse)

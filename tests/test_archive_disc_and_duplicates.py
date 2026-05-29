@@ -138,6 +138,23 @@ def test_different_discs_not_duplicate(fresh_engine):
         assert d1.duplicate_of is None and d2.duplicate_of is None
 
 
+def test_same_ra_game_id_different_titles_not_duplicate(fresh_engine):
+    # RA files many DIFFERENT romhacks under one game id (hack collections / subsets).
+    # They must NOT be tagged as duplicates of each other — regression guard for the
+    # SM64-hack false positives (23 distinct hacks sharing ra_game_id 16767).
+    with Session(fresh_engine) as s:
+        a = _add(s, title="SM64 - Abandoned Arcade (Hack)", system="Nintendo 64",
+                 file_name="SM64 - Abandoned Arcade (Hack).zip", file_hash="AAA",
+                 ra_game_id=16767, ra_matched=True)
+        b = _add(s, title="SM64 - Arcade Fighter 64 (Hack)", system="Nintendo 64",
+                 file_name="SM64 - Arcade Fighter 64 (Hack).zip", file_hash="BBB",
+                 ra_game_id=16767, ra_matched=True)
+        s.commit()
+        recompute_duplicates(s)
+        s.refresh(a); s.refresh(b)
+        assert a.duplicate_of is None and b.duplicate_of is None
+
+
 def test_bin_track_not_tagged(fresh_engine):
     # A .bin track shares its .cue's hash but is a COMPONENT — never tag it (deleting
     # it would break the .cue).

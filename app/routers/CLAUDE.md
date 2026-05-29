@@ -48,7 +48,7 @@ Must include `DownloadStatus.verifying` so the sidebar tray shows RA-lookup prog
 
 ### Collection `duplicate` filter + tag
 `status == "duplicate"` filters to entries whose `LibraryEntry.duplicate_of` is set —
-redundant copies (same content by hash, or same RA game on the same disc). Computed by
+redundant copies (same content by hash, or same title+system — `ra_game_id` is NOT used, since RA files many distinct ROMs under one id). Computed by
 `services/duplicates.py::recompute_duplicates` (full rebuild; LOCAL, no RA calls), which
 is auto-run after `bulk_scan`/`_do_rehash`/`_do_verify`/scheduler `run_scan`, and on demand
 via **`POST /collection/recompute-duplicates`** (the "Find duplicates" button). The fix that
@@ -75,7 +75,10 @@ The Collection "Scan folder" button is a 3-way sync. It reports scope: *"Scanned
 - **Flag missing** (soft, `LibraryEntry.missing` / `missing_at`, migration 0012) entries whose file left disk — NOT deleted. Safety guard: if >half the present library (and >5) is missing, assume an unmounted drive and **skip flagging**, logging a warning.
 - **Resurrect** a missing entry automatically if its file reappears (`missing` cleared).
 
-Missing entries show in the collection with a `⊘ Missing` badge + a `missing` filter, and two actions: **Delete** (`POST /collection/library/{id}/delete`, permanent) and **→ Wanted** (`POST /collection/library/{id}/to-wanted`, creates/resets the wanted game to `hunting` and removes the entry; requires an `ra_game_id`). Scan is metadata only — no hashing/verifying (scheduler Hash/RA-verify tasks). `/library/scan` and scheduler `run_scan` don't flag missing yet — only `bulk_scan`.
+Missing entries show in the collection with a `⊘ Missing` badge + a `missing` filter, and two actions: **Delete** (`POST /collection/library/{id}/delete`) and **→ Wanted** (`POST /collection/library/{id}/to-wanted`, creates/resets the wanted game to `hunting` and removes the entry; requires an `ra_game_id`). Scan is metadata only — no hashing/verifying (scheduler Hash/RA-verify tasks). `/library/scan` and scheduler `run_scan` don't flag missing yet — only `bulk_scan`.
+
+### Deleting library entries (entry vs entry + file)
+`POST /collection/library/{id}/delete` removes the DB entry. With **`?delete_file=true`** it also deletes the ROM **file** from disk (and, for a `.cue`/`.gdi`, its same-stem `.bin`/`.img`/`.iso`/`.sub` tracks via `_delete_rom_file`) — **refused** (entry kept, reason returned) if the file's root (`download_dir`/`check_dir`) is locked read-only. On success it returns an empty body with **`HX-Refresh: true`** (grid + counts update, slide-over resets) and re-runs `recompute_duplicates` (a group may collapse / re-elect its canonical). Surfaced two ways: the **list view** Actions column (Remove / Delete file), and the **card detail slide-over** (`/library/{id}/detail`), which also renders the full **duplicate group** — every copy that shares this entry's canonical, the canonical marked **Kept** — so the user confirms exactly which files are duplicates before deleting. Errors render into the panel's `#dz-feedback`.
 
 ### Archive support (.zip/.7z)
 Both in `ROM_EXTENSIONS`, scanned like any ROM. Hashing extracts to temp dir, hashes the ROM-like file inside (prefers a member matching the expected name, else largest — see `prefer_name` in `hasher.py`), cleans up — archive stays on disk. RAHasher handles zips natively; Python fallback uses `_hash_from_archive` in `hasher.py`. `_rom_title()` in `library.py` strips inner extension: `game.nes.zip` → title `game`.
