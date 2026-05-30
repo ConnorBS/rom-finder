@@ -63,6 +63,94 @@ def _save_stem(path: Path) -> str:
     return stem.strip().lower()
 
 
+# ---------------------------------------------------------------------------
+# Wii / Dolphin NAND saves — keyed by **title ID low** (4 ASCII chars, e.g. "RKME"),
+# not by ROM filename. Dolphin writes per-game saves to
+#     User/Wii/title/{type}/<hex(title_id_low)>/data/
+# where {type} is "00010000" for disc games or "00010001" for WiiWare/VC channels.
+# ---------------------------------------------------------------------------
+_WII_TITLE_TYPES = ("00010000", "00010001")
+_WII_RA_IDS = {19, 20}   # RA console ids for Wii / Wii U
+
+
+def _wii_title_id_from_iso(f) -> str | None:
+    """First 4 bytes of a Wii disc = the title-ID-low (ASCII)."""
+    data = f.read(4)
+    if len(data) == 4 and all(0x20 < b < 0x7F for b in data):
+        return data.decode("ascii")
+    return None
+
+
+def _wii_title_id_from_wad(path: Path) -> str | None:
+    """Parse a WiiWare/VC .wad: header → cert chain → ticket; title-ID-low at ticket+0x1E0.
+    All sections are padded to 64 bytes. Fast (reads ~700 bytes)."""
+    try:
+        with open(path, "rb") as f:
+            header = f.read(0x20)
+            if len(header) < 0x14:
+                return None
+            cert_size = int.from_bytes(header[0x08:0x0C], "big")
+            # Header (0x20) padded to 64; cert chain padded to 64; then ticket.
+            ticket_off = 0x40 + ((cert_size + 0x3F) & ~0x3F)
+            f.seek(ticket_off + 0x1E0)        # title ID low (last 4 bytes of the 8-byte TID)
+            tid_low = f.read(4)
+            if len(tid_low) == 4 and all(0x20 < b < 0x7F for b in tid_low):
+                return tid_low.decode("ascii")
+    except OSError:
+        pass
+    return None
+
+
+def _read_wii_title_id(rom_path: Path) -> str | None:
+    """Return the 4-char title ID for a Wii ROM. Handles the fast-path formats; compressed
+    disc formats other than RVZ/WIA aren't read here (would need full nodtool decompress)."""
+    if not rom_path.exists():
+        return None
+    suffix = rom_path.suffix.lower()
+    try:
+        if suffix == ".iso":
+            with open(rom_path, "rb") as f:
+                return _wii_title_id_from_iso(f)
+        if suffix in (".rvz", ".wia"):
+            # WIA/RVZ keep the original disc header inside the WIADisc struct at +0x58
+            # (WIA_VERSION = 0x48 bytes, then disc_type/compression/chunk_size = 0x10).
+            with open(rom_path, "rb") as f:
+                f.seek(0x58)
+                return _wii_title_id_from_iso(f)
+        if suffix == ".wad":
+            return _wii_title_id_from_wad(rom_path)
+    except OSError:
+        return None
+    return None
+
+
+def _scan_wii_nand(root: Path) -> dict[str, list[Path]]:
+    """Walk root for the Dolphin NAND save layout. Returns {title_id_low: [data dirs]}."""
+    found: dict[str, list[Path]] = defaultdict(list)
+    for ttype in _WII_TITLE_TYPES:
+        try:
+            for d in root.rglob(f"title/{ttype}/*/data"):
+                if not d.is_dir():
+                    continue
+                try:
+                    if not any(d.iterdir()):    # empty data/ = no save
+                        continue
+                except OSError:
+                    continue
+                tid_hex = d.parent.name
+                if len(tid_hex) != 8:
+                    continue
+                try:
+                    tid_bytes = bytes.fromhex(tid_hex)
+                except ValueError:
+                    continue
+                if all(0x20 < b < 0x7F for b in tid_bytes):
+                    found[tid_bytes.decode("ascii")].append(d)
+        except OSError:
+            continue
+    return found
+
+
 def scan_saves(session: Session) -> dict:
     """Refresh save info on every LibraryEntry. Full rebuild (clear then re-derive)."""
     entries = session.exec(select(LibraryEntry)).all()
@@ -115,6 +203,58 @@ def scan_saves(session: Session) -> dict:
             for e in targets:
                 matched += 1
                 by_entry[e.id].append(info)
+
+    # ------------------------------------------------------------------
+    # Wii / Dolphin NAND saves (per-title save data, not stem-named).
+    # ------------------------------------------------------------------
+    from app.services.rahasher import get_ra_system_id   # lazy: avoid import cycle
+    wii_entries = [e for e in entries if get_ra_system_id(e.system) in _WII_RA_IDS]
+    # Lazy populate disc_id (4-char title-ID-low) from the ROM header — fast paths only.
+    for e in wii_entries:
+        if not e.disc_id and e.file_path:
+            tid = _read_wii_title_id(Path(e.file_path))
+            if tid:
+                e.disc_id = tid
+    disc_idx: dict[str, list[LibraryEntry]] = defaultdict(list)
+    for e in wii_entries:
+        if e.disc_id:
+            disc_idx[e.disc_id].append(e)
+
+    wii_nand_found = 0
+    seen_data_dirs: set[str] = set()           # dedup across nested roots
+    for root in roots:
+        nand = _scan_wii_nand(root)
+        for tid, data_dirs in nand.items():
+            targets = disc_idx.get(tid)
+            if not targets:
+                continue
+            for data_dir in data_dirs:
+                try:
+                    key = str(data_dir.resolve())
+                except OSError:
+                    key = str(data_dir)
+                if key in seen_data_dirs:
+                    continue
+                seen_data_dirs.add(key)
+                try:
+                    files = [f for f in data_dir.iterdir() if f.is_file()]
+                except OSError:
+                    continue
+                if not files:
+                    continue
+                try:
+                    total_size = sum(f.stat().st_size for f in files)
+                    latest_mtime = max(f.stat().st_mtime for f in files)
+                except OSError:
+                    continue
+                wii_nand_found += 1
+                info = {"name": f"Wii NAND save ({tid})", "kind": "wii-nand",
+                        "size": total_size,
+                        "mtime": datetime.utcfromtimestamp(latest_mtime).isoformat()}
+                for e in targets:
+                    matched += 1
+                    by_entry[e.id].append(info)
+    found += wii_nand_found
 
     games = 0
     for e in entries:

@@ -145,6 +145,8 @@ class LibraryEntry(SQLModel, table=True):
     save_files: str = ""         # JSON [{name,kind,size,mtime}] of matched saves — READ-ONLY,
                                  # the app never edits or deletes saves
     save_updated_at: Optional[datetime] = None   # newest matched save's mtime
+    disc_id: str = ""            # 4-char Wii title-ID-low (e.g. "RKME") read from the disc
+                                 # header — keys Dolphin NAND save matching (migration 0016)
     added_at: datetime = Field(default_factory=datetime.utcnow)
 
 

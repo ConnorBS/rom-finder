@@ -65,8 +65,8 @@
   {% for s in saves %}
   <div class="flex items-center justify-between gap-2">
     <span class="text-gray-300 font-mono break-all">{{ s.name }}</span>
-    <span class="flex-shrink-0 {% if s.kind == 'state' %}bg-indigo-900/50 border-indigo-700 text-indigo-200{% else %}bg-cyan-900/50 border-cyan-700 text-cyan-200{% endif %} border px-1.5 py-0.5 rounded-full">
-      {% if s.kind == 'state' %}save state{% else %}battery{% endif %}
+    <span class="flex-shrink-0 {% if s.kind == 'state' %}bg-indigo-900/50 border-indigo-700 text-indigo-200{% elif s.kind == 'wii-nand' %}bg-emerald-900/50 border-emerald-700 text-emerald-200{% else %}bg-cyan-900/50 border-cyan-700 text-cyan-200{% endif %} border px-1.5 py-0.5 rounded-full">
+      {% if s.kind == 'state' %}save state{% elif s.kind == 'wii-nand' %}Wii NAND{% else %}battery{% endif %}
     </span>
   </div>
   {% endfor %}
