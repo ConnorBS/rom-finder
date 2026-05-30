@@ -140,6 +140,13 @@ def _m_0015_library_saves(s: Session) -> None:
     _add_column(s, "library", "save_updated_at", "TIMESTAMP", None)
 
 
+def _m_0016_library_disc_id(s: Session) -> None:
+    # 4-char Wii title-ID-low (e.g. "RKME") — keys Dolphin NAND save matching, since
+    # Dolphin stores Wii saves under User/Wii/title/{type}/<hex(title_id_low)>/data/
+    # (not by ROM filename). Populated lazily from the disc header by services/saves.
+    _add_column(s, "library", "disc_id", "VARCHAR", "''")
+
+
 # (version_id, apply_fn) — applied in order, recorded once.
 MIGRATIONS: list[tuple[str, "callable"]] = [
     ("0001_download_source_id", _m_0001),
@@ -157,6 +164,7 @@ MIGRATIONS: list[tuple[str, "callable"]] = [
     ("0013_normalize_wii", _m_0013_normalize_wii),
     ("0014_library_duplicate_of", _m_0014_library_duplicate_of),
     ("0015_library_saves", _m_0015_library_saves),
+    ("0016_library_disc_id", _m_0016_library_disc_id),
 ]
 
 
