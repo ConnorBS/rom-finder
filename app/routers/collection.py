@@ -18,7 +18,7 @@ PER_PAGE_CARDS = 50
 PER_PAGE_LIST = 100
 
 from app.db.database import engine, get_session
-from app.db.models import AppSetting, LibraryEntry, WantedGame, HuntStatus
+from app.db.models import AppSetting, LibraryEntry, WantedGame, HuntStatus, RAGameProgress, RAAchievement
 from app.services import logger as applog
 from app.services import cover_sources as cover_source_registry
 from app.services import settings as app_settings
@@ -34,6 +34,32 @@ def _get_setting(session: Session, key: str, default: str = "") -> str:
 
 
 _BEATEN_KINDS = ("beaten", "beaten-softcore", "completed")
+
+# Sort options for the collection toolbar: (key, label). `_SORT_KEYS` maps each key to
+# an item sort-function + reverse flag. Progress/points/achievements come from the RA
+# mirror; file_size from scan/rehash. All LOCAL — applied to the in-memory item list.
+_SORT_OPTIONS: list[tuple[str, str]] = [
+    ("added_desc", "Newest added"),
+    ("added_asc", "Oldest added"),
+    ("size_desc", "Largest size"),
+    ("size_asc", "Smallest size"),
+    ("progress_desc", "Most complete"),
+    ("points_desc", "Most points"),
+    ("achievements_desc", "Most achievements"),
+    ("title_asc", "Title A–Z"),
+    ("system_asc", "System"),
+]
+_SORT_KEYS = {
+    "added_desc": (lambda i: i["added_at"], True),
+    "added_asc": (lambda i: i["added_at"], False),
+    "size_desc": (lambda i: i.get("file_size") or 0, True),
+    "size_asc": (lambda i: i.get("file_size") or 0, False),
+    "progress_desc": (lambda i: i.get("progress") or 0, True),
+    "points_desc": (lambda i: i.get("points") or 0, True),
+    "achievements_desc": (lambda i: i.get("achievements") or 0, True),
+    "title_asc": (lambda i: i["game_title"].lower(), False),
+    "system_asc": (lambda i: (i["system"].lower(), i["game_title"].lower()), False),
+}
 
 
 def _subset_view(entry) -> tuple[bool, int]:
@@ -51,6 +77,19 @@ def _subset_view(entry) -> tuple[bool, int]:
 def _build_collection(session: Session) -> list[dict]:
     library_entries = session.exec(select(LibraryEntry)).all()
     wanted_games = session.exec(select(WantedGame)).all()
+
+    # Mirror joins for sorting (LOCAL — the dashboard mirror, no RA calls): per-game
+    # completion % + achievement count, and earned points summed per game.
+    prog_by_game = {p.game_id: p for p in session.exec(select(RAGameProgress)).all()}
+    points_by_game: dict[int, int] = {}
+    for a in session.exec(select(RAAchievement)).all():
+        points_by_game[a.game_id] = points_by_game.get(a.game_id, 0) + (a.points or 0)
+
+    def _meta(ra_game_id):
+        p = prog_by_game.get(ra_game_id) if ra_game_id else None
+        return (p.pct_complete if p else 0.0,
+                p.max_possible if p else 0,
+                points_by_game.get(ra_game_id, 0))
 
     lib_by_ra: dict[int, LibraryEntry] = {}
     lib_by_key: dict[tuple, LibraryEntry] = {}
@@ -96,6 +135,10 @@ def _build_collection(session: Session) -> list[dict]:
             "is_subset_rom": bool(lib and lib.is_subset_rom),
             "subset_compatible": _subset_view(lib)[0],
             "subsets_available": _subset_view(lib)[1],
+            "file_size": lib.file_size if lib else 0,
+            "progress": _meta(w.ra_game_id)[0],
+            "achievements": _meta(w.ra_game_id)[1],
+            "points": _meta(w.ra_game_id)[2],
             "unsupported": is_ra_unsupported(w.system),
             "added_at": w.added_at,
         })
@@ -124,6 +167,10 @@ def _build_collection(session: Session) -> list[dict]:
                 "is_subset_rom": e.is_subset_rom,
                 "subset_compatible": _subset_view(e)[0],
                 "subsets_available": _subset_view(e)[1],
+                "file_size": e.file_size,
+                "progress": _meta(e.ra_game_id)[0],
+                "achievements": _meta(e.ra_game_id)[1],
+                "points": _meta(e.ra_game_id)[2],
                 "unsupported": is_ra_unsupported(e.system),
                 "added_at": e.added_at,
             })
@@ -141,6 +188,7 @@ async def collection_page(
     view: str = Query(default="cards"),
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=0),
+    sort: str = Query(default="added_desc"),
     session: Session = Depends(get_session),
 ):
     all_items = _build_collection(session)
@@ -170,6 +218,9 @@ async def collection_page(
         filtered = [i for i in filtered if i.get("subsets_available")]
     elif status:
         filtered = [i for i in filtered if i["status"] == status]
+
+    keyfn, rev = _SORT_KEYS.get(sort, _SORT_KEYS["added_desc"])
+    filtered = sorted(filtered, key=keyfn, reverse=rev)
 
     allowed_per_page = {50, 100, 250, 500, 1000}
     per = per_page if per_page in allowed_per_page else (PER_PAGE_CARDS if view == "cards" else PER_PAGE_LIST)
@@ -212,6 +263,8 @@ async def collection_page(
             "page_start": start + 1 if total_filtered else 0,
             "page_end": min(start + per, total_filtered),
             "per_page": per,
+            "selected_sort": sort,
+            "sort_options": _SORT_OPTIONS,
             "all_filtered_lib_ids": all_filtered_lib_ids,
             "counts": {
                 "total": len(all_items),
@@ -351,6 +404,7 @@ async def bulk_scan(session: Session = Depends(get_session)):
                 continue
             session.add(LibraryEntry(
                 game_title=_rom_title(f), system=system, file_name=f.name, file_path=fp,
+                file_size=f.stat().st_size,
             ))
             existing_paths.add(fp)
             added += 1
@@ -371,7 +425,16 @@ async def bulk_scan(session: Session = Depends(get_session)):
 
     # --- Reconcile against disk: flag missing / resurrect reappeared ------
     existing_entries = live_entries
-    on_disk = {id(e): Path(e.file_path).exists() for e in existing_entries}
+    on_disk: dict[int, bool] = {}
+    for e in existing_entries:
+        try:
+            st = Path(e.file_path).stat()
+            on_disk[id(e)] = True
+            if e.file_size != st.st_size:   # backfill / refresh size for the size sort
+                e.file_size = st.st_size
+                session.add(e)
+        except OSError:
+            on_disk[id(e)] = False
     restored = 0
     for e in existing_entries:
         if e.missing and on_disk[id(e)]:
@@ -464,6 +527,42 @@ def _delete_rom_file(session: Session, e: LibraryEntry) -> tuple[bool, str, int]
     return True, "", removed
 
 
+def _wanted_for_entry(session: Session, e: LibraryEntry) -> WantedGame | None:
+    """The WantedGame this library entry satisfies (mirrors _build_collection's
+    wanted→library match: by ra_game_id, else title+system), or None."""
+    w = None
+    if e.ra_game_id:
+        w = session.exec(select(WantedGame).where(WantedGame.ra_game_id == e.ra_game_id)).first()
+    if w is None:
+        w = session.exec(select(WantedGame).where(
+            WantedGame.game_title == e.game_title, WantedGame.system == e.system)).first()
+    return w
+
+
+def _purge_orphaned_wanted(session: Session, wanted_ids: list[int]) -> int:
+    """Delete each given WantedGame ONLY if no remaining LibraryEntry still satisfies it —
+    so a duplicate or subset copy that's still on disk keeps the Wanted record alive, and
+    it's removed only once every owned copy of the game/subset is gone. Returns count removed."""
+    ids = {w for w in wanted_ids if w}
+    if not ids:
+        return 0
+    remaining = session.exec(select(LibraryEntry)).all()
+    by_ra = {e.ra_game_id for e in remaining if e.ra_game_id}
+    by_key = {(e.game_title.lower(), e.system.lower()) for e in remaining}
+    removed = 0
+    for wid in ids:
+        w = session.get(WantedGame, wid)
+        if not w:
+            continue
+        still_owned = (w.ra_game_id in by_ra) or ((w.game_title.lower(), w.system.lower()) in by_key)
+        if not still_owned:
+            session.delete(w)
+            removed += 1
+    if removed:
+        session.commit()
+    return removed
+
+
 @router.post("/collection/library/{library_id}/delete", response_class=HTMLResponse)
 async def delete_library_entry(
     library_id: int,
@@ -483,11 +582,16 @@ async def delete_library_entry(
         applog.log_action("library_delete_file", {
             "game": e.game_title, "file": e.file_name, "removed_files": removed,
         })
+    wanted = _wanted_for_entry(session, e)
+    wanted_id = wanted.id if wanted else None
     applog.log_action("library_delete", {
         "game": e.game_title, "system": e.system, "was_missing": e.missing, "file_deleted": delete_file,
     })
     session.delete(e)
     session.commit()
+    # Drop the matching Wanted record too — but only if no other owned copy (duplicate /
+    # subset) still satisfies it, so the game truly leaves the collection.
+    _purge_orphaned_wanted(session, [wanted_id] if wanted_id else [])
     _refresh_duplicates()   # a group may collapse or re-elect its canonical
     return HTMLResponse("", headers={"HX-Refresh": "true"})
 
@@ -647,6 +751,7 @@ async def bulk_delete(
     if not ids:
         return HTMLResponse('<span class="text-gray-400 text-xs">No entries selected.</span>')
     deleted = files_removed = skipped = 0
+    affected_wanted: list[int] = []
     for lid in ids:
         e = session.get(LibraryEntry, lid)
         if not e:
@@ -657,17 +762,23 @@ async def bulk_delete(
                 skipped += 1     # locked root — keep the entry
                 continue
             files_removed += removed
+        w = _wanted_for_entry(session, e)
+        if w:
+            affected_wanted.append(w.id)
         session.delete(e)
         deleted += 1
     session.commit()
+    removed_wanted = _purge_orphaned_wanted(session, affected_wanted)  # only if no copy remains
     _refresh_duplicates()   # groups may collapse
     applog.log_action("bulk_delete", {
         "requested": len(ids), "deleted": deleted, "files_removed": files_removed,
-        "skipped_locked": skipped, "delete_file": delete_file,
+        "skipped_locked": skipped, "wanted_removed": removed_wanted, "delete_file": delete_file,
     })
     parts = [f'{deleted} entr{"y" if deleted == 1 else "ies"} removed']
     if delete_file:
         parts.append(f'{files_removed} file{"s" if files_removed != 1 else ""} deleted')
+    if removed_wanted:
+        parts.append(f'{removed_wanted} cleared from Wanted')
     if skipped:
         parts.append(f'{skipped} skipped (read-only lock)')
     return HTMLResponse(
@@ -791,6 +902,10 @@ async def _do_rehash(entry_ids: list[int]) -> None:
                 entry.hash_verified = False
                 entry.ra_matched = False
                 entry.ra_checked_at = None   # hash changed → the old RA check is void; re-check it
+                try:
+                    entry.file_size = p.stat().st_size
+                except OSError:
+                    pass
                 session.add(entry)
                 processed += 1
             except Exception as exc:

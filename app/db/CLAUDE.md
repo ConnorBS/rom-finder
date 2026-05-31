@@ -21,6 +21,7 @@ disc_id          — 4-char Wii title-ID-low from the disc header (migration 001
 ra_award         — own highest RA award tier (migration 0017): mastered|completed|beaten|beaten-softcore|""
 is_subset_rom    — this entry is itself an RA "Subset" copy (title/filename marker)
 subset_info      — JSON [{game_id,title,mastered}] of subsets whose accepted hash list contains this ROM's hash
+file_size        — ROM file size in bytes (migration 0018); enables the collection size sort; set on scan/rehash
 added_at
 ```
 
