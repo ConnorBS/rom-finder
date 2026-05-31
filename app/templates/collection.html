@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Collection — ROM Finder{% endblock %}
 {% block content %}
+{% macro fsize(n) %}{% if n and n >= 1073741824 %}{{ (n / 1073741824) | round(2) }} GB{% elif n %}{{ (n / 1048576) | round(1) }} MB{% endif %}{% endmacro %}
 <div class="p-4 sm:p-6 max-w-7xl mx-auto">
 
     <!-- Header -->
@@ -29,11 +30,11 @@
 
         <!-- View toggle -->
         <div class="flex items-center gap-1 bg-gray-800 border border-gray-700 rounded-lg p-1 flex-shrink-0">
-            <a href="?q={{ q }}&system={{ selected_system }}&status={{ selected_status }}&view=cards&per_page={{ per_page }}"
+            <a href="?q={{ q }}&system={{ selected_system }}&status={{ selected_status }}&view=cards&per_page={{ per_page }}&sort={{ selected_sort }}"
                class="px-2.5 py-1.5 rounded text-xs font-medium transition-colors {% if view == 'cards' %}bg-gray-600 text-white{% else %}text-gray-400 hover:text-white{% endif %}">
                 Cards
             </a>
-            <a href="?q={{ q }}&system={{ selected_system }}&status={{ selected_status }}&view=list&per_page={{ per_page }}"
+            <a href="?q={{ q }}&system={{ selected_system }}&status={{ selected_status }}&view=list&per_page={{ per_page }}&sort={{ selected_sort }}"
                class="px-2.5 py-1.5 rounded text-xs font-medium transition-colors {% if view != 'cards' %}bg-gray-600 text-white{% else %}text-gray-400 hover:text-white{% endif %}">
                 List
             </a>
@@ -55,7 +56,7 @@
                 hx-target="body"
                 hx-push-url="true"
                 hx-trigger="input changed delay:400ms, search"
-                hx-include="#col-system,#col-status,#col-view,#col-perpage"
+                hx-include="#col-system,#col-status,#col-view,#col-perpage,#col-sort"
                 name="q"
             >
 
@@ -64,11 +65,23 @@
                 hx-get="/collection"
                 hx-target="body"
                 hx-push-url="true"
-                hx-include="#col-q,#col-status,#col-view,#col-perpage"
+                hx-include="#col-q,#col-status,#col-view,#col-perpage,#col-sort"
             >
                 <option value="">All systems</option>
                 {% for sys in systems %}
                 <option value="{{ sys }}" {% if sys == selected_system %}selected{% endif %}>{{ sys }}</option>
+                {% endfor %}
+            </select>
+
+            <select id="col-sort" name="sort" title="Sort order"
+                class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500 w-full sm:w-auto"
+                hx-get="/collection"
+                hx-target="body"
+                hx-push-url="true"
+                hx-include="#col-q,#col-system,#col-status,#col-view,#col-perpage"
+            >
+                {% for val, label in sort_options %}
+                <option value="{{ val }}" {% if val == selected_sort %}selected{% endif %}>{{ label }}</option>
                 {% endfor %}
             </select>
 
@@ -77,7 +90,7 @@
                 hx-get="/collection"
                 hx-target="body"
                 hx-push-url="true"
-                hx-include="#col-q,#col-system,#col-status,#col-view"
+                hx-include="#col-q,#col-system,#col-status,#col-view,#col-sort"
             >
                 {% for pp in [50, 100, 250, 500, 1000] %}
                 <option value="{{ pp }}" {% if pp == per_page %}selected{% endif %}>{{ pp }} / page</option>
@@ -90,7 +103,7 @@
             <div class="flex gap-1 flex-wrap">
                 {% set statuses = [("", "All"), ("verified", "Verified"), ("found", "Found"), ("library", "Library"), ("wanted", "Wanted"), ("no_ra", "No RA"), ("unsupported", "Unsupported"), ("missing", "Missing"), ("duplicate", "Duplicate"), ("has_save", "Has Save"), ("has_mastered", "Mastered"), ("beaten", "Beaten"), ("subset_available", "Subset avail.")] %}
                 {% for val, label in statuses %}
-                <a href="?q={{ q }}&system={{ selected_system }}&status={{ val }}&view={{ view }}&per_page={{ per_page }}"
+                <a href="?q={{ q }}&system={{ selected_system }}&status={{ val }}&view={{ view }}&per_page={{ per_page }}&sort={{ selected_sort }}"
                    id="col-status"
                    class="px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors
                           {% if selected_status == val %}border-blue-600 bg-blue-600/20 text-blue-300{% else %}border-gray-700 bg-gray-800 text-gray-400 hover:text-white{% endif %}">
@@ -445,7 +458,7 @@
                 </label>
                 {% endif %}
                 <p class="text-gray-200 text-xs font-medium leading-tight line-clamp-2" title="{{ item.game_title }}">{{ item.game_title }}</p>
-                <p class="text-gray-600 text-xs truncate">{{ item.system }}</p>
+                <p class="text-gray-600 text-xs truncate">{{ item.system }}{% if item.file_size %} · <span class="text-gray-500">{{ fsize(item.file_size) }}</span>{% endif %}</p>
                 {% if item.ra_matched and item.ra_game_id %}
                 <a href="https://retroachievements.org/game/{{ item.ra_game_id }}" target="_blank" rel="noopener"
                    class="inline-flex items-center gap-1 text-green-400 text-xs hover:text-green-300 transition-colors" title="View on RetroAchievements">
@@ -513,6 +526,7 @@
                     <th class="text-left px-4 py-3 font-medium">System</th>
                     <th class="text-left px-4 py-3 font-medium">Status</th>
                     <th class="text-left px-4 py-3 font-medium">Hash</th>
+                    <th class="text-left px-4 py-3 font-medium">Size</th>
                     <th class="text-left px-4 py-3 font-medium">Added</th>
                     <th class="text-right px-4 py-3 font-medium">Actions</th>
                 </tr>
@@ -581,6 +595,7 @@
                         <span class="text-gray-700 text-xs">—</span>
                         {% endif %}
                     </td>
+                    <td class="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{{ fsize(item.file_size) }}</td>
                     <td class="px-4 py-3 text-gray-600 text-xs">{{ item.added_at.strftime('%Y-%m-%d') }}</td>
                     <td class="px-4 py-3 text-right whitespace-nowrap">
                         {% if item.library_id %}
@@ -619,12 +634,12 @@
         {% if total_pages > 1 %}
         <div class="flex items-center gap-1">
             {% if page > 1 %}
-            <a href="?q={{ q }}&system={{ selected_system }}&status={{ selected_status }}&view={{ view }}&per_page={{ per_page }}&page={{ page - 1 }}"
+            <a href="?q={{ q }}&system={{ selected_system }}&status={{ selected_status }}&view={{ view }}&per_page={{ per_page }}&sort={{ selected_sort }}&page={{ page - 1 }}"
                class="px-3 py-1.5 bg-gray-800 border border-gray-700 rounded-lg hover:text-white transition-colors">&#8592; Prev</a>
             {% endif %}
             <span class="px-3 py-1.5 text-gray-600">{{ page }} / {{ total_pages }}</span>
             {% if page < total_pages %}
-            <a href="?q={{ q }}&system={{ selected_system }}&status={{ selected_status }}&view={{ view }}&per_page={{ per_page }}&page={{ page + 1 }}"
+            <a href="?q={{ q }}&system={{ selected_system }}&status={{ selected_status }}&view={{ view }}&per_page={{ per_page }}&sort={{ selected_sort }}&page={{ page + 1 }}"
                class="px-3 py-1.5 bg-gray-800 border border-gray-700 rounded-lg hover:text-white transition-colors">Next &#8594;</a>
             {% endif %}
         </div>

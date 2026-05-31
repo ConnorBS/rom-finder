@@ -152,6 +152,8 @@ class LibraryEntry(SQLModel, table=True):
     is_subset_rom: bool = False  # this entry is itself an RA "Subset" copy (title/filename marker)
     subset_info: str = ""        # JSON [{game_id,title,mastered}] of RA subsets whose accepted hash
                                  # list contains this ROM's file_hash — derived (read-only), RA-backed
+    file_size: int = 0           # ROM file size in bytes (migration 0018); enables the size sort.
+                                 # Populated/refreshed on scan + rehash (0 = not yet measured)
     added_at: datetime = Field(default_factory=datetime.utcnow)
 
 

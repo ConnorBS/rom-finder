@@ -160,6 +160,12 @@ def _m_0017_library_awards_subsets(s: Session) -> None:
     _add_column(s, "library", "subset_info", "VARCHAR", "''")
 
 
+def _m_0018_library_file_size(s: Session) -> None:
+    # ROM file size in bytes — enables sorting the collection by size (e.g. largest
+    # mastered games to delete for space). Populated/refreshed on scan + rehash.
+    _add_column(s, "library", "file_size", "INTEGER", "0")
+
+
 # (version_id, apply_fn) — applied in order, recorded once.
 MIGRATIONS: list[tuple[str, "callable"]] = [
     ("0001_download_source_id", _m_0001),
@@ -179,6 +185,7 @@ MIGRATIONS: list[tuple[str, "callable"]] = [
     ("0015_library_saves", _m_0015_library_saves),
     ("0016_library_disc_id", _m_0016_library_disc_id),
     ("0017_library_awards_subsets", _m_0017_library_awards_subsets),
+    ("0018_library_file_size", _m_0018_library_file_size),
 ]
 
 
