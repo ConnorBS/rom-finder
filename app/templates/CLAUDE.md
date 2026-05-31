@@ -21,6 +21,12 @@ Active-link detection:
 
 Wherever an RA match badge appears (`collection.html`, `library.html`, `download_item.html`), it is an `<a>` linking to `https://retroachievements.org/game/{ra_game_id}` when `ra_game_id` is known. Falls back to a plain `<span>` when ID is absent.
 
+## Award badges, subset markers & multi-select (`collection.html`)
+
+The cover top-left badge stack renders the RA award tier — **🏅 Mastered** (gold) / **✅ Completed** / **🏆 Beaten** — with **Mastered superseding** (first-match `{% if %}/{% elif %}`), plus subset markers (**⊂ Subset** copy, amber **⊕ N subset** available / muted **⊕ subset** when all compatible subsets are mastered). Driven by `item.mastered` / `item.ra_award` / `item.is_subset_rom` / `item.subsets_available`.
+
+Multi-select is minimal JS (sanctioned, like the card-states poller): `.sel-check[data-lib-id]` checkboxes (card info area — kept off the cover so they don't trigger the detail slide-over; list view first column), a `#selection-bar` shown when the `window._sel` Set is non-empty, and `selectAllFiltered()` using `window.allFilteredLibIds`. The Set **resets on every full render** (filter/paginate/HX-Refresh), matching the filter→select-all→act flow. Action buttons post `library_ids` via `hx-vals` (body, not URL). `#col-perpage` (50–1000) is wired like `#col-system`; every nav link threads `&per_page`.
+
 ## Cover Refresh Button
 
 Per-card "↻" hover button on collection and wanted cards.

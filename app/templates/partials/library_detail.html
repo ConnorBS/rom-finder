@@ -24,6 +24,17 @@
       <span class="bg-gray-800 border border-gray-700 text-gray-500 text-xs px-2 py-0.5 rounded-full">Not hashed</span>
       {% endif %}
     </div>
+    {% if entry.ra_award %}
+    <div class="mt-1">
+      {% if entry.ra_award == 'mastered' %}
+      <span class="bg-yellow-900/60 border border-yellow-600 text-yellow-300 text-xs px-2 py-0.5 rounded-full">🏅 Mastered</span>
+      {% elif entry.ra_award == 'completed' %}
+      <span class="bg-emerald-900/60 border border-emerald-700 text-emerald-200 text-xs px-2 py-0.5 rounded-full">✅ Completed</span>
+      {% elif entry.ra_award in ('beaten', 'beaten-softcore') %}
+      <span class="bg-slate-800/60 border border-slate-500 text-slate-200 text-xs px-2 py-0.5 rounded-full">🏆 Beaten</span>
+      {% endif %}
+    </div>
+    {% endif %}
   </div>
 </div>
 
@@ -72,6 +83,25 @@
   {% endfor %}
 </div>
 <p class="text-gray-600 text-xs mb-5">ROM Finder never edits or deletes save files — these are shown for reference only.</p>
+{% endif %}
+
+<!-- Subsets (hash-compatible, from RetroAchievements) -->
+{% if subsets %}
+<h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+  Subsets <span class="text-amber-400 normal-case font-normal">({{ subsets|length }} your hash can play)</span>
+</h3>
+<div class="bg-gray-900 border border-gray-800 rounded-lg p-3 mb-2 space-y-2 text-xs">
+  {% for s in subsets %}
+  <div class="flex items-center justify-between gap-2">
+    <a href="https://retroachievements.org/game/{{ s.game_id }}" target="_blank" rel="noopener"
+       class="text-gray-300 hover:text-blue-300 break-all">{{ s.title }} ↗</a>
+    <span class="flex-shrink-0 border px-1.5 py-0.5 rounded-full {% if s.mastered %}bg-yellow-900/50 border-yellow-600 text-yellow-300{% else %}bg-amber-900/40 border-amber-700 text-amber-200{% endif %}">
+      {% if s.mastered %}mastered{% else %}available{% endif %}
+    </span>
+  </div>
+  {% endfor %}
+</div>
+<p class="text-gray-600 text-xs mb-5">"Available" subsets are extra achievement sets your ROM's hash can play but you haven't mastered yet.</p>
 {% endif %}
 
 <!-- Duplicates -->

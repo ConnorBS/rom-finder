@@ -43,7 +43,7 @@ def test_verify_include_matched(client, monkeypatch):
     monkeypatch.setattr("app.routers.collection._do_verify", fake_do_verify)
     _seed_creds_and_entries()
 
-    r = client.post("/collection/bulk/verify?include_matched=true")
+    r = client.post("/collection/bulk/verify", data={"include_matched": "true"})
     assert "incl. matched" in r.text
     assert len(captured["ids"]) == 2            # A and the already-matched B
 
@@ -60,7 +60,7 @@ def test_verify_scoped_to_filtered_ids(client, monkeypatch):
         a = s.exec(__import__("sqlmodel").select(LibraryEntry).where(LibraryEntry.game_title == "A")).first()
         a_id = a.id
 
-    r = client.post(f"/collection/bulk/verify?library_ids={a_id}")
+    r = client.post("/collection/bulk/verify", data={"library_ids": str(a_id)})
     assert "filtered view" in r.text
     assert captured["ids"] == [a_id]
 

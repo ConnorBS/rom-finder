@@ -79,6 +79,8 @@ DEFAULT_SETTINGS: dict[str, str] = {
     # Manual refresh only (full re-pull + replace, to absorb retroactive RA changes).
     "ra_dashboard_last_sync": "",
     "ra_dashboard_window_days": "60",
+    # Hash-aware subset cache (services/subsets.py) — last RA-backed refresh.
+    "subset_cache_last_sync": "",
 }
 
 

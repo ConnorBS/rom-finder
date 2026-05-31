@@ -147,6 +147,19 @@ def _m_0016_library_disc_id(s: Session) -> None:
     _add_column(s, "library", "disc_id", "VARCHAR", "''")
 
 
+def _m_0017_library_awards_subsets(s: Session) -> None:
+    # RetroAchievements awards + hash-aware subsets:
+    #  - ra_award: own highest RA award tier (mastered|completed|beaten|beaten-softcore|"")
+    #    from the dashboard mirror — drives the Mastered/Completed/Beaten badges.
+    #  - is_subset_rom: this entry is itself an RA "Subset" copy.
+    #  - subset_info: JSON of subsets whose accepted hash list contains this ROM's hash
+    #    (RA-backed cache in ra_subset_hash) — drives the "subset available" marker.
+    # All derived/read-only; populated by services/mastery.py + services/subsets.py.
+    _add_column(s, "library", "ra_award", "VARCHAR", "''")
+    _add_column(s, "library", "is_subset_rom", "BOOLEAN", "0")
+    _add_column(s, "library", "subset_info", "VARCHAR", "''")
+
+
 # (version_id, apply_fn) — applied in order, recorded once.
 MIGRATIONS: list[tuple[str, "callable"]] = [
     ("0001_download_source_id", _m_0001),
@@ -165,6 +178,7 @@ MIGRATIONS: list[tuple[str, "callable"]] = [
     ("0014_library_duplicate_of", _m_0014_library_duplicate_of),
     ("0015_library_saves", _m_0015_library_saves),
     ("0016_library_disc_id", _m_0016_library_disc_id),
+    ("0017_library_awards_subsets", _m_0017_library_awards_subsets),
 ]
 
 

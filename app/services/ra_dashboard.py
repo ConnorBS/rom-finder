@@ -192,6 +192,18 @@ async def refresh() -> dict:
         with Session(engine) as s:
             app_settings.set(s, "ra_dashboard_last_sync", now.isoformat())
         applog.info("system", "RA dashboard synced", {"achievements": ach_count, "games": game_count})
+        # Re-derive owned-library award tiers from the freshly-rebuilt mirror, and
+        # refresh per-ROM subset flags from the cached subset hashes — both LOCAL
+        # (no RA calls), so the collection's badges reflect this sync immediately.
+        try:
+            from app.services.mastery import sync_library_awards
+            from app.services.subsets import recompute_subset_flags
+            with Session(engine) as s:
+                sync_library_awards(s)
+            with Session(engine) as s:
+                recompute_subset_flags(s)
+        except Exception as exc:
+            applog.warning("system", f"Award/subset recompute after dashboard sync failed: {exc}")
         return {"status": "ok", "achievements": ach_count, "games": game_count}
     except Exception as exc:
         applog.warning("system", f"RA dashboard sync failed: {exc}")

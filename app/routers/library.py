@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from fastapi import APIRouter, Request, Depends, Query
+from fastapi import APIRouter, Request, Depends, Query, BackgroundTasks
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select
@@ -154,16 +154,22 @@ async def library_detail(
         saves = json.loads(entry.save_files) if entry.save_files else []
     except ValueError:
         saves = []
+    try:
+        subsets = json.loads(entry.subset_info) if entry.subset_info else []
+    except ValueError:
+        subsets = []
     return templates.TemplateResponse(
         request, "partials/library_detail.html",
         {"entry": entry, "downloads": downloads,
-         "dup_group": dup_group, "canonical_id": canonical_id, "saves": saves},
+         "dup_group": dup_group, "canonical_id": canonical_id, "saves": saves,
+         "subsets": subsets},
     )
 
 
 @router.post("/{library_id}/verify-ra", response_class=HTMLResponse)
 async def verify_ra_library_entry(
     library_id: int,
+    background_tasks: BackgroundTasks,
     session: Session = Depends(get_session),
 ):
     """Look up a library entry's hash against RetroAchievements and update ra_matched."""
@@ -202,6 +208,11 @@ async def verify_ra_library_entry(
                     wanted.updated_at = datetime.utcnow()
                     session.add(wanted)
             session.commit()
+            # Determine subsets for the matched game in the background (scoped — cheap;
+            # keeps the response snappy while still discovering subsets on "Check RA").
+            if entry.ra_game_id:
+                from app.services.subsets import refresh_subset_cache
+                background_tasks.add_task(refresh_subset_cache, [entry.ra_game_id])
             applog.log_action("library_verify_ra", {
                 "library_id": library_id, "hash": entry.file_hash, "ra_game_id": entry.ra_game_id,
             })

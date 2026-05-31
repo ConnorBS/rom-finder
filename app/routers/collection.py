@@ -9,7 +9,7 @@ Status vocabulary:
 import json
 import math
 from datetime import datetime
-from fastapi import APIRouter, Request, Depends, BackgroundTasks, Query
+from fastapi import APIRouter, Request, Depends, BackgroundTasks, Query, Form
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select
@@ -31,6 +31,21 @@ templates = Jinja2Templates(directory="app/templates")
 def _get_setting(session: Session, key: str, default: str = "") -> str:
     s = session.get(AppSetting, key)
     return s.value if s else default
+
+
+_BEATEN_KINDS = ("beaten", "beaten-softcore", "completed")
+
+
+def _subset_view(entry) -> tuple[bool, int]:
+    """(subset_compatible, subsets_available) from entry.subset_info JSON — guarded so a
+    corrupted value never 500s the page. available = compatible subsets not yet mastered."""
+    if not entry or not entry.subset_info:
+        return False, 0
+    try:
+        info = json.loads(entry.subset_info)
+    except (ValueError, TypeError):
+        return False, 0
+    return bool(info), sum(1 for s in info if not s.get("mastered"))
 
 
 def _build_collection(session: Session) -> list[dict]:
@@ -76,6 +91,11 @@ def _build_collection(session: Session) -> list[dict]:
             "duplicate_of": lib.duplicate_of if lib else None,
             "has_save": bool(lib and lib.save_count),
             "save_count": lib.save_count if lib else 0,
+            "ra_award": lib.ra_award if lib else "",
+            "mastered": bool(lib and lib.ra_award == "mastered"),
+            "is_subset_rom": bool(lib and lib.is_subset_rom),
+            "subset_compatible": _subset_view(lib)[0],
+            "subsets_available": _subset_view(lib)[1],
             "unsupported": is_ra_unsupported(w.system),
             "added_at": w.added_at,
         })
@@ -99,6 +119,11 @@ def _build_collection(session: Session) -> list[dict]:
                 "duplicate_of": e.duplicate_of,
                 "has_save": bool(e.save_count),
                 "save_count": e.save_count,
+                "ra_award": e.ra_award,
+                "mastered": e.ra_award == "mastered",
+                "is_subset_rom": e.is_subset_rom,
+                "subset_compatible": _subset_view(e)[0],
+                "subsets_available": _subset_view(e)[1],
                 "unsupported": is_ra_unsupported(e.system),
                 "added_at": e.added_at,
             })
@@ -115,6 +140,7 @@ async def collection_page(
     status: str = Query(default=""),
     view: str = Query(default="cards"),
     page: int = Query(default=1, ge=1),
+    per_page: int = Query(default=0),
     session: Session = Depends(get_session),
 ):
     all_items = _build_collection(session)
@@ -136,19 +162,27 @@ async def collection_page(
         filtered = [i for i in filtered if i.get("duplicate")]
     elif status == "has_save":
         filtered = [i for i in filtered if i.get("has_save")]
+    elif status == "has_mastered":
+        filtered = [i for i in filtered if i.get("mastered")]
+    elif status == "beaten":
+        filtered = [i for i in filtered if i.get("ra_award") in _BEATEN_KINDS and not i.get("mastered")]
+    elif status == "subset_available":
+        filtered = [i for i in filtered if i.get("subsets_available")]
     elif status:
         filtered = [i for i in filtered if i["status"] == status]
 
-    per_page = PER_PAGE_CARDS if view == "cards" else PER_PAGE_LIST
+    allowed_per_page = {50, 100, 250, 500, 1000}
+    per = per_page if per_page in allowed_per_page else (PER_PAGE_CARDS if view == "cards" else PER_PAGE_LIST)
     total_filtered = len(filtered)
-    total_pages = max(1, math.ceil(total_filtered / per_page))
+    total_pages = max(1, math.ceil(total_filtered / per))
     page = min(page, total_pages)
-    start = (page - 1) * per_page
-    items = filtered[start:start + per_page]
+    start = (page - 1) * per
+    items = filtered[start:start + per]
 
-    # IDs for "hash filtered view" — capped at 500 to avoid oversized URLs
+    # IDs for select-all / filtered-view bulk actions. Sent in the request BODY
+    # (hx-vals), not the URL, so the old ~500 URL-length cap is lifted.
     all_filtered_lib_ids = [i["library_id"] for i in filtered if i.get("library_id")]
-    if len(all_filtered_lib_ids) > 500:
+    if len(all_filtered_lib_ids) > 5000:
         all_filtered_lib_ids = []
 
     applog.log_navigation("collection", {
@@ -176,7 +210,8 @@ async def collection_page(
             "total_pages": total_pages,
             "total_filtered": total_filtered,
             "page_start": start + 1 if total_filtered else 0,
-            "page_end": min(start + per_page, total_filtered),
+            "page_end": min(start + per, total_filtered),
+            "per_page": per,
             "all_filtered_lib_ids": all_filtered_lib_ids,
             "counts": {
                 "total": len(all_items),
@@ -188,6 +223,9 @@ async def collection_page(
                 "unsupported": sum(1 for i in all_items if i.get("unsupported")),
                 "duplicate": sum(1 for i in all_items if i.get("duplicate")),
                 "has_save": sum(1 for i in all_items if i.get("has_save")),
+                "mastered": sum(1 for i in all_items if i.get("mastered")),
+                "beaten": sum(1 for i in all_items if i.get("ra_award") in _BEATEN_KINDS and not i.get("mastered")),
+                "subset_available": sum(1 for i in all_items if i.get("subsets_available")),
             },
         },
     )
@@ -210,6 +248,9 @@ async def collection_counts(session: Session = Depends(get_session)):
         "unsupported": sum(1 for i in all_items if i.get("unsupported")),
         "duplicate": sum(1 for i in all_items if i.get("duplicate")),
         "has_save": sum(1 for i in all_items if i.get("has_save")),
+        "mastered": sum(1 for i in all_items if i.get("mastered")),
+        "beaten": sum(1 for i in all_items if i.get("ra_award") in _BEATEN_KINDS and not i.get("mastered")),
+        "subset_available": sum(1 for i in all_items if i.get("subsets_available")),
     }
     parts = [f'<span>{counts["total"]} total</span>']
     if counts["verified"]:
@@ -228,6 +269,12 @@ async def collection_counts(session: Session = Depends(get_session)):
         parts.append(f'<span class="text-purple-400">{counts["duplicate"]} duplicate</span>')
     if counts["has_save"]:
         parts.append(f'<span class="text-cyan-400">{counts["has_save"]} with save</span>')
+    if counts["mastered"]:
+        parts.append(f'<span class="text-yellow-300">{counts["mastered"]} mastered</span>')
+    if counts["beaten"]:
+        parts.append(f'<span class="text-slate-400">{counts["beaten"]} beaten</span>')
+    if counts["subset_available"]:
+        parts.append(f'<span class="text-amber-400" title="Mastered/owned games with a hash-compatible subset still to play">{counts["subset_available"]} subset avail.</span>')
     return HTMLResponse(" ".join(parts))
 
 
@@ -474,48 +521,51 @@ async def library_to_wanted(library_id: int, session: Session = Depends(get_sess
 @router.post("/collection/bulk/fetch-covers", response_class=HTMLResponse)
 async def bulk_fetch_covers(
     background_tasks: BackgroundTasks,
+    library_ids: str = Form(default=""),
     session: Session = Depends(get_session),
 ):
-    """Queue cover fetches for all wanted games that have no cover yet."""
+    """Queue cover fetches. With `library_ids` (a selection) only those library entries
+    that have no cover are fetched; otherwise every tracked game missing a cover is."""
     if _get_setting(session, "covers_dir_readonly", "false") == "true":
         return HTMLResponse('<span class="text-red-400 text-xs">Covers directory is read-only. Disable it in Settings first.</span>')
 
-    games_needing_cover = session.exec(
-        select(WantedGame).where(WantedGame.cover_path == "")
-    ).all()
-
     from app.routers.wanted import _fetch_cover
-    queued = 0
-    for game in games_needing_cover:
-        queued += 1
-    library_needing_cover = session.exec(
-        select(LibraryEntry).where(LibraryEntry.cover_path == "")
-    ).all()
-    queued += len(library_needing_cover)
+    if library_ids:
+        ids = [int(x) for x in library_ids.split(",") if x.strip().isdigit()]
+        games_needing_cover = []
+        library_needing_cover = session.exec(
+            select(LibraryEntry).where(LibraryEntry.id.in_(ids), LibraryEntry.cover_path == "")
+        ).all()
+    else:
+        games_needing_cover = session.exec(
+            select(WantedGame).where(WantedGame.cover_path == "")
+        ).all()
+        library_needing_cover = session.exec(
+            select(LibraryEntry).where(LibraryEntry.cover_path == "")
+        ).all()
 
+    queued = len(games_needing_cover) + len(library_needing_cover)
     if queued:
         from app.services import activity as activity_store
         activity_store.start_batch("cover-batch", "Fetching covers", queued, "cover")
-
-    count = 0
     for game in games_needing_cover:
         background_tasks.add_task(_fetch_cover, game.id, game.ra_game_id, game.game_title, game.system, "cover-batch")
-        count += 1
     for entry in library_needing_cover:
         background_tasks.add_task(_fetch_cover_for_library, entry.id, entry.ra_game_id, entry.game_title, entry.system, "cover-batch")
 
-    applog.log_action("bulk_fetch_covers", {"queued": queued})
+    applog.log_action("bulk_fetch_covers", {"queued": queued, "scoped": bool(library_ids)})
     if queued:
         return HTMLResponse(f'<span class="text-green-400 text-xs">&#10003; Fetching covers for {queued} game{"s" if queued != 1 else ""}…</span>')
-    return HTMLResponse('<span class="text-gray-400 text-xs">All tracked games already have covers.</span>')
+    msg = "All selected games already have covers." if library_ids else "All tracked games already have covers."
+    return HTMLResponse(f'<span class="text-gray-400 text-xs">{msg}</span>')
 
 
 @router.post("/collection/bulk/rehash", response_class=HTMLResponse)
 async def bulk_rehash(
     background_tasks: BackgroundTasks,
-    library_ids: str = Query(default=""),
-    unhashed_only: bool = Query(default=False),
-    unmatched_only: bool = Query(default=False),
+    library_ids: str = Form(default=""),
+    unhashed_only: bool = Form(default=False),
+    unmatched_only: bool = Form(default=False),
     session: Session = Depends(get_session),
 ):
     """Re-hash library entries (LOCAL — no RA calls). library_ids scopes to a
@@ -544,8 +594,8 @@ async def bulk_rehash(
 @router.post("/collection/bulk/verify", response_class=HTMLResponse)
 async def bulk_verify(
     background_tasks: BackgroundTasks,
-    library_ids: str = Query(default=""),          # scope to the current filtered view
-    include_matched: bool = Query(default=False),  # re-verify already RA-matched too
+    library_ids: str = Form(default=""),          # scope to the selection / filtered view
+    include_matched: bool = Form(default=False),  # re-verify already RA-matched too
     session: Session = Depends(get_session),
 ):
     """Verify library hashes against RetroAchievements.
@@ -581,6 +631,76 @@ async def bulk_verify(
     return HTMLResponse(
         f'<span class="text-blue-400 text-xs">&#10003; Checking {len(entries)} hash{"es" if len(entries) != 1 else ""} '
         f'against RetroAchievements ({scope}, {mode})…</span>'
+    )
+
+
+@router.post("/collection/bulk/delete", response_class=HTMLResponse)
+async def bulk_delete(
+    library_ids: str = Form(default=""),
+    delete_file: bool = Form(default=False),
+    session: Session = Depends(get_session),
+):
+    """Delete a selection of library entries. `delete_file=true` also removes the ROM
+    file(s) from disk via _delete_rom_file (honours read-only locks, deletes .cue/.gdi
+    sibling tracks, never touches saves); entries whose file is locked are kept + counted."""
+    ids = [int(x) for x in library_ids.split(",") if x.strip().isdigit()]
+    if not ids:
+        return HTMLResponse('<span class="text-gray-400 text-xs">No entries selected.</span>')
+    deleted = files_removed = skipped = 0
+    for lid in ids:
+        e = session.get(LibraryEntry, lid)
+        if not e:
+            continue
+        if delete_file:
+            ok, _err, removed = _delete_rom_file(session, e)
+            if not ok:
+                skipped += 1     # locked root — keep the entry
+                continue
+            files_removed += removed
+        session.delete(e)
+        deleted += 1
+    session.commit()
+    _refresh_duplicates()   # groups may collapse
+    applog.log_action("bulk_delete", {
+        "requested": len(ids), "deleted": deleted, "files_removed": files_removed,
+        "skipped_locked": skipped, "delete_file": delete_file,
+    })
+    parts = [f'{deleted} entr{"y" if deleted == 1 else "ies"} removed']
+    if delete_file:
+        parts.append(f'{files_removed} file{"s" if files_removed != 1 else ""} deleted')
+    if skipped:
+        parts.append(f'{skipped} skipped (read-only lock)')
+    return HTMLResponse(
+        f'<span class="text-green-400 text-xs">&#10003; {", ".join(parts)}.</span>',
+        headers={"HX-Refresh": "true"},
+    )
+
+
+@router.post("/collection/sync-subsets", response_class=HTMLResponse)
+async def sync_subsets_endpoint(background_tasks: BackgroundTasks, session: Session = Depends(get_session)):
+    """On-demand full subset-cache refresh from RetroAchievements (cached locally).
+    Enumerates each owned game's subsets + their accepted hashes, then re-derives flags."""
+    username = _get_setting(session, "ra_username")
+    api_key = _get_setting(session, "ra_api_key")
+    if not username or not api_key:
+        return HTMLResponse('<span class="text-yellow-400 text-xs">Add RetroAchievements credentials in Settings to detect subsets.</span>')
+    from app.services.subsets import refresh_subset_cache
+    background_tasks.add_task(refresh_subset_cache)
+    return HTMLResponse('<span class="text-blue-400 text-xs">&#8635; Detecting subsets from RetroAchievements… reload when the activity tray clears.</span>')
+
+
+@router.post("/collection/sync-awards", response_class=HTMLResponse)
+async def sync_awards_endpoint(session: Session = Depends(get_session)):
+    """Re-derive Mastered/Beaten awards (from the local RA mirror) and subset flags
+    (from the cached subset hashes) — LOCAL only, no RA calls."""
+    from app.services.mastery import sync_library_awards
+    from app.services.subsets import recompute_subset_flags
+    a = sync_library_awards(session)
+    f = recompute_subset_flags(session)
+    applog.log_action("sync_awards", {**a, **f})
+    return HTMLResponse(
+        f'<span class="text-green-400 text-xs">&#10003; {a["mastered"]} mastered, {a["beaten"]} beaten · '
+        f'{f["subset_available"]} with a subset available.</span>'
     )
 
 
@@ -788,6 +908,7 @@ async def _do_verify(entry_ids: list[int], username: str, api_key: str) -> None:
     ra = RAClient(username, api_key)
     matched = 0
     checked = 0
+    matched_ids: list[int] = []
 
     # Fresh session per entry — never hold one open across the lookup await (SQLite
     # lock safety), and commit each result so progress is live + durable: no_ra drops
@@ -821,6 +942,8 @@ async def _do_verify(entry_ids: list[int], username: str, api_key: str) -> None:
                     entry.ra_matched = True
                     entry.hash_verified = True
                     entry.ra_game_id = entry.ra_game_id or match.get("ID")
+                    if entry.ra_game_id:
+                        matched_ids.append(entry.ra_game_id)
                     matched += 1
                 entry.ra_checked_at = datetime.utcnow()  # leaves the resumable-verify work set
                 session.add(entry)
@@ -829,6 +952,14 @@ async def _do_verify(entry_ids: list[int], username: str, api_key: str) -> None:
     activity_store.finish(batch_id)
     applog.log_action("bulk_verify_done", {"checked": checked, "matched": matched})
     _refresh_duplicates()
+    # Determine subsets for the games this pass matched (scoped — the full sweep that
+    # catches newly-published subsets rides autodiscover).
+    if matched_ids:
+        try:
+            from app.services.subsets import refresh_subset_cache
+            await refresh_subset_cache(game_ids=list(set(matched_ids)))
+        except Exception as exc:
+            applog.warning("hash", f"Subset cache refresh after verify failed: {exc}")
 
 
 def _refresh_duplicates() -> None:
