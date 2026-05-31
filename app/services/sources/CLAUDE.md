@@ -74,12 +74,14 @@ download_file()    → override: re-fetches mirror for fresh token, streams CDN
 - `archive_org` (`app/services/sources/archive.py`) — built-in; Archive.org No-Intro/Redump collections. Has the "Browse files" step because collections contain many ROMs.
 - `cdromance` (`extensions/cdromance.py`) — AJAX-based CDN, one file per game, no Playwright
 - `wowroms` (`extensions/wowroms.py`) — token-based CDN (`k`=ms timestamp, `t`=md5(k)), one file per game
-- `romsfun` (`extensions/romsfun.py`) — WordPress AJAX endpoint (`action=k_get_download`, `Referer`=mirror page URL) returns fresh signed CDN URL; HTML link is stale placeholder. `get_files()` and `download_file()` both call AJAX.
+- `romsfun` (`extensions/romsfun.py`) — WordPress AJAX endpoint (`action=k_get_download`, `Referer`=mirror page URL) returns fresh signed CDN URL; HTML link is stale placeholder. `get_files()` and `download_file()` both call AJAX. **A game page can list more than one ROM** (e.g. a USA dump *and* a Europe dump at `/download/{slug}-{id}/1`, `/2`) — only one may be RA's accepted hash, so `get_files()` enumerates every per-file path (`_file_paths()`) off the landing page and AJAX-resolves each (dedup by CDN filename; the per-mirror `Referer` is what makes `/1` and `/2` resolve to different files). Returning only the first file made hunts exhaust after one (wrong-region) bad-hash attempt.
 - `vimm` (`extensions/vimm.py`) — requires Playwright for JS challenge
 
 ## Vimm Gotcha
 
 Vimm blocks automated downloads with a JS challenge. Vault ID shown in URLs ≠ the `mediaId` in the download form. DMCA'd games have no `dl_form`. See project memory for details.
+
+**Search-result vault id must be a complete path segment** (`_VAULT_ID_RE = /vault/(\d+)(?=[/?#]|$)`). The old loose `/vault/(\d+)` matched the digit prefix of console-category links — `/vault/32X` → "32", `/vault/3DO` → "3" — surfacing bogus "Sega 32X" / "3DO" rows alongside the real game.
 
 **Playwright is bundled (Phase 7):** the Dockerfile runs `playwright install --with-deps chromium`, so Vimm downloads work in the deployed image (they used to always fail with "Playwright is not installed"). Vimm imports Playwright lazily (inside its methods), so the extension and tests load fine without it; only an actual download needs the browser. Image cost: ~400MB (chromium only).
 

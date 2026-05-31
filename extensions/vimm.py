@@ -3,7 +3,7 @@
 EXTENSION_INFO = {
     "id": "vimm",
     "name": "Vimm's Lair",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "type": "rom_source",
     "author": "ConnorBS",
     "description": (
@@ -94,8 +94,13 @@ _SYSTEM_MAP: dict[str, str] = {
     "Vectrex": "Vectrex",
 }
 
-# Matches /vault/8003, /vault/8003/, or /vault/8003/Burnout-3-Takedown/
-_VAULT_ID_RE = re.compile(r"/vault/(\d+)")
+# Matches a vault GAME url: /vault/8003, /vault/8003/, or
+# /vault/8003/Burnout-3-Takedown/ — the id must be the COMPLETE path segment
+# (followed by /, ?, # or end of string). This deliberately does NOT match
+# console-category links like /vault/32X or /vault/3DO, whose digit prefix
+# ("32", "3") was previously captured as a bogus media id and surfaced as
+# fake "Sega 32X" / "3DO" search results.
+_VAULT_ID_RE = re.compile(r"/vault/(\d+)(?=[/?#]|$)")
 
 
 class VimmSource(RomSource):

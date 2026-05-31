@@ -3,7 +3,7 @@
 EXTENSION_INFO = {
     "id": "romsfun",
     "name": "ROMsFun",
-    "version": "1.6.0",
+    "version": "1.7.0",
     "type": "rom_source",
     "author": "ConnorBS",
     "description": "Downloads ROMs from ROMsFun.com (WordPress AJAX → signed CDN URL). Note: ROMsFun is behind Cloudflare, which can 403 automated downloads.",
@@ -82,12 +82,33 @@ _GAME_HREF_RE = re.compile(r"^/roms/([a-z0-9-]+)/([a-z0-9-]+)\.html$")
 # /download/{slug}-{id}  or  /download/{slug}-{id}/{n}
 _DL_PAGE_RE = re.compile(r"/download/([a-z0-9-]+-\d+)(?:/(\d+))?$")
 
+# Cap on per-file download links resolved per game (one game's page can list
+# several regions; the cap just bounds Cloudflare exposure on a pathological page).
+_MAX_FILES = 12
+
 
 def _extract_filename(cdn_url: str) -> str:
     """Pull the filename from the CDN URL path."""
     path = urllib.parse.urlparse(cdn_url).path
     name = urllib.parse.unquote(path.split("/")[-1])
     return name if name else "rom.zip"
+
+
+def _file_paths(html: str, base: str) -> list[str]:
+    """Every per-file download path for this game on its landing page.
+
+    A ROMsFun game page can list more than one ROM (e.g. a USA dump and a
+    Europe dump) under the same `{slug}-{id}` base, each at `/download/{base}/{n}`.
+    The bare `/download/{base}` form is normalised to `/download/{base}/1`. We
+    always include `/1` (the first/default file) so a single-file game still
+    resolves even if its own link isn't present in the markup.
+    """
+    paths: set[str] = set()
+    for m in re.finditer(rf"/download/{re.escape(base)}(?:/(\d+))?", html):
+        n = m.group(1) or "1"
+        paths.add(f"/download/{base}/{n}")
+    paths.add(f"/download/{base}/1")
+    return sorted(paths, key=lambda p: int(p.rsplit("/", 1)[1]))[:_MAX_FILES]
 
 
 async def _ajax_signed_url(client: httpx.AsyncClient, mirror_url: str) -> str | None:
@@ -207,48 +228,74 @@ class RomsfunSource(RomSource):
                     return []
 
                 dl_page_path = urllib.parse.urlparse(dl_btn["href"]).path.rstrip("/")
-                mirror_url = f"{ROMSFUN_BASE}{dl_page_path}/1"
-
-                # Fetch mirror page to establish session cookies
-                await client.get(
-                    mirror_url,
-                    headers={**_HEADERS, "Referer": f"{ROMSFUN_BASE}{dl_page_path}"},
-                )
-
-                # Call AJAX to get the real signed CDN URL
-                cdn_url = await _ajax_signed_url(client, mirror_url)
-                if not cdn_url:
-                    logger.warning("ROMsFun: AJAX returned no URL for %s", identifier)
+                base_m = _DL_PAGE_RE.search(dl_page_path)
+                if not base_m:
+                    logger.warning("ROMsFun: unparseable download path %s", dl_page_path)
                     return []
+                base = base_m.group(1)  # "{slug}-{id}" without any mirror number
 
-                filename = _extract_filename(cdn_url)
+                # The landing page lists every region/file for this game; fetch it
+                # so we can enumerate them (a game can have a USA *and* a Europe dump,
+                # and only one may be the RA-accepted hash).
+                landing_url = f"{ROMSFUN_BASE}/download/{base}"
+                land = await client.get(
+                    landing_url, headers={**_HEADERS, "Referer": game_url}
+                )
+                file_paths = _file_paths(land.text, base)
 
-                if name_filter:
-                    nf = Path(name_filter).stem.lower()
-                    if nf not in Path(filename).stem.lower():
-                        return []
+                nf = Path(name_filter).stem.lower() if name_filter else ""
+                files: list[dict] = []
+                seen_names: set[str] = set()
 
-                # Probe CDN for file size
-                size = 0
-                try:
-                    head = await client.head(
-                        cdn_url,
-                        headers={**_HEADERS, "Referer": mirror_url},
-                        timeout=10,
-                    )
-                    size = int(head.headers.get("content-length", 0))
-                except Exception:
-                    pass
+                for mirror_path in file_paths:
+                    mirror_url = ROMSFUN_BASE + mirror_path
+                    dl_base = re.sub(r"/\d+$", "", mirror_url)
 
-                # Store the mirror path — download_file() calls AJAX for a fresh token
-                mirror_path = dl_page_path + "/1"
+                    # Fetch the per-file mirror page to establish session cookies,
+                    # then AJAX with that Referer — the server keys the signed URL
+                    # off the mirror page, so /1 and /2 resolve to different files.
+                    await client.get(mirror_url, headers={**_HEADERS, "Referer": dl_base})
+                    cdn_url = await _ajax_signed_url(client, mirror_url)
+                    if not cdn_url:
+                        continue
 
-                return [{
-                    "name": filename,
-                    "identifier": mirror_path,
-                    "source_id": self.source_id,
-                    "size": size,
-                }]
+                    filename = _extract_filename(cdn_url)
+                    # Dedup by resolved filename — handles the case where the mirror
+                    # numbers turn out to be alternate mirrors of one file, not
+                    # distinct regions (same CDN filename → keep one).
+                    if filename in seen_names:
+                        continue
+                    seen_names.add(filename)
+
+                    if nf:
+                        fstem = Path(filename).stem.lower()
+                        if nf not in fstem and fstem not in nf:
+                            continue
+
+                    size = 0
+                    try:
+                        head = await client.head(
+                            cdn_url,
+                            headers={**_HEADERS, "Referer": mirror_url},
+                            timeout=10,
+                        )
+                        size = int(head.headers.get("content-length", 0))
+                    except Exception:
+                        pass
+
+                    files.append({
+                        "name": filename,
+                        # Store the mirror path — download_file() re-runs AJAX for a
+                        # fresh token at download time.
+                        "identifier": mirror_path,
+                        "source_id": self.source_id,
+                        "size": size,
+                    })
+                    await asyncio.sleep(0.2)  # be gentle with Cloudflare
+
+                if not files:
+                    logger.warning("ROMsFun: no resolvable files for %s", identifier)
+                return files
 
         except Exception as exc:
             logger.warning("ROMsFun get_files failed for %s: %s", identifier, exc)

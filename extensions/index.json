@@ -13,7 +13,7 @@
     {
       "id": "vimm",
       "name": "Vimm's Lair",
-      "version": "1.2.0",
+      "version": "1.3.0",
       "type": "rom_source",
       "author": "ConnorBS",
       "description": "Downloads ROMs from Vimm's Lair. Uses headless Chromium (Playwright) to bypass the JS bot challenge. Enforces Vimm's one-download-at-a-time policy automatically.",
@@ -31,7 +31,7 @@
     {
       "id": "romsfun",
       "name": "ROMsFun",
-      "version": "1.6.0",
+      "version": "1.7.0",
       "type": "rom_source",
       "author": "ConnorBS",
       "description": "Downloads ROMs from ROMsFun.com (WordPress AJAX → signed CDN URL). Note: ROMsFun is behind Cloudflare, which can 403 automated downloads.",
