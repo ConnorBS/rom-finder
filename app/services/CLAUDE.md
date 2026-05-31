@@ -100,14 +100,18 @@ Each source extends `BaseSource`:
 - `available: bool` — False = UI shows "coming soon", endpoint disabled
 - `async search(query, system) → list[dict]`
 
-Implemented: `archive_org`. Stubs: `vimm`, `romsfun`, `wowroms`.
+Implemented: `archive_org`, `cdromance`, `vimm`, `wowroms`, `romsfun` (last four are extensions).
 
 ### Auto-hunt candidate matching (`hunter.py`)
 Each source returns candidate files; the hunter scores them against **RA's accepted ROM names** (`_file_score`) — that's the authoritative "is this the right dump?" check. Key rules:
 - A score of **0 = unrelated** (matches neither an RA ROM-name stem nor the game title's significant words). Always skipped — works even when RA hashes failed to load (no region freebie). Stops a loose collection match (e.g. an NDS romset for a Wii hunt) from being downloaded.
-- `_significant_terms(title)` provides a title fallback when RA stems are unavailable.
+- `title_utils.significant_terms(title)` provides a title fallback when RA stems are unavailable (`_significant_terms` is an alias kept for the existing import/test).
 - **Hard cap** `_MAX_CANDIDATES` (20) on files attempted per hunt — prevents the "hundreds of downloads" flood.
 - Token-CDN sources (ROMsFun, WowROMs) can 403 from anti-leech protection even with a fresh signed token; these surface as `SourceForbiddenError` and the hunt moves on. **Archive.org (direct download, no token) is the reliable backbone.**
+
+**"search == hunt" — shared result relevance (`title_utils.title_is_relevant`).** A source's loose full-text search surfaces *sibling* titles (searching "Pajama Sam: Don't Fear the Dark" returned a *different* "Pajama Sam" game). `title_is_relevant(candidate_title, want_terms)` encodes the **same** accept rule as `_file_score`'s title fallback (every significant word present, or — for ≥3-word titles — all-but-one), so:
+- The Wanted-page source search (`wanted.wanted_source_results`) and the RA-game source lookup (`games.ra_game_sources`) **drop results that don't name the wanted game** — the panel shows only what the hunt would accept.
+- All three query loops (those two + `hunter.auto_hunt`) now **stop at the first query that yields a *relevant* result**, not merely *any* result — a junk-only early query (e.g. an RA ROM-name stem the site can't match) no longer short-circuits a better later query.
 
 ---
 

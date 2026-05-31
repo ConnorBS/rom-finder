@@ -16,7 +16,6 @@ Mirrors Sonarr/Radarr's grab logic:
 
 import asyncio
 import json
-import re
 import shutil
 import zipfile
 from datetime import datetime
@@ -35,7 +34,7 @@ from app.services import sources as source_registry
 from app.services.hasher import extract_rom_from_zip, hash_rom
 from app.services.ra_client import DEFAULT_FOLDER_MAP, RAClient
 from app.services.rahasher import compute_ra_hash, ra_hash_or_fallback
-from app.services.title_utils import search_variations
+from app.services.title_utils import search_variations, significant_terms, title_is_relevant
 from app.services import settings as app_settings
 
 
@@ -57,14 +56,10 @@ def _enabled_srcs(session: Session) -> list:
 # match (e.g. a whole NDS romset) from triggering hundreds of download attempts.
 _MAX_CANDIDATES = 20
 
-_STOP_WORDS = {"the", "of", "and", "a", "an", "to"}
-
-
-def _significant_terms(title: str) -> set[str]:
-    """Significant lowercase words from a game title, for filename matching when
-    RA ROM-name stems are unavailable."""
-    return {w for w in re.findall(r"[a-z0-9]+", title.lower())
-            if len(w) > 2 and w not in _STOP_WORDS}
+# Significant title words + the result-relevance predicate live in title_utils
+# now, so the Wanted-page source search and this hunt agree on what's a match
+# ("search == hunt"). Kept under the old name for the existing import/test.
+_significant_terms = significant_terms
 
 
 def _file_score(file_name: str, ra_stems: set[str], title_terms: set[str]) -> int:
@@ -190,22 +185,29 @@ async def auto_hunt(wanted_id: int) -> None:
                 queries.append(v)
                 seen_q.add(v)
 
-        # Search each source — stop at the first query that yields results per source
+        # Search each source. Stop at the first query that yields a plausibly
+        # matching title — a junk-only early hit (a sibling 'Pajama Sam' game)
+        # must not short-circuit a better later query (mirrors the Wanted-page
+        # search). Unrelated hits are still collected and later dropped by
+        # _file_score == 0, so a generically-titled archive.org collection that
+        # actually holds the file isn't lost.
+        title_terms = _significant_terms(game_title)
         search_results: list[tuple] = []  # (src, result_dict)
         for src in srcs:
             src_hits: list[tuple] = []
             for query in queries:
                 try:
                     found = await src.search(query, system)
-                    src_hits.extend((src, r) for r in found)
-                    if src_hits:
-                        break
                 except Exception as exc:
                     applog.warning("hunt", f"Search error ({src.source_id}): {exc}")
+                    continue
+                src_hits.extend((src, r) for r in found)
+                if any(title_is_relevant(r.get("title") or r.get("identifier", ""), title_terms)
+                       for r in found):
+                    break
             search_results.extend(src_hits)
 
         # Expand to individual files and score
-        title_terms = _significant_terms(game_title)
         candidates: list[tuple[int, object, str, dict]] = []
         seen_keys: set[tuple[str, str, str]] = set()
         for src, result in search_results:

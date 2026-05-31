@@ -29,7 +29,7 @@ app/
     scheduler.py       # Scheduled task runners + scheduler_loop()
     logger.py          # Structured app logging to app_logs table
     settings.py        # Canonical settings accessors + DEFAULT_SETTINGS (leaf: imports only app.db)
-    title_utils.py     # Search query generation helpers
+    title_utils.py     # Search query generation + result relevance (search == hunt)
     sources/           # ROM download sources
     cover_sources/     # Cover art sources
   templates/

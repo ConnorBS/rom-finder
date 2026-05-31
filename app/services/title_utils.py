@@ -87,6 +87,40 @@ def search_variations(title: str) -> list[str]:
     return result
 
 
+# ---------------------------------------------------------------------------
+# Title relevance — keep a source's loose full-text search consistent with what
+# the auto-hunt would actually accept ("search == hunt"). Both layers derive
+# from the same significant-word set so they can never drift.
+# ---------------------------------------------------------------------------
+
+_STOP_WORDS = {"the", "of", "and", "a", "an", "to"}
+
+
+def significant_terms(title: str) -> set[str]:
+    """Significant lowercase word-tokens of a title (len > 2, non-stopword).
+    The shared primitive behind both the auto-hunt file scorer
+    (hunter._file_score) and the source-search relevance filter."""
+    return {w for w in re.findall(r"[a-z0-9]+", title.lower())
+            if len(w) > 2 and w not in _STOP_WORDS}
+
+
+def title_is_relevant(candidate: str, want_terms: set[str]) -> bool:
+    """True when `candidate` plausibly names the wanted game: every significant
+    word of the wanted title appears in it, or (>= 3 words) all-but-one do.
+
+    Mirrors hunter._file_score's title-fallback accept rule exactly, so the
+    Wanted-page source search and the auto-hunt agree on which results are real
+    matches — a loose site search (ROMsFun/Archive) surfaces sibling titles
+    (a *different* 'Pajama Sam' game); those must not show as if downloadable."""
+    if not want_terms:
+        return True
+    cand = candidate.lower()
+    present = sum(1 for t in want_terms if t in cand)
+    if present == len(want_terms):
+        return True
+    return len(want_terms) >= 3 and present >= len(want_terms) - 1
+
+
 def _normalize_doubled_system(name: str) -> str:
     """Collapse a system name the Chrome extension doubled when scraping RA link
     text — exact repetition only ('WiiWii' -> 'Wii'). We deliberately do NOT try

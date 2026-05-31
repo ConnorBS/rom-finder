@@ -10,7 +10,9 @@ from app.db.models import AppSetting, WantedGame, HuntStatus, HuntAttempt, Libra
 from app.services import sources as source_registry
 from app.services import activity as activity_store
 from app.services.ra_client import SYSTEMS, RAClient
-from app.services.title_utils import search_variations, stem_from_rom_name
+from app.services.title_utils import (
+    search_variations, stem_from_rom_name, significant_terms, title_is_relevant,
+)
 from app.services import logger as applog
 
 router = APIRouter(prefix="/wanted")
@@ -266,20 +268,27 @@ async def wanted_source_results(
     else:
         query_list = [q for q in queries.split("|") if q]
         seen_ids: set[str] = set()
+        # Only show results that actually name the wanted game, so the panel
+        # matches what the auto-hunt would accept ("search == hunt") — a loose
+        # site search surfaces sibling titles (a different 'Pajama Sam' game).
+        want_terms = significant_terms(wanted.game_title) if wanted else set()
 
         for query in query_list:
             try:
                 src_results = await src.search(query, system)
-                for r in src_results:
-                    uid = r.get("identifier", r.get("title", ""))
-                    if uid not in seen_ids:
-                        seen_ids.add(uid)
-                        results.append(r)
             except Exception as exc:
                 error = str(exc)
                 break
+            for r in src_results:
+                uid = r.get("identifier", r.get("title", ""))
+                if uid in seen_ids:
+                    continue
+                if want_terms and not title_is_relevant(r.get("title") or uid, want_terms):
+                    continue  # sibling/unrelated game — drop it
+                seen_ids.add(uid)
+                results.append(r)
             if results:
-                break  # stop on first query that yields results
+                break  # stop on the first query that yields a relevant result
 
     applog.log_search(src.name if src else source_id, queries.split("|")[0] if queries else "", system, len(results), error or "")
 

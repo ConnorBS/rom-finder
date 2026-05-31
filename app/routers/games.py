@@ -8,7 +8,9 @@ from app.db.database import get_session
 from app.db.models import AppSetting
 from app.services import sources as source_registry
 from app.services.ra_client import SYSTEMS, RAClient
-from app.services.title_utils import search_variations, stem_from_rom_name
+from app.services.title_utils import (
+    search_variations, stem_from_rom_name, significant_terms, title_is_relevant,
+)
 from app.services import logger as applog
 
 router = APIRouter()
@@ -254,21 +256,29 @@ async def ra_game_sources(
 
         seen_ids: set[str] = set()
         enabled_ids = _enabled_source_ids(session)
+        # Keep only results that actually name the game, so the source list
+        # matches what the auto-hunt would accept (a loose site search surfaces
+        # sibling titles — a different 'Pajama Sam' game).
+        want_terms = significant_terms(game_title)
         for query in queries:
             for src in source_registry.enabled_sources(enabled_ids):
                 try:
                     results = await src.search(query, system_name)
-                    for r in results:
-                        uid = r.get("identifier", r.get("title", ""))
-                        if uid not in seen_ids:
-                            seen_ids.add(uid)
-                            r["_source_name"] = src.name
-                            collections.append(r)
                 except Exception as exc:
                     # Best-effort multi-query sweep — don't abort, but don't hide it.
                     applog.verbose("source", f"{src.name} search failed for '{query}': {exc}")
+                    continue
+                for r in results:
+                    uid = r.get("identifier", r.get("title", ""))
+                    if uid in seen_ids:
+                        continue
+                    if want_terms and not title_is_relevant(r.get("title") or uid, want_terms):
+                        continue  # sibling/unrelated game — drop it
+                    seen_ids.add(uid)
+                    r["_source_name"] = src.name
+                    collections.append(r)
             if collections:
-                break  # stop trying more query variants once we have results
+                break  # stop once a query variant yields a relevant result
     except Exception as exc:
         error = str(exc)
 

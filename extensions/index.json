@@ -31,10 +31,10 @@
     {
       "id": "romsfun",
       "name": "ROMsFun",
-      "version": "1.7.0",
+      "version": "1.8.0",
       "type": "rom_source",
       "author": "ConnorBS",
-      "description": "Downloads ROMs from ROMsFun.com (WordPress AJAX → signed CDN URL). Note: ROMsFun is behind Cloudflare, which can 403 automated downloads.",
+      "description": "Downloads ROMs from ROMsFun.com. Searches the per-system catalog (/roms/{system}/?q=) and reads the signed CDN URL embedded in the download mirror page. ROMsFun is behind Cloudflare — set a FlareSolverr URL to reliably bypass the challenge.",
       "pkg_url": "https://raw.githubusercontent.com/ConnorBS/rom-finder/main/extensions/romsfun.py"
     }
   ]
