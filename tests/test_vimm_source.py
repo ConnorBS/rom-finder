@@ -15,6 +15,46 @@ _vimm = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_vimm)
 VimmSource = _vimm.VimmSource
 VIMM_DOWNLOAD_FALLBACK = _vimm.VIMM_DOWNLOAD_FALLBACK
+_VAULT_ID_RE = _vimm._VAULT_ID_RE
+
+
+# ---------------------------------------------------------------------------
+# _VAULT_ID_RE — must match real game vault urls but NOT console-category links
+# whose digit prefix was being captured as a fake media id (the "Sega 32X" /
+# "3DO" bogus results bug).
+# ---------------------------------------------------------------------------
+
+def _vault_id(href: str):
+    m = _VAULT_ID_RE.search(href)
+    return m.group(1) if m else None
+
+
+def test_vault_re_matches_real_game_urls():
+    assert _vault_id("/vault/17473") == "17473"
+    assert _vault_id("/vault/17473/") == "17473"
+    assert _vault_id("/vault/17473/Freddi-Fish-Kelp-Seed-Mystery/") == "17473"
+    assert _vault_id("https://vimm.net/vault/8003?foo=bar") == "8003"
+
+
+def test_vault_re_rejects_console_category_links():
+    # These are console pages, not games — their digit prefix must NOT be captured.
+    assert _vault_id("/vault/32X") is None
+    assert _vault_id("/vault/32X/") is None
+    assert _vault_id("/vault/3DO") is None
+    assert _vault_id("/vault/3DO/") is None
+
+
+def test_search_skips_console_links_in_markup():
+    from bs4 import BeautifulSoup
+    html = """
+    <a href="/vault/32X/">Sega 32X</a>
+    <a href="/vault/3DO/">3DO</a>
+    <a href="/vault/17473/">Freddi Fish: Kelp Seed Mystery</a>
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    ids = [_VAULT_ID_RE.search(a["href"]).group(1)
+           for a in soup.find_all("a", href=_VAULT_ID_RE)]
+    assert ids == ["17473"]
 
 
 @pytest.fixture
