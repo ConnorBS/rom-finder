@@ -1,5 +1,6 @@
 """JSON API for the Chrome extension (and any other external clients)."""
 
+import json
 import os
 from datetime import datetime, timedelta
 
@@ -285,6 +286,9 @@ async def api_status(session: Session = Depends(get_session)):
             "no_ra": _count(session, LibraryEntry, LibraryEntry.file_hash != None, LibraryEntry.ra_matched == False, LibraryEntry.system.not_in(RA_UNSUPPORTED_SYSTEMS)),  # noqa: E711,E712
             "unsupported": _count(session, LibraryEntry, LibraryEntry.system.in_(RA_UNSUPPORTED_SYSTEMS)),
             "duplicates": _count(session, LibraryEntry, LibraryEntry.duplicate_of != None),  # noqa: E711
+            "mastered": _count(session, LibraryEntry, LibraryEntry.ra_award == "mastered"),
+            "beaten": _count(session, LibraryEntry, LibraryEntry.ra_award.in_(["beaten", "beaten-softcore", "completed"])),
+            "subset_compatible": _count(session, LibraryEntry, LibraryEntry.subset_info != ""),
             "library_unhashed": _count(session, LibraryEntry, LibraryEntry.file_hash == None),  # noqa: E711
             "wanted_total": _count(session, WantedGame),
             "wanted_verified": _count(session, WantedGame, WantedGame.status == HuntStatus.verified),
@@ -325,6 +329,25 @@ async def api_status(session: Session = Depends(get_session)):
         }
     except Exception as e:
         status["dashboard"] = {"error": str(e)}
+
+    # Hash-aware subset cache state (RA-backed, cached locally).
+    try:
+        from app.db.models import RASubsetHash
+        subset_avail = 0
+        for e in session.exec(select(LibraryEntry).where(LibraryEntry.subset_info != "")).all():
+            try:
+                info = json.loads(e.subset_info)
+            except (ValueError, TypeError):
+                continue
+            if any(not s.get("mastered") for s in info):
+                subset_avail += 1
+        status["subsets"] = {
+            "cached_hashes": _count(session, RASubsetHash),
+            "subset_available": subset_avail,
+            "last_sync": _get_setting(session, "subset_cache_last_sync", ""),
+        }
+    except Exception as e:
+        status["subsets"] = {"error": str(e)}
 
     try:
         srcs = []

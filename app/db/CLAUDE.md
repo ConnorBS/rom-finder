@@ -17,12 +17,22 @@ duplicate_of     — canonical sibling's library id when this entry is a redunda
 save_count       — # of emulator save files matched to this ROM (migration 0015); >0 = has a save
 save_files       — JSON [{name,kind,size,mtime}] of matched saves; kind = battery|state
 save_updated_at  — newest matched save's mtime
+disc_id          — 4-char Wii title-ID-low from the disc header (migration 0016); keys Dolphin NAND saves
+ra_award         — own highest RA award tier (migration 0017): mastered|completed|beaten|beaten-softcore|""
+is_subset_rom    — this entry is itself an RA "Subset" copy (title/filename marker)
+subset_info      — JSON [{game_id,title,mastered}] of subsets whose accepted hash list contains this ROM's hash
 added_at
 ```
 
 `save_*` are derived (read-only) — `services/saves.py::scan_saves` matches saves to ROMs
 by filename stem and rebuilds them. **ROM Finder never edits or deletes a save**; these
 columns are display-only.
+
+`ra_award` / `is_subset_rom` / `subset_info` are derived (read-only). `ra_award` is set by
+`services/mastery.py::sync_library_awards` from the dashboard mirror (LOCAL; "mastered" =
+hardcore 100%). `is_subset_rom` + `subset_info` are set by `services/subsets.py::recompute_subset_flags`
+(LOCAL) from the `ra_subset_hash` cache — a ROM matches a subset purely by hash, so a subset
+needing a patched ROM the user doesn't own never matches.
 
 `duplicate_of` is derived, not authoritative — `services/duplicates.py::recompute_duplicates`
 fully rebuilds it (clear + re-derive) after any scan/rehash/verify pass. A `.bin`/`.img`
@@ -59,6 +69,9 @@ Structured log: `ts, level, category, message, details (JSON)`.
 ### RA Dashboard mirror (`ra_achievement`, `ra_game_progress`, `ra_profile`)
 A **local mirror** of the configured RA user's data, powering the dashboard with zero RA calls while browsing. Populated by `app/services/ra_dashboard.py::refresh()` (manual only). **The refresh REPLACES `ra_achievement` + `ra_game_progress` wholesale each run** — that's how retroactive RA changes (repointed/removed/demoted achievements, backdated unlocks) reconcile; never treat the mirror as append-only. `ra_profile` is a single row (id=1). `ra_game_progress.owned` is set by matching `game_id` to a `LibraryEntry.ra_game_id` (the owned-library cross-link). New tables → created by `create_all` at startup; **no migration needed** (migrations here are only for ALTER/index on existing tables).
 
+### RA subset hash cache (`ra_subset_hash`)
+Cached map of each owned game's subsets → their accepted MD5s. Refreshed by `app/services/subsets.py::refresh_subset_cache` (the only RA-calling part — enumerates subsets from `get_game_list`, pulls `get_game_hashes_full`), replaced **wholesale** on a full sweep or **per-parent** when scoped. Rows: `parent_game_id, subset_game_id, subset_title, console_id, md5`. A library ROM is matched purely by `md5 == file_hash` (`parent_game_id` only scopes which subsets to fetch). Created by `create_all` at startup; **no migration needed**. The collection reads only the derived `LibraryEntry.subset_info`, so browsing makes zero RA calls.
+
 ---
 
 ## Collection Status Vocabulary
@@ -74,6 +87,8 @@ The `/collection` page unifies `LibraryEntry` and `WantedGame`. Each item gets a
 
 `no_ra` is a special **filter condition** (not a real status): `file_hash` set + `ra_matched` is False.
 `duplicate` is another filter condition: `LibraryEntry.duplicate_of is not None`.
+`has_mastered` (ra_award == "mastered"), `beaten` (ra_award in beaten/beaten-softcore/completed, not mastered),
+and `subset_available` (a `subset_info` subset still unmastered) are filter conditions too.
 
 ---
 

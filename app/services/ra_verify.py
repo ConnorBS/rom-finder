@@ -77,6 +77,7 @@ async def run_pass(max_entries: int | None = None, stale_days: int = 7) -> dict:
         app_settings.set(s, "ra_verify_in_progress", "true")
 
     checked = matched = 0
+    matched_ids: list[int] = []
     hit_rate_limit = False
     try:
         for eid, file_hash in snapshot:
@@ -114,6 +115,7 @@ async def run_pass(max_entries: int | None = None, stale_days: int = 7) -> dict:
                     s.commit()
             if matched_id:
                 matched += 1
+                matched_ids.append(matched_id)
             checked += 1
             activity_store.increment("ra-verify-batch")
 
@@ -131,5 +133,13 @@ async def run_pass(max_entries: int | None = None, stale_days: int = 7) -> dict:
                                                              exclude_systems=RA_UNSUPPORTED_SYSTEMS))
     applog.info("hash", f"RA re-verify pass: checked {checked}, matched {matched}, {remaining} pending",
                 {"checked": checked, "matched": matched, "remaining": remaining, "rate_limited": hit_rate_limit})
+    # Determine subsets for the games just matched (scoped — cheap; the full sweep
+    # that catches newly-published subsets rides autodiscover).
+    if matched_ids:
+        try:
+            from app.services.subsets import refresh_subset_cache
+            await refresh_subset_cache(game_ids=list(set(matched_ids)))
+        except Exception as exc:
+            applog.warning("hash", f"Subset cache refresh after verify failed: {exc}")
     return {"status": "rate_limited" if hit_rate_limit else "ok",
             "checked": checked, "matched": matched, "remaining": remaining}

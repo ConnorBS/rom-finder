@@ -106,6 +106,17 @@ async def run_autodiscover() -> dict:
 
     activity_store.finish("autodiscover")
     applog.info("autodiscover", f"Complete — {added} added, {errors} errors, {len(system_ids_to_check)} systems")
+
+    # Same per-console game-list scan also (re)discovers each owned game's subsets and
+    # refreshes their accepted-hash cache — so newly-published subsets on titles already
+    # in the library are picked up automatically (full owned sweep).
+    try:
+        from app.services.subsets import refresh_subset_cache
+        sub = await refresh_subset_cache()
+        applog.info("autodiscover", "Subset cache refreshed", sub)
+    except Exception as exc:
+        applog.warning("autodiscover", f"Subset cache refresh failed: {exc}")
+
     return {"added": added, "errors": errors, "systems_checked": len(system_ids_to_check)}
 
 

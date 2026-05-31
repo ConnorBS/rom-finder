@@ -21,7 +21,7 @@ def test_rehash_unmatched_only_selects_unmatched(client, monkeypatch):
                            file_path="/u.chd", file_hash="h2", ra_matched=False))
         s.commit()
 
-    r = client.post("/collection/bulk/rehash?unmatched_only=true")
+    r = client.post("/collection/bulk/rehash", data={"unmatched_only": "true"})
     assert r.status_code == 200
     assert "no RA calls" in r.text
     assert len(captured["ids"]) == 1            # only the unmatched one

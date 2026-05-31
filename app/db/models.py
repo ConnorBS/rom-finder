@@ -147,6 +147,11 @@ class LibraryEntry(SQLModel, table=True):
     save_updated_at: Optional[datetime] = None   # newest matched save's mtime
     disc_id: str = ""            # 4-char Wii title-ID-low (e.g. "RKME") read from the disc
                                  # header — keys Dolphin NAND save matching (migration 0016)
+    ra_award: str = ""           # own highest RA award tier (migration 0017): mastered | completed |
+                                 # beaten | beaten-softcore | "" — derived from the RA dashboard mirror
+    is_subset_rom: bool = False  # this entry is itself an RA "Subset" copy (title/filename marker)
+    subset_info: str = ""        # JSON [{game_id,title,mastered}] of RA subsets whose accepted hash
+                                 # list contains this ROM's file_hash — derived (read-only), RA-backed
     added_at: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -212,3 +217,19 @@ class RAProfile(SQLModel, table=True):
     total_masteries: int = 0
     member_since: Optional[datetime] = None
     last_synced_at: Optional[datetime] = None
+
+
+class RASubsetHash(SQLModel, table=True):
+    """Cached RA subset → accepted-MD5 map. Refreshed by services/subsets.py::
+    refresh_subset_cache (RA calls), which enumerates each owned game's subsets
+    (from the per-console game list) and pulls their hash lists, replacing rows
+    wholesale (full sweep) or per parent (scoped). A library ROM is matched to a
+    subset purely by `md5 == LibraryEntry.file_hash`; `parent_game_id` only scopes
+    which owned games' subsets to (re)fetch. Created by create_all (no migration)."""
+    __tablename__ = "ra_subset_hash"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    parent_game_id: int = Field(default=0, index=True)
+    subset_game_id: int = Field(default=0, index=True)
+    subset_title: str = ""
+    console_id: int = 0
+    md5: str = Field(default="", index=True)

@@ -21,16 +21,19 @@
                 {% if counts.unsupported %}<span class="text-slate-500" title="Platforms RetroAchievements doesn't support — can't be hash-verified">{{ counts.unsupported }} unsupported</span>{% endif %}
                 {% if counts.duplicate %}<span class="text-purple-400" title="Redundant copies — same content or same game/disc as another entry">{{ counts.duplicate }} duplicate</span>{% endif %}
                 {% if counts.has_save %}<span class="text-cyan-400" title="Games with a matched emulator save file (read-only)">{{ counts.has_save }} with save</span>{% endif %}
+                {% if counts.mastered %}<span class="text-yellow-300" title="Mastered — 100% in hardcore">{{ counts.mastered }} mastered</span>{% endif %}
+                {% if counts.beaten %}<span class="text-slate-400" title="Beaten (or completed) but not mastered">{{ counts.beaten }} beaten</span>{% endif %}
+                {% if counts.subset_available %}<span class="text-amber-400" title="Owned games with a hash-compatible subset still to play">{{ counts.subset_available }} subset avail.</span>{% endif %}
             </div>
         </div>
 
         <!-- View toggle -->
         <div class="flex items-center gap-1 bg-gray-800 border border-gray-700 rounded-lg p-1 flex-shrink-0">
-            <a href="?q={{ q }}&system={{ selected_system }}&status={{ selected_status }}&view=cards"
+            <a href="?q={{ q }}&system={{ selected_system }}&status={{ selected_status }}&view=cards&per_page={{ per_page }}"
                class="px-2.5 py-1.5 rounded text-xs font-medium transition-colors {% if view == 'cards' %}bg-gray-600 text-white{% else %}text-gray-400 hover:text-white{% endif %}">
                 Cards
             </a>
-            <a href="?q={{ q }}&system={{ selected_system }}&status={{ selected_status }}&view=list"
+            <a href="?q={{ q }}&system={{ selected_system }}&status={{ selected_status }}&view=list&per_page={{ per_page }}"
                class="px-2.5 py-1.5 rounded text-xs font-medium transition-colors {% if view != 'cards' %}bg-gray-600 text-white{% else %}text-gray-400 hover:text-white{% endif %}">
                 List
             </a>
@@ -52,7 +55,7 @@
                 hx-target="body"
                 hx-push-url="true"
                 hx-trigger="input changed delay:400ms, search"
-                hx-include="#col-system,#col-status,#col-view"
+                hx-include="#col-system,#col-status,#col-view,#col-perpage"
                 name="q"
             >
 
@@ -61,7 +64,7 @@
                 hx-get="/collection"
                 hx-target="body"
                 hx-push-url="true"
-                hx-include="#col-q,#col-status,#col-view"
+                hx-include="#col-q,#col-status,#col-view,#col-perpage"
             >
                 <option value="">All systems</option>
                 {% for sys in systems %}
@@ -69,13 +72,25 @@
                 {% endfor %}
             </select>
 
+            <select id="col-perpage" name="per_page" title="Items per page"
+                class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500 w-full sm:w-auto"
+                hx-get="/collection"
+                hx-target="body"
+                hx-push-url="true"
+                hx-include="#col-q,#col-system,#col-status,#col-view"
+            >
+                {% for pp in [50, 100, 250, 500, 1000] %}
+                <option value="{{ pp }}" {% if pp == per_page %}selected{% endif %}>{{ pp }} / page</option>
+                {% endfor %}
+            </select>
+
             <input type="hidden" id="col-view" name="view" value="{{ view }}">
 
             <!-- Status pills -->
             <div class="flex gap-1 flex-wrap">
-                {% set statuses = [("", "All"), ("verified", "Verified"), ("found", "Found"), ("library", "Library"), ("wanted", "Wanted"), ("no_ra", "No RA"), ("unsupported", "Unsupported"), ("missing", "Missing"), ("duplicate", "Duplicate"), ("has_save", "Has Save")] %}
+                {% set statuses = [("", "All"), ("verified", "Verified"), ("found", "Found"), ("library", "Library"), ("wanted", "Wanted"), ("no_ra", "No RA"), ("unsupported", "Unsupported"), ("missing", "Missing"), ("duplicate", "Duplicate"), ("has_save", "Has Save"), ("has_mastered", "Mastered"), ("beaten", "Beaten"), ("subset_available", "Subset avail.")] %}
                 {% for val, label in statuses %}
-                <a href="?q={{ q }}&system={{ selected_system }}&status={{ val }}&view={{ view }}"
+                <a href="?q={{ q }}&system={{ selected_system }}&status={{ val }}&view={{ view }}&per_page={{ per_page }}"
                    id="col-status"
                    class="px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors
                           {% if selected_status == val %}border-blue-600 bg-blue-600/20 text-blue-300{% else %}border-gray-700 bg-gray-800 text-gray-400 hover:text-white{% endif %}">
@@ -170,14 +185,16 @@
                     {% if all_filtered_lib_ids %}
                     <div class="px-4 pt-1.5 pb-1 text-[10px] uppercase tracking-wider text-gray-500">Filtered view</div>
                     <button
-                        hx-post="/collection/bulk/rehash?unhashed_only=true&library_ids={{ all_filtered_lib_ids | join(',') }}"
+                        hx-post="/collection/bulk/rehash"
+                        hx-vals='{"unhashed_only": "true", "library_ids": "{{ all_filtered_lib_ids | join(',') }}"}'
                         hx-target="#bulk-result" hx-swap="innerHTML"
                         onclick="document.getElementById('hashes-dropdown').classList.add('hidden')"
                         class="w-full text-left px-4 py-2 text-xs text-gray-300 hover:bg-gray-700 hover:text-white transition-colors"
                         title="Only hash ROMs in the current filtered view that don't have a hash yet"
                     >Hash unhashed</button>
                     <button
-                        hx-post="/collection/bulk/rehash?library_ids={{ all_filtered_lib_ids | join(',') }}"
+                        hx-post="/collection/bulk/rehash"
+                        hx-vals='{"library_ids": "{{ all_filtered_lib_ids | join(',') }}"}'
                         hx-target="#bulk-result" hx-swap="innerHTML"
                         onclick="document.getElementById('hashes-dropdown').classList.add('hidden')"
                         class="w-full text-left px-4 py-2 text-xs text-gray-300 hover:bg-gray-700 hover:text-white transition-colors"
@@ -187,14 +204,16 @@
                     {% endif %}
                     <div class="px-4 pt-1.5 pb-1 text-[10px] uppercase tracking-wider text-gray-500">Entire library</div>
                     <button
-                        hx-post="/collection/bulk/rehash?unhashed_only=true"
+                        hx-post="/collection/bulk/rehash"
+                        hx-vals='{"unhashed_only": "true"}'
                         hx-target="#bulk-result" hx-swap="innerHTML"
                         onclick="document.getElementById('hashes-dropdown').classList.add('hidden')"
                         class="w-full text-left px-4 py-2 text-xs text-gray-300 hover:bg-gray-700 hover:text-white transition-colors"
                         title="Only hash ROMs that don't have a hash yet"
                     >Hash unhashed</button>
                     <button
-                        hx-post="/collection/bulk/rehash?unmatched_only=true"
+                        hx-post="/collection/bulk/rehash"
+                        hx-vals='{"unmatched_only": "true"}'
                         hx-target="#bulk-result" hx-swap="innerHTML"
                         onclick="document.getElementById('hashes-dropdown').classList.add('hidden')"
                         class="w-full text-left px-4 py-2 text-xs text-gray-300 hover:bg-gray-700 hover:text-white transition-colors"
@@ -226,12 +245,14 @@
                      class="hidden absolute left-0 top-full mt-1 z-20 bg-gray-800 border border-gray-700 rounded-lg shadow-xl min-w-[17rem] py-1">
                     {% if all_filtered_lib_ids %}
                     <div class="px-4 pt-1.5 pb-1 text-[10px] uppercase tracking-wider text-gray-500">Filtered view</div>
-                    <button hx-post="/collection/bulk/verify?library_ids={{ all_filtered_lib_ids | join(',') }}"
+                    <button hx-post="/collection/bulk/verify"
+                        hx-vals='{"library_ids": "{{ all_filtered_lib_ids | join(',') }}"}'
                         hx-target="#bulk-result" hx-swap="innerHTML"
                         onclick="document.getElementById('verify-dropdown').classList.add('hidden')"
                         class="w-full text-left px-4 py-2 text-xs text-gray-300 hover:bg-gray-700 hover:text-white transition-colors"
                         title="Verify only the not-yet-matched ROMs in the current view">Verify unmatched</button>
-                    <button hx-post="/collection/bulk/verify?library_ids={{ all_filtered_lib_ids | join(',') }}&include_matched=true"
+                    <button hx-post="/collection/bulk/verify"
+                        hx-vals='{"library_ids": "{{ all_filtered_lib_ids | join(',') }}", "include_matched": "true"}'
                         hx-target="#bulk-result" hx-swap="innerHTML"
                         onclick="document.getElementById('verify-dropdown').classList.add('hidden')"
                         class="w-full text-left px-4 py-2 text-xs text-gray-300 hover:bg-gray-700 hover:text-white transition-colors"
@@ -244,7 +265,8 @@
                         onclick="document.getElementById('verify-dropdown').classList.add('hidden')"
                         class="w-full text-left px-4 py-2 text-xs text-gray-300 hover:bg-gray-700 hover:text-white transition-colors"
                         title="Verify every not-yet-matched ROM in the whole library (rate-limited; can be long)">Verify unmatched</button>
-                    <button hx-post="/collection/bulk/verify?include_matched=true"
+                    <button hx-post="/collection/bulk/verify"
+                        hx-vals='{"include_matched": "true"}'
                         hx-target="#bulk-result" hx-swap="innerHTML"
                         onclick="document.getElementById('verify-dropdown').classList.add('hidden')"
                         class="w-full text-left px-4 py-2 text-xs text-gray-300 hover:bg-gray-700 hover:text-white transition-colors"
@@ -252,8 +274,56 @@
                 </div>
             </div>
 
+            <!-- Detect subsets (RA-backed, cached) -->
+            <button
+                hx-post="/collection/sync-subsets"
+                hx-target="#bulk-result" hx-swap="innerHTML"
+                hx-disabled-elt="this"
+                class="bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5"
+                title="Ask RetroAchievements which subsets your games have and which your ROM hashes can play (cached locally)"
+            >⊕ Detect subsets</button>
+
+            <!-- Sync awards (LOCAL — re-derive Mastered/Beaten + subset flags) -->
+            <button
+                hx-post="/collection/sync-awards"
+                hx-target="#bulk-result" hx-swap="innerHTML"
+                hx-disabled-elt="this"
+                class="bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5"
+                title="Re-derive Mastered/Beaten badges from the RA dashboard mirror and refresh subset flags (local, no RA calls)"
+            >🏅 Sync awards</button>
+
             <div id="bulk-result" class="text-xs ml-1"></div>
         </div>
+    </div>
+
+    <!-- Selection action bar — shown by JS when ≥1 entry is checked -->
+    <div id="selection-bar" class="hidden bg-blue-950/40 border border-blue-800 rounded-lg p-3 mb-5 flex flex-wrap gap-2 items-center">
+        <span class="text-xs text-blue-200 font-medium"><span id="sel-count">0</span> selected</span>
+        <button type="button" onclick="selectAllFiltered()"
+            class="text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-200 px-2.5 py-1.5 rounded transition-colors"
+            title="Select every entry in the current filter (all pages)">Select all {{ total_filtered }}</button>
+        <button type="button" onclick="clearSelection()"
+            class="text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 px-2.5 py-1.5 rounded transition-colors">Clear</button>
+        <span class="w-px h-5 bg-blue-800 mx-1"></span>
+        <button type="button" hx-post="/collection/bulk/rehash" hx-vals='js:{library_ids: selectedIds()}'
+            hx-target="#bulk-result" hx-swap="innerHTML"
+            class="text-xs bg-gray-700 hover:bg-gray-600 text-gray-200 px-2.5 py-1.5 rounded transition-colors">Hash</button>
+        {% if covers_enabled %}
+        <button type="button" hx-post="/collection/bulk/fetch-covers" hx-vals='js:{library_ids: selectedIds()}'
+            hx-target="#bulk-result" hx-swap="innerHTML"
+            class="text-xs bg-gray-700 hover:bg-gray-600 text-gray-200 px-2.5 py-1.5 rounded transition-colors">Fetch covers</button>
+        {% endif %}
+        <button type="button" hx-post="/collection/bulk/verify" hx-vals='js:{library_ids: selectedIds()}'
+            hx-target="#bulk-result" hx-swap="innerHTML"
+            class="text-xs bg-gray-700 hover:bg-gray-600 text-gray-200 px-2.5 py-1.5 rounded transition-colors">Verify</button>
+        <span class="w-px h-5 bg-blue-800 mx-1"></span>
+        <label class="text-xs text-gray-400 flex items-center gap-1"><input type="checkbox" id="sel-delete-file" class="accent-red-600"> delete file</label>
+        <button type="button"
+            hx-post="/collection/bulk/delete"
+            hx-vals='js:{library_ids: selectedIds(), delete_file: document.getElementById("sel-delete-file").checked}'
+            hx-confirm="Delete the selected entries? If 'delete file' is checked the ROM files are removed from disk (read-only locations are skipped)."
+            hx-target="#bulk-result" hx-swap="innerHTML"
+            class="text-xs bg-red-900/50 hover:bg-red-800 border border-red-800 text-red-200 px-2.5 py-1.5 rounded transition-colors">Delete</button>
     </div>
 
     <!-- Content -->
@@ -347,11 +417,33 @@
                     {% if item.has_save %}
                     <span class="bg-cyan-900/80 border border-cyan-700 rounded-full px-2 py-0.5 text-cyan-200 text-xs" title="{{ item.save_count }} emulator save file{{ 's' if item.save_count != 1 else '' }} (read-only)">💾 Save</span>
                     {% endif %}
+                    {# RA award tier — Mastered supersedes the lower tiers #}
+                    {% if item.mastered %}
+                    <span class="bg-yellow-900/80 border border-yellow-600 rounded-full px-2 py-0.5 text-yellow-300 text-xs" title="Mastered — 100% in hardcore">🏅 Mastered</span>
+                    {% elif item.ra_award == 'completed' %}
+                    <span class="bg-emerald-900/80 border border-emerald-700 rounded-full px-2 py-0.5 text-emerald-200 text-xs" title="Completed — 100% in softcore">✅ Completed</span>
+                    {% elif item.ra_award in ('beaten', 'beaten-softcore') %}
+                    <span class="bg-slate-800/80 border border-slate-500 rounded-full px-2 py-0.5 text-slate-200 text-xs" title="Beaten">🏆 Beaten</span>
+                    {% endif %}
+                    {% if item.is_subset_rom %}
+                    <span class="bg-indigo-900/80 border border-indigo-700 rounded-full px-2 py-0.5 text-indigo-200 text-xs" title="This ROM is itself an RA Subset copy">⊂ Subset</span>
+                    {% endif %}
+                    {% if item.subsets_available %}
+                    <span class="bg-amber-900/80 border border-amber-700 rounded-full px-2 py-0.5 text-amber-200 text-xs" title="A hash-compatible subset is still unfinished — there's more to play here">⊕ {{ item.subsets_available }} subset{{ 's' if item.subsets_available != 1 else '' }}</span>
+                    {% elif item.subset_compatible %}
+                    <span class="bg-amber-950/60 border border-amber-800 rounded-full px-2 py-0.5 text-amber-300/80 text-xs" title="Hash-compatible with a subset (all mastered)">⊕ subset</span>
+                    {% endif %}
                 </div>
             </div>
 
             <!-- Info -->
             <div class="p-2 flex-1 flex flex-col gap-1">
+                {% if item.library_id %}
+                <label class="sel-wrap flex items-center gap-1.5 text-[11px] text-gray-500 cursor-pointer hover:text-gray-300 -mb-0.5">
+                    <input type="checkbox" class="sel-check accent-blue-600" data-lib-id="{{ item.library_id }}">
+                    <span>select</span>
+                </label>
+                {% endif %}
                 <p class="text-gray-200 text-xs font-medium leading-tight line-clamp-2" title="{{ item.game_title }}">{{ item.game_title }}</p>
                 <p class="text-gray-600 text-xs truncate">{{ item.system }}</p>
                 {% if item.ra_matched and item.ra_game_id %}
@@ -416,6 +508,7 @@
         <table class="w-full text-sm min-w-[640px]">
             <thead>
                 <tr class="border-b border-gray-800 text-gray-500 text-xs uppercase tracking-wide">
+                    <th class="px-2 py-3 w-8"></th>
                     <th class="text-left px-4 py-3 font-medium">Title</th>
                     <th class="text-left px-4 py-3 font-medium">System</th>
                     <th class="text-left px-4 py-3 font-medium">Status</th>
@@ -427,6 +520,11 @@
             <tbody class="divide-y divide-gray-800">
                 {% for item in items %}
                 <tr class="hover:bg-gray-800/50">
+                    <td class="px-2 py-3 text-center">
+                        {% if item.library_id %}
+                        <input type="checkbox" class="sel-check accent-blue-600" data-lib-id="{{ item.library_id }}">
+                        {% endif %}
+                    </td>
                     <td class="px-4 py-3 text-gray-200">{{ item.game_title }}</td>
                     <td class="px-4 py-3 text-gray-400 text-xs">{{ item.system }}</td>
                     <td class="px-4 py-3">
@@ -444,6 +542,19 @@
                         {% endif %}
                         {% if item.has_save %}
                         <span class="ml-1 inline-flex items-center text-cyan-400 text-xs" title="{{ item.save_count }} save file(s) — read-only">💾</span>
+                        {% endif %}
+                        {% if item.mastered %}
+                        <span class="ml-1 inline-flex items-center text-yellow-300 text-xs" title="Mastered — 100% in hardcore">🏅</span>
+                        {% elif item.ra_award == 'completed' %}
+                        <span class="ml-1 inline-flex items-center text-emerald-300 text-xs" title="Completed — 100% in softcore">✅</span>
+                        {% elif item.ra_award in ('beaten', 'beaten-softcore') %}
+                        <span class="ml-1 inline-flex items-center text-slate-300 text-xs" title="Beaten">🏆</span>
+                        {% endif %}
+                        {% if item.is_subset_rom %}
+                        <span class="ml-1 inline-flex items-center text-indigo-300 text-xs" title="RA Subset copy">⊂</span>
+                        {% endif %}
+                        {% if item.subsets_available %}
+                        <span class="ml-1 inline-flex items-center text-amber-400 text-xs" title="{{ item.subsets_available }} hash-compatible subset(s) unfinished">⊕{{ item.subsets_available }}</span>
                         {% endif %}
                     </td>
                     <td class="px-4 py-3">
@@ -508,12 +619,12 @@
         {% if total_pages > 1 %}
         <div class="flex items-center gap-1">
             {% if page > 1 %}
-            <a href="?q={{ q }}&system={{ selected_system }}&status={{ selected_status }}&view={{ view }}&page={{ page - 1 }}"
+            <a href="?q={{ q }}&system={{ selected_system }}&status={{ selected_status }}&view={{ view }}&per_page={{ per_page }}&page={{ page - 1 }}"
                class="px-3 py-1.5 bg-gray-800 border border-gray-700 rounded-lg hover:text-white transition-colors">&#8592; Prev</a>
             {% endif %}
             <span class="px-3 py-1.5 text-gray-600">{{ page }} / {{ total_pages }}</span>
             {% if page < total_pages %}
-            <a href="?q={{ q }}&system={{ selected_system }}&status={{ selected_status }}&view={{ view }}&page={{ page + 1 }}"
+            <a href="?q={{ q }}&system={{ selected_system }}&status={{ selected_status }}&view={{ view }}&per_page={{ per_page }}&page={{ page + 1 }}"
                class="px-3 py-1.5 bg-gray-800 border border-gray-700 rounded-lg hover:text-white transition-colors">Next &#8594;</a>
             {% endif %}
         </div>
@@ -538,6 +649,42 @@
 </div>
 
 <script>
+// --- Multi-select -------------------------------------------------------
+// Reset on every full render (filter / paginate / HX-Refresh), so the flow is
+// filter → "select all" → act. Off-page ids live in the Set even with no checkbox.
+window.allFilteredLibIds = {{ all_filtered_lib_ids | tojson }};
+window._sel = new Set();
+function selectedIds() { return Array.from(window._sel).join(','); }
+function updateSelBar() {
+    const bar = document.getElementById('selection-bar');
+    if (!bar) return;
+    document.getElementById('sel-count').textContent = window._sel.size;
+    bar.classList.toggle('hidden', window._sel.size === 0);
+}
+function toggleSel(id, checked) {
+    id = String(id);
+    if (checked) window._sel.add(id); else window._sel.delete(id);
+    updateSelBar();
+}
+function selectAllFiltered() {
+    (window.allFilteredLibIds || []).forEach(id => window._sel.add(String(id)));
+    document.querySelectorAll('.sel-check').forEach(cb => { cb.checked = window._sel.has(String(cb.dataset.libId)); });
+    updateSelBar();
+}
+function clearSelection() {
+    window._sel.clear();
+    document.querySelectorAll('.sel-check').forEach(cb => { cb.checked = false; });
+    updateSelBar();
+}
+function bindSelChecks() {
+    document.querySelectorAll('.sel-check').forEach(cb => {
+        cb.checked = window._sel.has(String(cb.dataset.libId));
+        cb.onchange = () => toggleSel(cb.dataset.libId, cb.checked);
+    });
+    updateSelBar();
+}
+bindSelChecks();
+
 const _ICONS = {
     cover:  { svg: `<svg class="animate-spin w-6 h-6 text-blue-400"   fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>`,   label: 'Fetching cover', labelClass: 'text-blue-300' },
     rehash: { svg: `<svg class="animate-spin w-6 h-6 text-purple-400" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>`, label: 'Hashing',       labelClass: 'text-purple-300' },
