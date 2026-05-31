@@ -68,5 +68,6 @@ def test_detail_panel_shows_duplicate_group(client, tmp_path):
     _add(b, title="Foo", system="PlayStation", file_name="Foo.7z", file_hash="H", duplicate_of=canon)
     r = client.get(f"/library/{canon}/detail")
     assert r.status_code == 200
-    assert "Duplicates" in r.text and "Kept" in r.text
-    assert "Foo.7z" in r.text                              # the dup copy is listed
+    assert "Same content" in r.text                        # neutral header — no Kept/dup labels
+    assert "Foo.cue" in r.text and "Foo.7z" in r.text      # both copies listed
+    assert "Kept" not in r.text                            # user decides which to remove

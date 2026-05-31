@@ -39,10 +39,16 @@ def _build_collection(session: Session) -> list[dict]:
 
     lib_by_ra: dict[int, LibraryEntry] = {}
     lib_by_key: dict[tuple, LibraryEntry] = {}
+    # Treat every member of a duplicate group equally — a canonical with dependents
+    # gets the same badge as the entries that point at it, so the UI doesn't suggest
+    # one is "the right one to keep". The user picks.
+    in_dup_group: set[int] = {e.duplicate_of for e in library_entries if e.duplicate_of}
     for e in library_entries:
         if e.ra_game_id:
             lib_by_ra[e.ra_game_id] = e
         lib_by_key[(e.game_title.lower(), e.system.lower())] = e
+        if e.duplicate_of is not None and e.id is not None:
+            in_dup_group.add(e.id)
 
     items: list[dict] = []
     seen_lib_ids: set[int] = set()
@@ -66,7 +72,7 @@ def _build_collection(session: Session) -> list[dict]:
             "library_id": lib.id if lib else None,
             "wanted_id": w.id,
             "missing": lib.missing if lib else False,
-            "duplicate": bool(lib and lib.duplicate_of),
+            "duplicate": bool(lib and lib.id in in_dup_group),
             "duplicate_of": lib.duplicate_of if lib else None,
             "has_save": bool(lib and lib.save_count),
             "save_count": lib.save_count if lib else 0,
@@ -89,7 +95,7 @@ def _build_collection(session: Session) -> list[dict]:
                 "library_id": e.id,
                 "wanted_id": None,
                 "missing": e.missing,
-                "duplicate": bool(e.duplicate_of),
+                "duplicate": bool(e.id in in_dup_group),
                 "duplicate_of": e.duplicate_of,
                 "has_save": bool(e.save_count),
                 "save_count": e.save_count,
