@@ -55,7 +55,7 @@
         <div class="flex items-center justify-between mb-3">
             <div>
                 <h2 class="text-base font-semibold text-white">Hunt History</h2>
-                <p class="text-gray-500 text-xs mt-0.5">Every auto-hunt attempt — what was tried, from where, and what happened. A bad-hash or failed file is <span class="text-amber-400/90">blocked for that game only</span> (won't be retried for it) — the same file can still be tried for a different game.</p>
+                <p class="text-gray-500 text-xs mt-0.5">Every auto-hunt attempt — what was tried, from where, and what happened. A <span class="text-amber-400/90">bad-hash</span> file is blocked for that game (re-downloading gives the same hash). A <span class="text-red-400/90">failed</span> download (timeout / CDN 403 / network) is transient, so it's <span class="text-gray-300">retried on later hunts</span> before being given up on.</p>
             </div>
             {% if hunt_log %}
             <div class="flex gap-1.5 flex-shrink-0" id="hunt-filter-btns">
@@ -123,7 +123,7 @@
                                 <span class="block text-[10px] text-gray-500 mt-1" title="This file won't be retried for {{ game.game_title }} (it can still be tried for other games).">⊘ blocked for this game</span>
                                 {% else %}
                                 <span class="px-1.5 py-0.5 rounded text-xs bg-red-900/40 text-red-400 border border-red-800">✗ Failed</span>
-                                <span class="block text-[10px] text-gray-500 mt-1" title="This file won't be retried for {{ game.game_title }} (it can still be tried for other games).">⊘ blocked for this game</span>
+                                <span class="block text-[10px] text-gray-500 mt-1" title="A download/transport error (timeout, CDN 403, network) — not a bad dump. Unlike a bad hash, this file is retried for {{ game.game_title }} on later hunts (up to a few times) before being given up on.">↻ retried on later hunts</span>
                                 {% endif %}
                             </td>
                             <td class="px-4 py-2.5 font-mono text-gray-500">

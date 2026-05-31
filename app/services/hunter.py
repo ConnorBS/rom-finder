@@ -18,6 +18,7 @@ import asyncio
 import json
 import shutil
 import zipfile
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
@@ -55,6 +56,12 @@ def _enabled_srcs(session: Session) -> list:
 # Cap on candidate files actually downloaded per hunt — stops a loose source
 # match (e.g. a whole NDS romset) from triggering hundreds of download attempts.
 _MAX_CANDIDATES = 20
+
+# A *download* failure (timeout / CDN 403 / network) is transient — token CDNs
+# (ROMsFun, WowROMs) 403 intermittently even on a good file — so allow this many
+# attempts across hunts before giving up on a file. A `bad_hash` is NOT counted
+# here: a wrong dump re-downloads to the same hash, so it stays blocked at once.
+_MAX_DOWNLOAD_RETRIES = 3
 
 # Significant title words + the result-relevance predicate live in title_utils
 # now, so the Wanted-page source search and this hunt agree on what's a match
@@ -244,15 +251,28 @@ async def auto_hunt(wanted_id: int) -> None:
             _mark_exhausted(wanted_id)
             return
 
-        # Load previously attempted (source, identifier, file) combos to skip
+        # Load previously attempted (source, identifier, file) combos to skip.
+        # A `verified`/`bad_hash` attempt blocks the file permanently (re-trying
+        # yields the same hash). A `download_failed` is transient — a token CDN
+        # 403s intermittently even on a good file — so it only blocks once it has
+        # failed _MAX_DOWNLOAD_RETRIES times, letting a fixed download path or a
+        # passing rate-limit recover a file that merely 403'd before.
         with Session(engine) as session:
             prior = session.exec(
                 select(HuntAttempt).where(HuntAttempt.wanted_game_id == wanted_id)
             ).all()
-            past: set[tuple[str, str, str]] = {
-                (a.source_id, a.identifier, a.file_name) for a in prior
-            }
-            past_urls: set[str] = {a.source_url for a in prior if a.source_url}
+            past: set[tuple[str, str, str]] = set()
+            past_urls: set[str] = set()
+            dl_fail_counts: Counter = Counter()
+            for a in prior:
+                akey = (a.source_id, a.identifier, a.file_name)
+                if a.result == "download_failed":
+                    dl_fail_counts[akey] += 1
+                    if dl_fail_counts[akey] < _MAX_DOWNLOAD_RETRIES:
+                        continue  # retryable — don't block yet
+                past.add(akey)
+                if a.source_url:
+                    past_urls.add(a.source_url)
 
         tried = 0
         for score, src, identifier, file_info in candidates:

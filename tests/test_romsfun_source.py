@@ -228,3 +228,126 @@ def test_configure_blank_disables_solver():
 
 def test_default_instance_has_no_solver():
     assert RomsfunSource()._flaresolverr_url == ""
+
+
+# ---------------------------------------------------------------------------
+# download_file — same-session token + retry the anti-leech CDN 403 (v1.9.0)
+# ---------------------------------------------------------------------------
+import httpx
+import pytest
+from app.services.sources import errors as src_errors
+
+
+async def _noop_sleep(*_a, **_k):
+    return None
+
+
+def _http_status_error(code):
+    req = httpx.Request("GET", "https://sto.romsfast.com/Wii/Game.zip?token=t")
+    return httpx.HTTPStatusError(str(code), request=req, response=httpx.Response(code, request=req))
+
+
+class _FakeClient:
+    """Minimal stand-in for _resolve_cdn_url's client (only .get is used)."""
+    def __init__(self, html):
+        self._html = html
+
+    async def get(self, url, headers=None):
+        return httpx.Response(200, text=self._html, request=httpx.Request("GET", url))
+
+
+def test_download_retries_403_then_raises_forbidden(monkeypatch, tmp_path):
+    calls = {"resolve": 0, "stream": 0}
+
+    async def fake_resolve(self, client, mirror):
+        calls["resolve"] += 1
+        return "https://sto.romsfast.com/Wii/Game.zip?token=t"
+
+    async def fake_stream(self, client, cdn, ref, dest, cb):
+        calls["stream"] += 1
+        raise _http_status_error(403)
+
+    monkeypatch.setattr(RomsfunSource, "_resolve_cdn_url", fake_resolve)
+    monkeypatch.setattr(RomsfunSource, "_stream_to", fake_stream)
+    monkeypatch.setattr(_rf.asyncio, "sleep", _noop_sleep)
+
+    with pytest.raises(src_errors.SourceForbiddenError):
+        asyncio.run(RomsfunSource().download_file("/download/g-1/1", tmp_path / "x.zip"))
+    # A 403 is transient → retried up to the cap, not a one-shot failure.
+    assert calls["stream"] == _rf._DOWNLOAD_ATTEMPTS
+
+
+def test_download_succeeds_after_transient_403(monkeypatch, tmp_path):
+    state = {"n": 0}
+
+    async def fake_resolve(self, client, mirror):
+        return "https://sto.romsfast.com/Wii/Game.zip?token=t"
+
+    async def fake_stream(self, client, cdn, ref, dest, cb):
+        state["n"] += 1
+        if state["n"] < 3:
+            raise _http_status_error(403)
+        dest.write_bytes(b"rom-bytes")
+
+    monkeypatch.setattr(RomsfunSource, "_resolve_cdn_url", fake_resolve)
+    monkeypatch.setattr(RomsfunSource, "_stream_to", fake_stream)
+    monkeypatch.setattr(_rf.asyncio, "sleep", _noop_sleep)
+
+    dest = tmp_path / "x.zip"
+    asyncio.run(RomsfunSource().download_file("/download/g-1/1", dest))
+    assert dest.read_bytes() == b"rom-bytes"
+    assert state["n"] == 3
+
+
+def test_download_404_is_not_retried(monkeypatch, tmp_path):
+    calls = {"stream": 0}
+
+    async def fake_resolve(self, client, mirror):
+        return "https://sto.romsfast.com/Wii/Game.zip?token=t"
+
+    async def fake_stream(self, client, cdn, ref, dest, cb):
+        calls["stream"] += 1
+        raise _http_status_error(404)
+
+    monkeypatch.setattr(RomsfunSource, "_resolve_cdn_url", fake_resolve)
+    monkeypatch.setattr(RomsfunSource, "_stream_to", fake_stream)
+    monkeypatch.setattr(_rf.asyncio, "sleep", _noop_sleep)
+
+    with pytest.raises(src_errors.SourceNotFoundError):
+        asyncio.run(RomsfunSource().download_file("/download/g-1/1", tmp_path / "x.zip"))
+    assert calls["stream"] == 1  # a genuine 404 fails fast, no retry
+
+
+def test_download_no_cdn_url_raises_forbidden(monkeypatch, tmp_path):
+    async def fake_resolve(self, client, mirror):
+        return None  # neither admin-ajax nor the page yielded a signed URL
+
+    monkeypatch.setattr(RomsfunSource, "_resolve_cdn_url", fake_resolve)
+    monkeypatch.setattr(_rf.asyncio, "sleep", _noop_sleep)
+
+    with pytest.raises(src_errors.SourceForbiddenError):
+        asyncio.run(RomsfunSource().download_file("/download/g-1/1", tmp_path / "x.zip"))
+
+
+def test_resolve_prefers_ajax_over_embedded(monkeypatch):
+    async def fake_ajax(self, client, mirror):
+        return "https://sto.romsfast.com/Wii/ajax.zip?token=AJAX"
+
+    monkeypatch.setattr(RomsfunSource, "_ajax_signed_url", fake_ajax)
+    html = '<a href="https://sto.romsfast.com/Wii/Game.zip?token=EMBED">x</a>'
+    out = asyncio.run(
+        RomsfunSource()._resolve_cdn_url(_FakeClient(html), "https://romsfun.com/download/g-1/1")
+    )
+    assert out.endswith("token=AJAX")
+
+
+def test_resolve_falls_back_to_embedded_when_ajax_none(monkeypatch):
+    async def fake_ajax(self, client, mirror):
+        return None
+
+    monkeypatch.setattr(RomsfunSource, "_ajax_signed_url", fake_ajax)
+    html = '<a href="https://sto.romsfast.com/Wii/Game.zip?token=EMBED">x</a>'
+    out = asyncio.run(
+        RomsfunSource()._resolve_cdn_url(_FakeClient(html), "https://romsfun.com/download/g-1/1")
+    )
+    assert out.endswith("token=EMBED")

@@ -3,10 +3,10 @@
 EXTENSION_INFO = {
     "id": "romsfun",
     "name": "ROMsFun",
-    "version": "1.8.0",
+    "version": "1.9.0",
     "type": "rom_source",
     "author": "ConnorBS",
-    "description": "Downloads ROMs from ROMsFun.com. Searches the per-system catalog (/roms/{system}/?q=) and reads the signed CDN URL embedded in the download mirror page. ROMsFun is behind Cloudflare — set a FlareSolverr URL to reliably bypass the challenge.",
+    "description": "Downloads ROMs from ROMsFun.com. Searches the per-system catalog (/roms/{system}/?q=) and reads the signed CDN URL embedded in the download mirror page. ROMsFun is behind Cloudflare — set a FlareSolverr URL to reliably bypass the challenge. The download streams the CDN within the SAME session that minted the token (admin-ajax primary, embedded URL fallback) and retries the anti-leech 403 with backoff.",
 }
 
 EXTENSION_SETTINGS = [
@@ -25,6 +25,7 @@ EXTENSION_SETTINGS = [
 
 import asyncio
 import logging
+import os
 import re
 import urllib.parse
 from pathlib import Path
@@ -33,10 +34,21 @@ import httpx
 from bs4 import BeautifulSoup
 
 from app.services.sources.base import RomSource
+from app.services.sources.errors import (
+    SourceForbiddenError,
+    SourceNetworkError,
+    classify_status,
+)
 
 logger = logging.getLogger(__name__)
 
 ROMSFUN_BASE = "https://romsfun.com"
+ROMSFUN_AJAX_URL = f"{ROMSFUN_BASE}/wp-admin/admin-ajax.php"
+
+# CDN streaming: retry the anti-leech 403/429 a few times with backoff. The
+# token CDN (sto.romsfast.com) 403s intermittently even on a valid, freshly
+# minted token, so one rejection is not a permanent failure.
+_DOWNLOAD_ATTEMPTS = 3
 
 _HEADERS = {
     "User-Agent": (
@@ -46,6 +58,16 @@ _HEADERS = {
     ),
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
+}
+
+# admin-ajax mints a fresh signed URL bound to the posting session/IP — this is
+# the path that downloaded reliably before v1.8.0 switched to the (weaker)
+# page-embedded token. It needs the XHR header + the mirror page as Referer.
+_AJAX_HEADERS = {
+    "User-Agent": _HEADERS["User-Agent"],
+    "Accept": "application/json, text/javascript, */*; q=0.01",
+    "Accept-Language": "en-US,en;q=0.9",
+    "X-Requested-With": "XMLHttpRequest",
 }
 
 # RA system name → ROMsFun system slug (as it appears in /roms/{slug}/ URLs)
@@ -374,8 +396,89 @@ class RomsfunSource(RomSource):
         return identifier
 
     # ------------------------------------------------------------------
-    # Download — re-parse the mirror page for a fresh signed URL, then stream CDN
+    # Download — mint a fresh signed URL in-session, then stream the CDN
     # ------------------------------------------------------------------
+
+    async def _ajax_signed_url(self, client: httpx.AsyncClient, mirror_url: str) -> str | None:
+        """Mint a fresh signed CDN URL via the WordPress admin-ajax endpoint on
+        `client` (so it carries the session cookie set by visiting the mirror
+        page). The server identifies the file by the mirror-page Referer."""
+        try:
+            resp = await client.post(
+                ROMSFUN_AJAX_URL,
+                headers={**_AJAX_HEADERS, "Referer": mirror_url},
+                data={"action": "k_get_download"},
+                timeout=20,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                if isinstance(data, dict) and data.get("success"):
+                    return (data.get("data") or {}).get("download_url")
+        except Exception as exc:
+            logger.debug("ROMsFun admin-ajax mint failed for %s: %s", mirror_url, exc)
+        return None
+
+    async def _resolve_cdn_url(self, client: httpx.AsyncClient, mirror_url: str) -> str | None:
+        """Resolve a signed CDN URL using `client` so the token is minted in the
+        SAME session/IP that will stream it (the v1.8.0 regression streamed from
+        a fresh, cookie-less client → the anti-leech CDN 403'd). Order: visit the
+        mirror page (sets cookies), mint via admin-ajax (primary), fall back to
+        the page-embedded token, then to a FlareSolverr fetch if a solver is set
+        and the direct page fetch was Cloudflare-blocked."""
+        landing = re.sub(r"/\d+$", "", mirror_url)  # /download/{base}
+        html = ""
+        try:
+            resp = await client.get(mirror_url, headers={**_HEADERS, "Referer": landing})
+            if resp.status_code == 200:
+                html = resp.text
+        except Exception:
+            html = ""
+
+        cdn = await self._ajax_signed_url(client, mirror_url)
+        if cdn:
+            return cdn
+
+        cdn = _parse_cdn_url(html) if html else None
+        if cdn:
+            return cdn
+
+        if not html and self._flaresolverr_url:
+            try:
+                cdn = _parse_cdn_url(await self._fetch_html(mirror_url))
+            except Exception:
+                cdn = None
+        return cdn
+
+    async def _stream_to(self, client: httpx.AsyncClient, cdn_url: str, referer: str,
+                         dest: Path, progress_callback) -> None:
+        """Stream `cdn_url` to `dest` atomically (.part → os.replace). raise_for_status
+        surfaces the anti-leech 403/429 as httpx.HTTPStatusError for the retry loop;
+        a short body (bytes < Content-Length) is a truncated download, not a ROM."""
+        tmp = dest.with_name(dest.name + ".part")
+        try:
+            async with client.stream(
+                "GET", cdn_url, headers={**_HEADERS, "Referer": referer},
+            ) as stream:
+                stream.raise_for_status()
+                total = int(stream.headers.get("content-length", 0))
+                downloaded = 0
+                with open(tmp, "wb") as fh:
+                    async for chunk in stream.aiter_bytes(65536):
+                        fh.write(chunk)
+                        downloaded += len(chunk)
+                        if progress_callback and total:
+                            await progress_callback(downloaded / total)
+            if total and downloaded < total:
+                raise SourceNetworkError(
+                    f"short read {downloaded}/{total} bytes", source_id=self.source_id
+                )
+            os.replace(tmp, dest)
+        except BaseException:
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+            raise
 
     async def download_file(self, url: str, dest: Path, progress_callback=None) -> None:
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -387,33 +490,48 @@ class RomsfunSource(RomSource):
         elif not url.startswith("http"):
             url = f"{ROMSFUN_BASE}/{url.lstrip('/')}"
 
-        # url is the per-file mirror page (/download/{base}/{n}). Re-fetch it (via
-        # FlareSolverr when configured) for a FRESH signed CDN URL — the token
-        # embedded earlier may have expired.
-        cdn_url = _parse_cdn_url(await self._fetch_html(url))
-        if not cdn_url:
-            raise RuntimeError(f"ROMsFun: no signed CDN URL on mirror page {url}")
+        landing = re.sub(r"/\d+$", "", url)  # /download/{base}
+        last_exc: Exception | None = None
 
-        async with httpx.AsyncClient(
-            headers=_HEADERS, follow_redirects=True, timeout=60
-        ) as client:
-            try:
-                async with client.stream(
-                    "GET", cdn_url,
-                    headers={**_HEADERS, "Referer": url},
-                    timeout=None,
-                ) as stream:
-                    stream.raise_for_status()
-                    total = int(stream.headers.get("content-length", 0))
-                    downloaded = 0
-                    with open(dest, "wb") as fh:
-                        async for chunk in stream.aiter_bytes(65536):
-                            fh.write(chunk)
-                            downloaded += len(chunk)
-                            if progress_callback and total:
-                                await progress_callback(downloaded / total)
-            except Exception as exc:
-                raise RuntimeError(f"ROMsFun CDN stream failed: {exc}") from exc
+        # One client (cookie jar) per attempt: resolve the token AND stream it on
+        # the same session, re-minting a fresh token each retry (the embedded /
+        # ajax token can expire or be rate-limited).
+        for attempt in range(_DOWNLOAD_ATTEMPTS):
+            async with httpx.AsyncClient(
+                headers={**_HEADERS, "Referer": landing},
+                follow_redirects=True,
+                timeout=httpx.Timeout(60.0, read=300.0),
+            ) as client:
+                cdn_url = await self._resolve_cdn_url(client, url)
+                if not cdn_url:
+                    last_exc = SourceForbiddenError(
+                        f"no signed CDN URL on mirror page {url}", source_id=self.source_id
+                    )
+                    await asyncio.sleep(2.0 * (2 ** attempt))
+                    continue
+
+                try:
+                    await self._stream_to(client, cdn_url, url, dest, progress_callback)
+                    return  # success
+                except httpx.HTTPStatusError as exc:
+                    code = exc.response.status_code
+                    last_exc = classify_status(
+                        code, source_id=self.source_id,
+                        detail=f"ROMsFun CDN {code} for {cdn_url}",
+                    )
+                    if code not in (403, 429):
+                        raise last_exc from exc
+                except (httpx.TransportError, httpx.TimeoutException, SourceNetworkError) as exc:
+                    last_exc = exc if isinstance(exc, SourceNetworkError) else SourceNetworkError(
+                        f"ROMsFun CDN stream failed: {exc}", source_id=self.source_id
+                    )
+
+            if attempt < _DOWNLOAD_ATTEMPTS - 1:
+                await asyncio.sleep(2.0 * (2 ** attempt))  # 2s, 4s backoff
+
+        raise last_exc or SourceForbiddenError(
+            f"ROMsFun download failed for {url}", source_id=self.source_id
+        )
 
 
 SOURCE_CLASS = RomsfunSource
