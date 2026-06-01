@@ -99,13 +99,18 @@
             </select>
 
             <input type="hidden" id="col-view" name="view" value="{{ view }}">
+            <!-- Carries the active status filter so the Sort/System/Per-page/Search
+                 controls preserve it: their hx-include points at #col-status, and an
+                 hx-include only reads a VALUE from a form field — the status pills are
+                 <a> links (no value), so without this hidden input changing the sort
+                 dropped the filter (e.g. Duplicate → sort by size cleared it). -->
+            <input type="hidden" id="col-status" name="status" value="{{ selected_status }}">
 
             <!-- Status pills -->
             <div class="flex gap-1 flex-wrap">
                 {% set statuses = [("", "All"), ("verified", "Verified"), ("found", "Found"), ("library", "Library"), ("wanted", "Wanted"), ("no_ra", "No RA"), ("unsupported", "Unsupported"), ("missing", "Missing"), ("duplicate", "Duplicate"), ("has_save", "Has Save"), ("has_mastered", "Mastered"), ("beaten", "Beaten"), ("subset_available", "Subset avail.")] %}
                 {% for val, label in statuses %}
                 <a href="?q={{ q }}&system={{ selected_system }}&status={{ val }}&view={{ view }}&per_page={{ per_page }}&sort={{ selected_sort }}"
-                   id="col-status"
                    class="px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors
                           {% if selected_status == val %}border-blue-600 bg-blue-600/20 text-blue-300{% else %}border-gray-700 bg-gray-800 text-gray-400 hover:text-white{% endif %}">
                     {{ label }}

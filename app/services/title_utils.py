@@ -14,21 +14,33 @@ _RA_SUFFIXES = re.compile(
     re.IGNORECASE,
 )
 
-# Platform disambiguation in parens, e.g. "(PlayStation 2)" or "(NES)"
-_PLATFORM_PARENS = re.compile(
-    r'\s*\('
-    r'(?:PlayStation(?: \d+)?|PSP|PS\d|Nintendo\s+(?:64|DS|DSi|Switch)|'
+# Platform tokens RA uses to disambiguate same-named games across consoles.
+_PLAT = (
+    r'PlayStation(?: \d+)?|PSP|PS\d|Nintendo\s+(?:64|DS|DSi|Switch)|'
     r'SNES|NES|Famicom|Game\s*Boy(?:\s+(?:Advance|Color|Colour))?|'
     r'GameCube|Wii(?:\s*U)?|'
     r'Sega\s+(?:Genesis|Mega\s+Drive|CD|Saturn|32X|Dreamcast|Master\s+System)|'
-    r'Mega\s+Drive|Saturn|Dreamcast|'
+    r'Genesis|Mega\s+Drive|Master\s+System|Game\s+Gear|Saturn|Dreamcast|'
     r'Xbox(?:\s+(?:360|One|Series\s+[XS]))?|'
-    r'Atari\s+\d{4}|Game\s+Gear|TurboGrafx|PC\s*Engine|'
+    r'Atari\s+\d{4}|TurboGrafx(?:-16)?|PC\s*Engine|'
     r'3DO|Jaguar|Lynx|Neo\s*Geo(?:\s+Pocket)?|WonderSwan|Virtual\s+Boy|'
     r'Arcade|MSX|Amstrad|Apple\s+II|PC-\w+'
-    r')\)',
+)
+
+# Platform disambiguation in parens — one token OR several joined by "/", e.g.
+# "(PlayStation 2)", "(NES)", "(Genesis/Mega Drive)". RA names some consoles with
+# a slash combo, so the slash form must strip too (else "genesis"/"mega"/"drive"
+# leak into the title's significant terms and the real ROM is judged irrelevant).
+_PLATFORM_PARENS = re.compile(
+    r'\s*\((?:' + _PLAT + r')(?:\s*/\s*(?:' + _PLAT + r'))*\)',
     re.IGNORECASE,
 )
+
+# RA "Subset" games append a tag like " [Subset - Glitch Showcase]" (or "(Subset …)").
+# Strip it for search/relevance so the BASE game's words are used and the base ROM
+# (which a hash-only subset reuses) is found. The STORED title keeps the tag — only
+# clean_title (search) drops it; duplicates/mastery still see "[Subset …]".
+_SUBSET_TAG = re.compile(r'\s*[\[(]\s*Subset\b[^\])]*[\])]', re.IGNORECASE)
 
 # No-Intro / Redump region and language tags in parens, e.g. "(USA)", "(En,Fr,De)"
 _REGION_PARENS = re.compile(
@@ -48,10 +60,12 @@ _VERSION_PARENS = re.compile(
 
 
 def clean_title(title: str) -> str:
-    """Return a title stripped of RA suffixes and platform disambiguation."""
+    """Return a title stripped of RA suffixes, the [Subset …] tag, and platform
+    disambiguation (incl. slash combos like "(Genesis/Mega Drive)")."""
     t = _RA_SUFFIXES.sub('', title)
+    t = _SUBSET_TAG.sub('', t)
     t = _PLATFORM_PARENS.sub('', t)
-    return t.strip()
+    return re.sub(r'  +', ' ', t).strip()
 
 
 def search_variations(title: str) -> list[str]:

@@ -18,3 +18,16 @@ def test_sort_by_file_size(client):
     assert desc.index("HugeGame") < desc.index("TinyGame")   # largest first
     assert asc.index("TinyGame") < asc.index("HugeGame")     # smallest first
     assert "4.66 GB" in desc                                  # human-readable size shown
+
+
+def test_sort_controls_carry_the_active_status_filter(client):
+    """Regression: changing Sort/System/Per-page must PRESERVE the status filter.
+    The controls pull it via hx-include="#col-status"; that only works if a real
+    form field carries the value. Before the fix the status pills were <a> links
+    sharing id="col-status" (no value), so sorting dropped the filter (e.g.
+    Duplicate → sort by size cleared it)."""
+    html = client.get("/collection?status=duplicate&sort=size_desc").text
+    # The hidden input must carry the active filter so hx-include sends it.
+    assert '<input type="hidden" id="col-status" name="status" value="duplicate">' in html
+    # …and that id must be unique — the pills must NOT also use it.
+    assert html.count('id="col-status"') == 1

@@ -35,7 +35,7 @@ from app.services import sources as source_registry
 from app.services.hasher import extract_rom_from_zip, hash_rom
 from app.services.ra_client import DEFAULT_FOLDER_MAP, RAClient
 from app.services.rahasher import compute_ra_hash, ra_hash_or_fallback
-from app.services.title_utils import search_variations, significant_terms, title_is_relevant
+from app.services.title_utils import clean_title, search_variations, significant_terms, title_is_relevant
 from app.services import settings as app_settings
 
 
@@ -136,6 +136,24 @@ def _match_is_correct_game(matched_id, expected_id) -> bool:
     return bool(matched_id) and (expected_id is None or matched_id == expected_id)
 
 
+def _verified_game_id(matched_id, expected_id, file_hash, accepted_hashes) -> int | None:
+    """The RA game id this dump verifies as, or None if it doesn't belong to the
+    wanted game. Accepts two ways:
+      • the dump's hash is in the EXPECTED game's own accepted-hash list — the
+        authoritative per-game set. This is the **subset** path: a Subset game's
+        ra_game_id differs from the base game's, so RA's hash lookup returns the
+        BASE id, but the subset reuses the base ROM whose hash IS in the subset's
+        list, so it verifies as the wanted (subset) id; or
+      • RA's hash lookup returns the expected id (the normal path).
+    A hash matching a DIFFERENT game that is NOT in the accepted list (a Solaris
+    ROM during a Kirby hunt) returns None — the wrong dump."""
+    if file_hash and file_hash.lower() in accepted_hashes:
+        return expected_id
+    if _match_is_correct_game(matched_id, expected_id):
+        return matched_id
+    return None
+
+
 async def auto_hunt(wanted_id: int) -> None:
     """Run the full auto-hunt pipeline for a single wanted game."""
     task_id = f"hunt-{wanted_id}"
@@ -198,7 +216,11 @@ async def auto_hunt(wanted_id: int) -> None:
         # search). Unrelated hits are still collected and later dropped by
         # _file_score == 0, so a generically-titled archive.org collection that
         # actually holds the file isn't lost.
-        title_terms = _significant_terms(game_title)
+        # Derive match terms from the CLEANED title — a platform suffix
+        # ("Ristar (Genesis/Mega Drive)") or "[Subset …]" tag otherwise poisons the
+        # term set so the real ROM is judged irrelevant and a whole-system romset
+        # (which happens to contain "genesis/mega/drive") outscores it.
+        title_terms = _significant_terms(clean_title(game_title))
         search_results: list[tuple] = []  # (src, result_dict)
         for src in srcs:
             src_hits: list[tuple] = []
@@ -327,11 +349,17 @@ async def auto_hunt(wanted_id: int) -> None:
 
                 match = await ra.lookup_hash(file_hash)
                 matched_id = match.get("ID") if match else None
-                # Only accept when the hash matches the EXPECTED game. A file whose
-                # hash matches a DIFFERENT RA game (e.g. a Solaris ROM downloaded
-                # during a Kirby hunt) is the wrong dump — must NOT verify the wanted
-                # game. Mirrors the downloads.py approval fix.
-                if _match_is_correct_game(matched_id, ra_game_id):
+                # Accept when the dump belongs to the EXPECTED game, either way:
+                #  • RA's hash lookup returns the expected id, OR
+                #  • the dump's hash is in the wanted game's OWN accepted-hash list
+                #    (ra_hashes = get_game_hashes_full(ra_game_id)).
+                # The second path is how a "Subset" game verifies: its ra_game_id
+                # differs from the base game's, so lookup_hash returns the BASE id —
+                # but the subset reuses the base ROM whose hash IS in the subset's
+                # accepted list. A hash matching a DIFFERENT game NOT in that list
+                # (a Solaris ROM during a Kirby hunt) is still the wrong dump.
+                verified_id = _verified_game_id(matched_id, ra_game_id, file_hash, ra_hashes)
+                if verified_id is not None:
                     # Move verified file to normal staging dir
                     stage_dir = Path(base_dir) / system_folder
                     stage_dir.mkdir(parents=True, exist_ok=True)
@@ -339,7 +367,7 @@ async def auto_hunt(wanted_id: int) -> None:
                     shutil.move(str(rom_path), str(final_path))
                     _cleanup(dest, rom_path)
 
-                    matched_ra_id = matched_id
+                    matched_ra_id = verified_id
                     dl_status = DownloadStatus.pending_approval if use_review else DownloadStatus.completed
 
                     with Session(engine) as session:

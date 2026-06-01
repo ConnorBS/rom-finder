@@ -1,8 +1,46 @@
 """Tests for app/services/title_utils.py"""
 import pytest
 from app.services.title_utils import (
-    search_variations, stem_from_rom_name, significant_terms, title_is_relevant,
+    clean_title, search_variations, stem_from_rom_name, significant_terms, title_is_relevant,
 )
+
+
+# ---------------------------------------------------------------------------
+# clean_title — must strip platform disambiguation (incl. slash combos) and the
+# [Subset …] tag so the real ROM is judged relevant ("search == hunt"). Bug: a
+# title like "Ristar (Genesis/Mega Drive)" left genesis/mega/drive in the terms,
+# so a plain "Ristar" result was rejected and a whole-system romset outscored it.
+# ---------------------------------------------------------------------------
+
+def test_clean_title_strips_slash_platform_combo():
+    assert clean_title("Ristar (Genesis/Mega Drive)") == "Ristar"
+
+
+def test_clean_title_strips_single_platform():
+    assert clean_title("Some Game (PlayStation 2)") == "Some Game"
+
+
+def test_clean_title_strips_subset_tag():
+    assert clean_title("Super Mario 64 [Subset - Glitch Showcase]") == "Super Mario 64"
+    assert clean_title("Sonic Adventure 2 (Subset - Foo)") == "Sonic Adventure 2"
+
+
+def test_clean_title_preserves_real_subtitle():
+    # A real subtitle in parens/colon must NOT be stripped.
+    assert clean_title("Castlevania: Symphony of the Night") == "Castlevania: Symphony of the Night"
+
+
+def test_clean_title_restores_relevance_for_platform_suffixed_title():
+    terms = significant_terms(clean_title("Ristar (Genesis/Mega Drive)"))
+    assert terms == {"ristar"}
+    assert title_is_relevant("Ristar", terms)
+    # …and a whole-system romset is still NOT relevant.
+    assert not title_is_relevant("Sega - Mega Drive - Genesis (Parent-Clone) [1G1R]", terms)
+
+
+def test_clean_title_restores_relevance_for_subset_base():
+    terms = significant_terms(clean_title("Super Mario 64 [Subset - Glitch Showcase]"))
+    assert title_is_relevant("Super Mario 64 (USA)", terms)
 
 
 # ---------------------------------------------------------------------------

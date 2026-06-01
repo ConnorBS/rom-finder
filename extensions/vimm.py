@@ -3,18 +3,18 @@
 EXTENSION_INFO = {
     "id": "vimm",
     "name": "Vimm's Lair",
-    "version": "1.3.0",
+    "version": "1.4.0",
     "type": "rom_source",
     "author": "ConnorBS",
     "description": (
-        "Downloads ROMs from Vimm's Lair. Uses headless Chromium (Playwright) to bypass "
-        "the JS bot challenge. Enforces Vimm's one-download-at-a-time policy automatically."
+        "Downloads ROMs from Vimm's Lair. Uses headless Chromium (Playwright) for search, "
+        "file listing AND download — the whole site now bot-blocks plain HTTP clients, so "
+        "httpx requests time out. Enforces Vimm's one-download-at-a-time policy automatically."
     ),
 }
 
 import asyncio
 import re
-import httpx
 from bs4 import BeautifulSoup
 from pathlib import Path
 
@@ -41,6 +41,35 @@ async def _progress_ticker(callback) -> None:
             await callback(pct)
         except Exception:
             pass
+
+
+async def _browser_get_html(url: str, timeout_ms: int = 30000) -> str:
+    """Fetch a Vimm page's rendered HTML via headless Chromium.
+
+    Vimm now bot-blocks plain HTTP clients site-wide — httpx requests to the
+    homepage, a vault game page, AND the search listing all hang (ReadTimeout),
+    so search/get_files (which used httpx) silently returned nothing and Vimm
+    contributed zero candidates to every hunt. Only a real browser gets a
+    response, so route page fetches through Chromium like downloads already do.
+    Callers hold `_get_vimm_lock()` so we never run more than one Vimm browser.
+    """
+    try:
+        from playwright.async_api import async_playwright
+    except ImportError:
+        raise RuntimeError(
+            "Playwright is not installed — Vimm's Lair is unavailable. "
+            "Install Playwright in the Docker container to enable Vimm."
+        )
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        context = await browser.new_context(user_agent=_HEADERS["User-Agent"])
+        page = await context.new_page()
+        try:
+            await page.goto(url, timeout=timeout_ms, wait_until="domcontentloaded")
+            return await page.content()
+        finally:
+            await context.close()
+            await browser.close()
 
 
 VIMM_BASE = "https://vimm.net"
@@ -115,21 +144,32 @@ class VimmSource(RomSource):
         if not vimm_sys:
             return []  # Vimm search requires a known system; unknown system = no results
 
-        params: dict = {"p": "list", "q": query, "system": vimm_sys}
+        # Serialize Vimm browser use, then fetch the listing (with one no-system
+        # fallback). The old httpx word-dropping recursion is gone: it was a
+        # workaround for httpx returning nothing, and with a real browser each
+        # extra try is a full Chromium launch — the hunt already retries with
+        # several queries (RA ROM-name stems + title variants), so Vimm gets
+        # multiple shots without launching a browser per dropped word.
+        async with _get_vimm_lock():
+            results = await self._search_once(query, vimm_sys)
+            if not results:
+                results = await self._search_once(query, "")
+        return results
+
+    async def _search_once(self, query: str, vimm_sys: str) -> list[dict]:
+        from urllib.parse import urlencode
+
+        params: dict = {"p": "list", "q": query}
+        if vimm_sys:
+            params["system"] = vimm_sys
+        url = f"{VIMM_BASE}/vault/?{urlencode(params)}"
 
         try:
-            async with httpx.AsyncClient(follow_redirects=True) as client:
-                resp = await client.get(
-                    f"{VIMM_BASE}/vault/",
-                    params=params,
-                    headers=_HEADERS,
-                    timeout=20,
-                )
-                resp.raise_for_status()
+            html = await _browser_get_html(url)
         except Exception:
             return []
 
-        soup = BeautifulSoup(resp.text, "html.parser")
+        soup = BeautifulSoup(html, "html.parser")
         results: list[dict] = []
         seen_ids: set[str] = set()
 
@@ -162,38 +202,14 @@ class VimmSource(RomSource):
                 "source_id": self.source_id,
             })
 
-        # If system filter returned nothing, retry without it.
-        if not results and vimm_sys:
-            return await self.search(query, "")
-
-        # If still nothing and query has multiple words, progressively drop the last word.
-        if not results:
-            words = query.split()
-            if len(words) > 1:
-                shorter = " ".join(words[:-1])
-                if len(shorter) >= 3:
-                    return await self.search(shorter, system)
-
         return results
 
     async def get_files(self, identifier: str, name_filter: str = "") -> list[dict]:
-        try:
-            import playwright  # noqa: F401
-        except ImportError:
-            raise RuntimeError(
-                "Playwright is not installed — Vimm's Lair downloads unavailable. "
-                "Install Playwright in the Docker container to enable Vimm."
-            )
+        # Fetch the vault game page via Chromium (httpx is bot-blocked site-wide).
+        async with _get_vimm_lock():
+            html = await _browser_get_html(f"{VIMM_BASE}/vault/{identifier}/")
 
-        async with httpx.AsyncClient(follow_redirects=True) as client:
-            resp = await client.get(
-                f"{VIMM_BASE}/vault/{identifier}/",
-                headers=_HEADERS,
-                timeout=15,
-            )
-            resp.raise_for_status()
-
-        soup = BeautifulSoup(resp.text, "html.parser")
+        soup = BeautifulSoup(html, "html.parser")
 
         h2 = soup.find("h2")
         game_title = h2.get_text(strip=True) if h2 else f"VIMM {identifier}"
