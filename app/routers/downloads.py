@@ -293,15 +293,28 @@ async def _do_approve_move(download_id: int) -> bool:
         dest_path = final_dir / src_path.name
 
         try:
+            # The library already having this exact path (ux_library_path is UNIQUE)
+            # means the user already owns this dump — the pending download is a
+            # redundant copy. Don't overwrite the owned file or INSERT a duplicate
+            # LibraryEntry (that UNIQUE violation is what made "Approve all" fail on
+            # already-owned GameCube games); just discard the staged copy and drop the
+            # Download. mark_wanted_verified still runs (the wanted game IS satisfied).
+            existing = session.exec(
+                select(LibraryEntry).where(LibraryEntry.file_path == str(dest_path))
+            ).first()
             final_dir.mkdir(parents=True, exist_ok=True)
             if src_path.exists():
-                await loop.run_in_executor(None, shutil.move, str(src_path), str(dest_path))
-            repository.create_library_entry_from_download(session, download, dest_path)
+                if existing is not None:
+                    src_path.unlink(missing_ok=True)        # redundant — keep the owned copy
+                else:
+                    await loop.run_in_executor(None, shutil.move, str(src_path), str(dest_path))
+            if existing is None:
+                repository.create_library_entry_from_download(session, download, dest_path)
             repository.mark_wanted_verified(session, download.ra_game_id)
             applog.log_action("approve_download", {
                 "game": download.game_title, "file": dest_path.name,
                 "system": download.system, "dest": str(dest_path),
-                "ra_verified": download.hash_verified,
+                "ra_verified": download.hash_verified, "already_owned": existing is not None,
             })
             session.delete(download)
             session.commit()

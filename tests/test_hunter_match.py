@@ -6,7 +6,7 @@ from sqlmodel import Session
 from app.db.models import LibraryEntry
 from app.services.hunter import (
     _match_is_correct_game, _verified_game_id, _file_score, _significant_terms,
-    _owned_accepted_copy,
+    _owned_accepted_copy, _ra_base_id,
 )
 
 
@@ -86,6 +86,24 @@ def test_verified_subset_accepts_hash_in_own_list():
 
 def test_verified_hash_match_is_case_insensitive():
     assert _verified_game_id(None, 42, "AbCdEf", {"abcdef"}) == 42
+
+
+# --- multiset/hub synthetic id decode (Alien Crush Returns: dump → 1200034728) ----
+
+def test_ra_base_id_decodes_synthetic_multiset_ids():
+    assert _ra_base_id(1200034728) == 34728   # "set of" game 34728
+    assert _ra_base_id(1100002271) == 2271
+    assert _ra_base_id(586) == 586            # real ids (< 1e8) pass through unchanged
+
+
+def test_synthetic_id_verifies_against_its_base_game():
+    # RA resolves the wanted dump to a *set of* game 34728 (synthetic 1200034728);
+    # comparing base ids lets it verify, and returns the real base id (34728).
+    assert _match_is_correct_game(1200034728, 34728) is True
+    assert _verified_game_id(1200034728, 34728, "deadbeef", set()) == 34728
+    # A different base game (Alien Crush PC Engine = 2271) must still be rejected.
+    assert _match_is_correct_game(1100002271, 34728) is False
+    assert _verified_game_id(1100002271, 34728, "x", set()) is None
 
 
 # --- _owned_accepted_copy: skip hunting a subset you already own (SM64 case) ----

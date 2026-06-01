@@ -85,6 +85,36 @@ def test_approve_all_moves_every_pending_item(client, tmp_path):
         assert len(s.exec(select(LibraryEntry)).all()) == 2
 
 
+def test_approve_when_library_already_has_that_path(client, tmp_path):
+    """Approving a dump whose destination path is ALREADY in the library (the user
+    owns it) must NOT crash on the ux_library_path UNIQUE index — it discards the
+    redundant copy, keeps the owned one, makes no duplicate entry, and clears the
+    pending download. (Regression: this is what broke 'Approve all' on owned GameCube
+    games with `UNIQUE constraint failed: library.file_path`.)"""
+    roms, review = _point_dirs_at(tmp_path)
+    name, system = "Billy Hatcher (USA).rvz", "GameCube"
+    dest = roms / _resolve_folder({}, system) / name
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(b"owned-copy")
+    with Session(engine) as s:                       # the owned library entry at that path
+        s.add(LibraryEntry(game_title="Billy Hatcher", system=system,
+                           file_name=name, file_path=str(dest), file_hash="owned1",
+                           ra_game_id=1, ra_matched=True))
+        s.commit()
+    did = _make_pending(review, "Billy Hatcher", system, name)
+    src = review / system / name
+
+    r = client.post(f"/downloads/{did}/approve")
+    assert r.status_code == 200
+
+    with Session(engine) as s:
+        assert s.get(Download, did) is None                       # download cleared, no error
+        entries = s.exec(select(LibraryEntry).where(LibraryEntry.file_path == str(dest))).all()
+        assert len(entries) == 1 and entries[0].file_hash == "owned1"   # no duplicate; owned kept
+    assert dest.read_bytes() == b"owned-copy"          # owned file not overwritten
+    assert not src.exists()                            # redundant staged copy removed
+
+
 def test_approve_blocked_when_roms_dir_readonly(client, tmp_path):
     roms, review = _point_dirs_at(tmp_path)
     with Session(engine) as s:

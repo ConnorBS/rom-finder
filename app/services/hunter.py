@@ -131,11 +131,21 @@ def _mark_exhausted(wanted_id: int) -> None:
             session.commit()
 
 
+def _ra_base_id(x):
+    """RA hub/multiset synthetic ids encode the base game id in the low 8 digits:
+    `pseudo = type * 10^8 + base_game_id` (e.g. 1200034728 → 34728, 1100002271 → 2271;
+    real game ids are < 10^8). A ROM that RA resolves to a *set of* game N hashes to
+    such a synthetic id; decoding it lets the wanted base game (N) verify. Real ids
+    pass through unchanged, so the wrong-game guard still rejects a genuinely
+    different base."""
+    return x % 100000000 if x and x >= 100000000 else x
+
+
 def _match_is_correct_game(matched_id, expected_id) -> bool:
-    """True only when the RA hash matched the EXPECTED game (or no expected id is
-    known). A match to a DIFFERENT game means the wrong dump was downloaded
-    (e.g. a Solaris ROM matching RA during a Kirby hunt) and must NOT verify."""
-    return bool(matched_id) and (expected_id is None or matched_id == expected_id)
+    """True only when the RA hash matched the EXPECTED game — comparing BASE game ids
+    so a multiset/hub synthetic id (1200034728) matches its base game (34728). A match
+    to a different base (a Solaris ROM during a Kirby hunt) must NOT verify."""
+    return bool(matched_id) and (expected_id is None or _ra_base_id(matched_id) == _ra_base_id(expected_id))
 
 
 def _owned_accepted_copy(session: Session, accepted_hashes: set[str]):
@@ -171,7 +181,9 @@ def _verified_game_id(matched_id, expected_id, file_hash, accepted_hashes) -> in
     if file_hash and file_hash.lower() in accepted_hashes:
         return expected_id
     if _match_is_correct_game(matched_id, expected_id):
-        return matched_id
+        # Return the wanted (base) id — never a multiset/hub synthetic id — so the
+        # Download/LibraryEntry carries the real game id for covers + collection links.
+        return expected_id if expected_id is not None else matched_id
     return None
 
 
