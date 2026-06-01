@@ -17,6 +17,30 @@
   if (!pathMatch) return;
   const gameId = parseInt(pathMatch[1], 10);
 
+  // A page can be an achievement SUBSET — either a multiset set (?set=NNNN in the
+  // URL, sharing the base game's id) or a title carrying a "[Subset - …]" tag.
+  // We can't resolve which subsets a given ROM unlocks: RA's V1 API exposes no
+  // per-set hash data (see the V2 multiset roadmap item). So we treat a subset as
+  // its BASE game — track/hunt the base ROM, surface whether the base game is
+  // already owned, and make clear that any subset needing a patched ROM is the
+  // user's job to patch (RA's "Download Compatibility Patch").
+  const setMatch = window.location.search.match(/[?&]set=(\d+)/);
+  const subsetSetId = setMatch ? parseInt(setMatch[1], 10) : null;
+
+  function stripSubsetTag(t) {
+    return (t || '')
+      .replace(/\s*[\[(]\s*Subset\b[^\])]*[\])]/i, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+  }
+  function isSubsetContext(t) {
+    return subsetSetId != null || /[\[(]\s*Subset\b/i.test(t || '');
+  }
+  // The name/query we send onward for a subset: the sanitized base-game name.
+  function effectiveTitle() {
+    return isSubsetContext(gameTitle) ? stripSubsetTag(gameTitle) : gameTitle;
+  }
+
   function getGameTitle() {
     // RA uses several possible selectors over time
     const selectors = [
@@ -263,6 +287,21 @@
 
   const addStatus = el('div', '', { fontSize: '11px', minHeight: '16px', marginBottom: '10px', color: '#94a3b8' });
 
+  // Subset advisory — shown only on a subset page. Explains that ROM Finder tracks
+  // the BASE game and that patch-required subsets are the user's responsibility.
+  const subsetNote = document.createElement('div');
+  applyStyles(subsetNote, {
+    display: 'none',
+    margin: '0 0 10px',
+    padding: '8px 10px',
+    background: '#2a2440',
+    border: '1px solid #4c3f7a',
+    borderRadius: '6px',
+    fontSize: '11px',
+    color: '#c4b5fd',
+    lineHeight: '1.45',
+  });
+
   // Divider
   const divider = document.createElement('div');
   applyStyles(divider, { borderTop: '1px solid #1e293b', margin: '10px 0' });
@@ -283,7 +322,7 @@
   const searchInput = document.createElement('input');
   searchInput.type = 'text';
   searchInput.placeholder = 'Search title...';
-  searchInput.value = gameTitle || '';
+  searchInput.value = effectiveTitle() || '';
   applyStyles(searchInput, {
     flex: '1',
     padding: '6px 9px',
@@ -320,6 +359,7 @@
 
   // Assemble body
   body.appendChild(gameInfoBlock);
+  body.appendChild(subsetNote);
   body.appendChild(addBtn);
   body.appendChild(addStatus);
   body.appendChild(divider);
@@ -350,6 +390,24 @@
   root.appendChild(toggleBtn);
   document.body.appendChild(root);
 
+  // Populate (or hide) the subset advisory based on the current title/URL.
+  function updateSubsetUI() {
+    if (!isSubsetContext(gameTitle)) { subsetNote.style.display = 'none'; return; }
+    const baseName = stripSubsetTag(gameTitle) || `Game #${gameId}`;
+    subsetNote.innerHTML = '';
+    subsetNote.appendChild(el('div', '⊂ Achievement subset', {
+      fontWeight: '700', color: '#ddd6fe', marginBottom: '3px',
+    }));
+    subsetNote.appendChild(el('div',
+      `ROM Finder tracks the base game — “${baseName}”. Add to Wanted / Search use the base ROM.`,
+      { marginBottom: '4px' }));
+    subsetNote.appendChild(el('div',
+      'If this subset needs a patched ROM, RetroAchievements offers a “Download Compatibility Patch” — apply that yourself; ROM Finder can’t fetch patched ROMs.',
+      {}));
+    subsetNote.style.display = 'block';
+  }
+  updateSubsetUI();
+
   // RA is a SPA — the game title and system may not be in the DOM yet.
   // Poll for up to 4 seconds and update the panel once they appear.
   (function waitForContent(attempts) {
@@ -362,8 +420,9 @@
       if (gotTitle) {
         gameTitle = resolvedTitle;
         titleEl.textContent = resolvedTitle;
+        updateSubsetUI();
         if (!searchInput.value || searchInput.value === `Game #${gameId}`) {
-          searchInput.value = resolvedTitle;
+          searchInput.value = effectiveTitle();
         }
       }
       if (gotSystem) {
@@ -411,7 +470,9 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ra_game_id: gameId,
-          game_title: gameTitle,
+          // For a subset, send the sanitized BASE-game name (no "[Subset …]" tag):
+          // we track the base ROM, and the per-set distinction can't be resolved.
+          game_title: effectiveTitle(),
           system: systemName,
           system_id: systemId,
         }),
@@ -446,21 +507,28 @@
 
   function applyGameStatus(st) {
     if (!st || (!st.owned && !st.wanted)) return;
+    // On a subset page `owned`/`wanted` reflect the BASE game (we query the base
+    // game id), so phrase it as base-game status — the subset rides on that ROM.
+    const subset = isSubsetContext(gameTitle);
     addBtn.disabled = true;
     addBtn.style.cursor = 'default';
     if (st.owned) {
-      statusBadge.textContent = '✓ In your collection';
+      statusBadge.textContent = subset ? '✓ Base game owned' : '✓ In your collection';
       applyStyles(statusBadge, { display: 'block', background: '#14532d', color: '#86efac', border: '1px solid #166534' });
-      addBtn.textContent = '✓ In your collection';
+      addBtn.textContent = subset ? '✓ Base game in collection' : '✓ In your collection';
       addBtn.style.background = '#14532d';
-      addStatus.textContent = 'You already own a verified copy of this game.';
+      addStatus.textContent = subset
+        ? 'You own the base game — this subset is playable on it, unless the subset requires its own patched ROM.'
+        : 'You already own a verified copy of this game.';
       addStatus.style.color = '#4ade80';
     } else {
-      statusBadge.textContent = '★ In your Wanted list';
+      statusBadge.textContent = subset ? '★ Base game in Wanted' : '★ In your Wanted list';
       applyStyles(statusBadge, { display: 'block', background: '#1e3a8a', color: '#bfdbfe', border: '1px solid #1d4ed8' });
       addBtn.textContent = '✓ Already in Wanted';
       addBtn.style.background = '#1e3a1e';
-      addStatus.textContent = 'Already tracked in your Wanted list.';
+      addStatus.textContent = subset
+        ? 'The base game is already in your Wanted list.'
+        : 'Already tracked in your Wanted list.';
       addStatus.style.color = '#4ade80';
     }
   }
