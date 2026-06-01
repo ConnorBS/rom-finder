@@ -68,8 +68,13 @@
                 if (focusedInside(el)) return;   // don't consume the change while typing/selecting — retry next tick
                 last = cur;
                 if (mode === 'reload') { location.reload(); return; }
+                // morph:outerHTML (NOT innerHTML): hx-select gives idiomorph the new
+                // <main id="live-content"> node; outerHTML morphs it onto the existing
+                // same-id <main> in place (reconciling children, keeping scroll). With
+                // innerHTML the selected wrapper nests a <main> inside <main> and rapid
+                // successive morphs collapse it to an empty pane.
                 htmx.ajax('GET', window.location.href, {
-                    target: '#live-content', select: '#live-content', swap: 'morph:innerHTML'
+                    target: '#live-content', select: '#live-content', swap: 'morph:outerHTML'
                 }).then(function () { document.dispatchEvent(new CustomEvent('live:updated')); });
             }
             setInterval(tick, 4000);
