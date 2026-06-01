@@ -117,6 +117,17 @@
             <span class="text-red-400 text-xs">Failed</span>
             {% endif %}
 
+            <!-- Cancel for an in-flight auto-hunt download (targets the hunt task;
+                 the hunt removes this transient row, and the card's poll then drops it) -->
+            {% if download.hunt_task_id and download.status.value in ['downloading', 'hashing', 'verifying'] %}
+            <button
+                hx-post="/activity/cancel/{{ download.hunt_task_id }}"
+                hx-swap="none"
+                class="text-gray-500 hover:text-red-400 text-xs border border-gray-700 hover:border-red-700 px-2 py-1 rounded transition-colors"
+                title="Stop this hunt — the current download finishes first, then no further attempts"
+            >Cancel</button>
+            {% endif %}
+
             <!-- pending_approval action buttons -->
             {% if download.status.value == 'pending_approval' %}
 

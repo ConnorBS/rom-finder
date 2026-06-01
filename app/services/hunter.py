@@ -55,7 +55,9 @@ def _enabled_srcs(session: Session) -> list:
 
 # Cap on candidate files actually downloaded per hunt — stops a loose source
 # match (e.g. a whole NDS romset) from triggering hundreds of download attempts.
-_MAX_CANDIDATES = 20
+# Kept as a flood-guard but raised so an exhaustive multi-source/multi-region
+# candidate list isn't truncated before a verified dump is reached.
+_MAX_CANDIDATES = 40
 
 # A *download* failure (timeout / CDN 403 / network) is transient — token CDNs
 # (ROMsFun, WowROMs) 403 intermittently even on a good file — so allow this many
@@ -367,6 +369,42 @@ async def auto_hunt(wanted_id: int) -> None:
             result_code = "download_failed"
             file_hash: str | None = None
 
+            # Create a transient Download row so this attempt shows a live progress
+            # card + Cancel in the UI (hunt downloads previously had no visible
+            # progress — only the tray label). file_path stays None until the
+            # verified file is staged (the ux_download_path partial-unique index
+            # forbids duplicate non-null paths). On verify we reuse this row; on
+            # bad_hash/failure we delete it (the HuntAttempt is the durable audit).
+            with Session(engine) as session:
+                dl = Download(
+                    game_title=game_title, system=system, file_name=file_name,
+                    file_path=None, source_url=source_url, source_id=src.source_id,
+                    archive_identifier=identifier, status=DownloadStatus.downloading,
+                    progress=0.0, ra_game_id=ra_game_id, hunt_task_id=task_id,
+                )
+                session.add(dl)
+                session.commit()
+                session.refresh(dl)
+                dl_id = dl.id
+
+            async def on_progress(fraction: float, _dl_id=dl_id):
+                with Session(engine) as s:
+                    d = s.get(Download, _dl_id)
+                    if d:
+                        d.progress = fraction
+                        d.updated_at = datetime.utcnow()
+                        s.add(d)
+                        s.commit()
+
+            def _set_dl_status(st, _dl_id=dl_id):
+                with Session(engine) as s:
+                    d = s.get(Download, _dl_id)
+                    if d:
+                        d.status = st
+                        d.updated_at = datetime.utcnow()
+                        s.add(d)
+                        s.commit()
+
             try:
                 applog.info("hunt", f"Trying: {file_name}", {
                     "wanted_id": wanted_id, "source": src.source_id,
@@ -374,13 +412,14 @@ async def auto_hunt(wanted_id: int) -> None:
                 })
                 try:
                     await asyncio.wait_for(
-                        src.download_file(source_url, dest, None),
+                        src.download_file(source_url, dest, on_progress),
                         timeout=300,  # 5 min max per attempt
                     )
                 except asyncio.TimeoutError:
                     applog.warning("hunt", f"Download timed out (5 min): {file_name}", {"wanted_id": wanted_id})
                     raise RuntimeError("Download timed out after 5 minutes")
 
+                _set_dl_status(DownloadStatus.hashing)
                 rom_path = dest
                 if dest.suffix.lower() in (".zip", ".7z"):
                     try:
@@ -392,6 +431,7 @@ async def auto_hunt(wanted_id: int) -> None:
 
                 file_hash, _ = await ra_hash_or_fallback(rom_path, system)
 
+                _set_dl_status(DownloadStatus.verifying)
                 match = await ra.lookup_hash(file_hash)
                 matched_id = match.get("ID") if match else None
                 # Accept when the dump belongs to the EXPECTED game, either way:
@@ -416,14 +456,28 @@ async def auto_hunt(wanted_id: int) -> None:
                     dl_status = DownloadStatus.pending_approval if use_review else DownloadStatus.completed
 
                     with Session(engine) as session:
-                        session.add(Download(
-                            game_title=game_title, system=system,
-                            file_name=final_path.name, file_path=str(final_path),
-                            source_url=source_url, source_id=src.source_id,
-                            archive_identifier=identifier, status=dl_status,
-                            progress=1.0, file_hash=file_hash, hash_verified=True,
-                            ra_game_id=matched_ra_id,
-                        ))
+                        # Reuse the transient progress row created for this attempt
+                        # (don't create a second Download) — promote it to the
+                        # verified/staged file.
+                        d = session.get(Download, dl_id)
+                        if d is None:
+                            d = Download(source_id=src.source_id, source_url=source_url)
+                            session.add(d)
+                        d.game_title = game_title
+                        d.system = system
+                        d.file_name = final_path.name
+                        d.file_path = str(final_path)
+                        d.source_url = source_url
+                        d.source_id = src.source_id
+                        d.archive_identifier = identifier
+                        d.status = dl_status
+                        d.progress = 1.0
+                        d.file_hash = file_hash
+                        d.hash_verified = True
+                        d.ra_game_id = matched_ra_id
+                        d.hunt_task_id = None  # terminal — no longer a cancellable in-flight hunt row
+                        d.updated_at = datetime.utcnow()
+                        session.add(d)
                         session.add(HuntAttempt(
                             wanted_game_id=wanted_id, source_id=src.source_id,
                             identifier=identifier, file_name=final_path.name,
@@ -469,7 +523,13 @@ async def auto_hunt(wanted_id: int) -> None:
                 })
                 _cleanup(dest, rom_path)
 
+            # This block runs only for bad_hash / download_failed (success returns
+            # above). Delete the transient progress card — the HuntAttempt below is
+            # the durable record — so a failed attempt leaves no orphaned download.
             with Session(engine) as session:
+                d = session.get(Download, dl_id)
+                if d is not None:
+                    session.delete(d)
                 session.add(HuntAttempt(
                     wanted_game_id=wanted_id, source_id=src.source_id,
                     identifier=identifier, file_name=file_name,
@@ -495,3 +555,24 @@ async def auto_hunt(wanted_id: int) -> None:
         applog.error("hunt", f"Auto-hunt crashed: {exc}", {"wanted_id": wanted_id})
     finally:
         activity_store.finish(task_id)
+        # Safety net: drop any transient hunt Download row that never reached a
+        # terminal state (e.g. a crash mid-attempt or a user cancel), so the
+        # downloads page isn't left with a stuck "downloading" card.
+        try:
+            with Session(engine) as s:
+                stale = s.exec(
+                    select(Download).where(
+                        Download.hunt_task_id == task_id,
+                        Download.status.in_([
+                            DownloadStatus.downloading,
+                            DownloadStatus.hashing,
+                            DownloadStatus.verifying,
+                        ]),
+                    )
+                ).all()
+                for d in stale:
+                    s.delete(d)
+                if stale:
+                    s.commit()
+        except Exception:
+            pass

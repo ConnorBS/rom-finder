@@ -166,6 +166,13 @@ def _m_0018_library_file_size(s: Session) -> None:
     _add_column(s, "library", "file_size", "INTEGER", "0")
 
 
+def _m_0019_download_hunt_task_id(s: Session) -> None:
+    # Ties a transient Download row created by an auto-hunt attempt to its activity
+    # task ("hunt-{wanted_id}") so the download card can offer a Cancel that targets
+    # the hunt. NULL for normal manual/queue downloads.
+    _add_column(s, "download", "hunt_task_id", "VARCHAR", None)
+
+
 # (version_id, apply_fn) — applied in order, recorded once.
 MIGRATIONS: list[tuple[str, "callable"]] = [
     ("0001_download_source_id", _m_0001),
@@ -186,6 +193,7 @@ MIGRATIONS: list[tuple[str, "callable"]] = [
     ("0016_library_disc_id", _m_0016_library_disc_id),
     ("0017_library_awards_subsets", _m_0017_library_awards_subsets),
     ("0018_library_file_size", _m_0018_library_file_size),
+    ("0019_download_hunt_task_id", _m_0019_download_hunt_task_id),
 ]
 
 

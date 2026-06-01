@@ -39,6 +39,10 @@ class Download(SQLModel, table=True):
     hash_verified: bool = False
     ra_game_id: Optional[int] = None
     error_message: Optional[str] = None
+    # Set to the hunt's activity task id ("hunt-{wanted_id}") for a transient
+    # Download row created by an auto-hunt attempt, so the card can offer a Cancel
+    # that targets the hunt. None for a normal manual/queue download. (migration 0019)
+    hunt_task_id: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -47,6 +51,7 @@ class HuntStatus(str, Enum):
     hunting = "hunting"
     verified = "verified"
     exhausted = "exhausted"   # all sources tried, no verified dump found
+    awaiting_external = "awaiting_external"   # submitted to a torrent/usenet client; polled to completion
 
 
 class WantedGame(SQLModel, table=True):

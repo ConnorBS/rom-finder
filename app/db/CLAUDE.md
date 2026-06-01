@@ -59,8 +59,13 @@ status           — DownloadStatus enum:
                      (moving = approved, file being moved to the ROMs dir by a background task)
 progress         — 0.0–1.0
 file_hash, hash_verified, ra_game_id
+hunt_task_id     — set to "hunt-{wanted_id}" on a TRANSIENT row an auto-hunt creates
+                   per download attempt (live progress card + Cancel); None for a
+                   normal manual/queue download. (migration 0019) Cleared when the row
+                   reaches a terminal state (verify reuses the row → pending_approval).
 error_message, created_at, updated_at
 ```
+`HuntStatus`: `hunting | verified | exhausted | awaiting_external` (last = submitted to a torrent/usenet download client, polled to completion — Phase 2).
 
 ### `AppSetting` (table: `app_settings`)
 Simple key/value store. Defaults seeded in `main.py::DEFAULT_SETTINGS`.
