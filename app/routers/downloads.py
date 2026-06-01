@@ -1,3 +1,4 @@
+import asyncio
 import json
 import shutil
 from fastapi import APIRouter, Request, Form, Depends, BackgroundTasks, HTTPException
@@ -7,15 +8,21 @@ from sqlmodel import Session, select
 from pathlib import Path
 from datetime import datetime
 
-from app.db.database import get_session
+from app.db.database import get_session, engine
 from app.db.models import Download, DownloadStatus, AppSetting, LibraryEntry, WantedGame, HuntStatus, HuntAttempt
 from app.db import repository
 from app.services import sources as source_registry
+from app.services import activity as activity_store
 from app.services.hasher import hash_rom, extract_rom_from_zip, DISC_SYSTEMS
 from app.services.rahasher import ra_hash_or_fallback
 from app.services.ra_client import DEFAULT_FOLDER_MAP
 from app.services import logger as applog
 from app.services import settings as app_settings
+
+# Statuses that belong in the "Pending Approval" section: still-approvable items
+# AND items currently being moved to the ROMs dir (so a 'moving' card doesn't jump
+# to the Active list while its background move runs).
+_APPROVAL_STATUSES = (DownloadStatus.pending_approval, DownloadStatus.moving)
 
 router = APIRouter(prefix="/downloads")
 templates = Jinja2Templates(directory="app/templates")
@@ -37,8 +44,8 @@ async def downloads_page(request: Request, session: Session = Depends(get_sessio
     all_downloads = session.exec(
         select(Download).order_by(Download.created_at.desc())
     ).all()
-    pending = [d for d in all_downloads if d.status == DownloadStatus.pending_approval]
-    active = [d for d in all_downloads if d.status != DownloadStatus.pending_approval]
+    pending = [d for d in all_downloads if d.status in _APPROVAL_STATUSES]
+    active = [d for d in all_downloads if d.status not in _APPROVAL_STATUSES]
     ra_configured = bool(_get_setting(session, "ra_username") and _get_setting(session, "ra_api_key"))
 
     hunt_log = session.exec(
@@ -127,14 +134,18 @@ async def download_status(
 ):
     download = session.get(Download, download_id)
     if not download:
-        return HTMLResponse('<p class="text-red-400 text-sm">Download not found.</p>')
+        # Row is gone (e.g. an approved file finished moving) — return empty so the
+        # polling card removes itself cleanly via hx-swap="outerHTML".
+        return HTMLResponse("")
     ra_configured = bool(_get_setting(session, "ra_username") and _get_setting(session, "ra_api_key"))
     return templates.TemplateResponse(request, "partials/download_item.html", {"download": download, "ra_configured": ra_configured})
 
 
 @router.post("/{download_id}/approve", response_class=HTMLResponse)
 async def approve_download(
+    request: Request,
     download_id: int,
+    background_tasks: BackgroundTasks,
     session: Session = Depends(get_session),
 ):
     if _get_setting(session, "download_dir_readonly", "false") == "true":
@@ -145,29 +156,21 @@ async def approve_download(
     if not download or not download.file_path:
         return HTMLResponse("")
 
-    download_dir = _get_setting(session, "download_dir", "/roms")
-    folder_map = app_settings.get_json(session, "folder_map", {})
-    folder_name = _resolve_folder(folder_map, download.system)
-
-    final_dir = Path(download_dir) / folder_name
-    final_dir.mkdir(parents=True, exist_ok=True)
-
-    src_path = Path(download.file_path)
-    dest_path = final_dir / src_path.name
-    if src_path.exists():
-        shutil.move(str(src_path), str(dest_path))
-
-    repository.create_library_entry_from_download(session, download, dest_path)
-    repository.mark_wanted_verified(session, download.ra_game_id)
-
-    applog.log_action("approve_download", {
-        "game": download.game_title, "file": dest_path.name,
-        "system": download.system, "dest": str(dest_path),
-        "ra_verified": download.hash_verified,
-    })
-    session.delete(download)
+    # Flip the card to a "Moving…" state immediately and do the (potentially slow,
+    # cross-filesystem) move in the background so the request returns at once and
+    # the UI shows progress. The card polls /status and removes itself when the
+    # row is deleted (move done); on failure the row reverts to pending_approval.
+    download.status = DownloadStatus.moving
+    download.updated_at = datetime.utcnow()
+    session.add(download)
     session.commit()
-    return HTMLResponse("")
+    session.refresh(download)
+    ra_configured = bool(_get_setting(session, "ra_username") and _get_setting(session, "ra_api_key"))
+    background_tasks.add_task(_approve_move, download_id)
+    return templates.TemplateResponse(
+        request, "partials/download_item.html",
+        {"download": download, "ra_configured": ra_configured},
+    )
 
 
 @router.post("/{download_id}/reject", response_class=HTMLResponse)
@@ -217,54 +220,135 @@ async def reject_download(
     return HTMLResponse("")
 
 
+def _render_downloads_page(request: Request, session: Session, **extra):
+    all_downloads = session.exec(select(Download).order_by(Download.created_at.desc())).all()
+    pending_list = [d for d in all_downloads if d.status in _APPROVAL_STATUSES]
+    active_list = [d for d in all_downloads if d.status not in _APPROVAL_STATUSES]
+    ra_configured = bool(_get_setting(session, "ra_username") and _get_setting(session, "ra_api_key"))
+    return templates.TemplateResponse(
+        request, "downloads.html",
+        {"pending": pending_list, "active": active_list, "ra_configured": ra_configured, **extra},
+    )
+
+
 @router.post("/approve-all", response_class=HTMLResponse)
 async def approve_all_verified(
     request: Request,
+    background_tasks: BackgroundTasks,
     session: Session = Depends(get_session),
 ):
-    """Approve all hash-verified pending items at once."""
+    """Approve all pending items at once. The (potentially slow, cross-filesystem)
+    file moves run in a single background batch with activity-tray progress, so the
+    request returns immediately and the user sees the files being moved over rather
+    than a frozen page."""
     if _get_setting(session, "download_dir_readonly", "false") == "true":
-        all_downloads = session.exec(select(Download).order_by(Download.created_at.desc())).all()
-        pending_list = [d for d in all_downloads if d.status == DownloadStatus.pending_approval]
-        active_list = [d for d in all_downloads if d.status != DownloadStatus.pending_approval]
-        ra_configured = bool(_get_setting(session, "ra_username") and _get_setting(session, "ra_api_key"))
-        return templates.TemplateResponse(
-            request, "downloads.html",
-            {"pending": pending_list, "active": active_list, "ra_configured": ra_configured, "readonly_error": True},
-        )
+        return _render_downloads_page(request, session, readonly_error=True)
+
     pending = session.exec(
         select(Download).where(Download.status == DownloadStatus.pending_approval)
     ).all()
 
-    download_dir = _get_setting(session, "download_dir", "/roms")
-    folder_map = app_settings.get_json(session, "folder_map", {})
-
+    # Flip every approvable item to "Moving…" up front so the cards reflect the
+    # click instantly; the background batch then moves each file and deletes the row.
+    ids: list[int] = []
     for download in pending:
         if not download.file_path:
             continue
-        folder_name = _resolve_folder(folder_map, download.system)
-        final_dir = Path(download_dir) / folder_name
-        final_dir.mkdir(parents=True, exist_ok=True)
-        src_path = Path(download.file_path)
-        dest_path = final_dir / src_path.name
-        if src_path.exists():
-            shutil.move(str(src_path), str(dest_path))
-        repository.create_library_entry_from_download(session, download, dest_path)
-        repository.mark_wanted_verified(session, download.ra_game_id)
-        session.delete(download)
-
+        download.status = DownloadStatus.moving
+        download.updated_at = datetime.utcnow()
+        session.add(download)
+        ids.append(download.id)
     session.commit()
 
-    applog.log_action("approve_all_downloads", {"approved_count": len(pending)})
+    if ids:
+        background_tasks.add_task(_approve_all_move, ids)
+    applog.log_action("approve_all_downloads", {"approved_count": len(ids)})
 
-    all_downloads = session.exec(select(Download).order_by(Download.created_at.desc())).all()
-    pending_list = [d for d in all_downloads if d.status == DownloadStatus.pending_approval]
-    active_list = [d for d in all_downloads if d.status != DownloadStatus.pending_approval]
-    ra_configured = bool(_get_setting(session, "ra_username") and _get_setting(session, "ra_api_key"))
-    return templates.TemplateResponse(
-        request, "downloads.html",
-        {"pending": pending_list, "active": active_list, "ra_configured": ra_configured},
+    return _render_downloads_page(request, session)
+
+
+async def _do_approve_move(download_id: int) -> bool:
+    """Move one approved file to the ROMs dir, create its LibraryEntry, mark the
+    matching Wanted verified, and delete the Download row. Returns True on success.
+
+    Runs in a FRESH session (never the request's) and offloads the blocking
+    shutil.move to a thread so the event loop isn't held during a large
+    cross-filesystem copy. On failure the row reverts to pending_approval with an
+    error so the user can retry."""
+    loop = asyncio.get_event_loop()
+    with Session(engine) as session:
+        download = session.get(Download, download_id)
+        if not download:
+            return False
+        if not download.file_path:
+            session.delete(download)
+            session.commit()
+            return False
+
+        download_dir = _get_setting(session, "download_dir", "/roms")
+        folder_map = app_settings.get_json(session, "folder_map", {})
+        folder_name = _resolve_folder(folder_map, download.system)
+        final_dir = Path(download_dir) / folder_name
+        src_path = Path(download.file_path)
+        dest_path = final_dir / src_path.name
+
+        try:
+            final_dir.mkdir(parents=True, exist_ok=True)
+            if src_path.exists():
+                await loop.run_in_executor(None, shutil.move, str(src_path), str(dest_path))
+            repository.create_library_entry_from_download(session, download, dest_path)
+            repository.mark_wanted_verified(session, download.ra_game_id)
+            applog.log_action("approve_download", {
+                "game": download.game_title, "file": dest_path.name,
+                "system": download.system, "dest": str(dest_path),
+                "ra_verified": download.hash_verified,
+            })
+            session.delete(download)
+            session.commit()
+            return True
+        except Exception as exc:
+            session.rollback()
+            d = session.get(Download, download_id)
+            if d:
+                d.status = DownloadStatus.pending_approval
+                d.error_message = f"Move failed: {exc}"
+                d.updated_at = datetime.utcnow()
+                session.add(d)
+                session.commit()
+            applog.error("action", f"Approve move failed: {exc}", {"download_id": download_id})
+            return False
+
+
+async def _approve_move(download_id: int) -> None:
+    """Background move for a single Approve, with an activity-tray entry."""
+    task_id = f"approve-{download_id}"
+    with Session(engine) as session:
+        d = session.get(Download, download_id)
+        title = d.game_title if d else "ROM"
+    activity_store.start(task_id, f"Moving: {title}", task_type="approve")
+    try:
+        await _do_approve_move(download_id)
+    finally:
+        activity_store.finish(task_id)
+
+
+async def _approve_all_move(download_ids: list[int]) -> None:
+    """Background batch move for Approve all — one activity-tray progress entry,
+    files moved one at a time (each its own session + commit) so cards drain as
+    they complete and a mid-batch restart loses at most the in-flight file."""
+    task_id = "approve-all"
+    activity_store.start_batch(
+        task_id, f"Moving {len(download_ids)} approved file(s)…",
+        total=len(download_ids), task_type="approve",
     )
+    try:
+        for did in download_ids:
+            if activity_store.is_cancelled(task_id):
+                break
+            await _do_approve_move(did)
+            activity_store.increment(task_id)
+    finally:
+        activity_store.finish(task_id)
 
 
 @router.delete("/{download_id}", response_class=HTMLResponse)

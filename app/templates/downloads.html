@@ -11,7 +11,8 @@
                 <h1 class="text-xl font-semibold text-white">Pending Approval</h1>
                 <p class="text-gray-500 text-sm mt-0.5">Downloaded to your review folder. Approve to move to your ROMs directory.</p>
             </div>
-            {% if pending %}
+            {% set approvable = pending | selectattr('status.value', 'equalto', 'pending_approval') | list %}
+            {% if approvable %}
             <button
                 hx-post="/downloads/approve-all"
                 hx-target="body"

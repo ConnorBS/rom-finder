@@ -13,6 +13,7 @@ class DownloadStatus(str, Enum):
     failed = "failed"
     verified = "verified"
     pending_approval = "pending_approval"
+    moving = "moving"            # approved, file being moved to the ROMs dir
 
 
 class AppSetting(SQLModel, table=True):

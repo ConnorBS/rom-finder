@@ -1,7 +1,7 @@
 <div
     id="download-{{ download.id }}"
     class="bg-gray-900 border border-gray-800 rounded-lg p-4"
-    {% if download.status.value in ['pending', 'downloading', 'hashing', 'verifying'] %}
+    {% if download.status.value in ['pending', 'downloading', 'hashing', 'verifying', 'moving'] %}
     hx-get="/downloads/{{ download.id }}/status"
     hx-trigger="every 2s"
     hx-swap="outerHTML"
@@ -39,6 +39,16 @@
                     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
                 </svg>
                 <p class="text-blue-400 text-xs">Checking RetroAchievements…</p>
+            </div>
+            {% endif %}
+
+            {% if download.status.value == 'moving' %}
+            <div class="flex items-center gap-2 mt-2">
+                <svg class="animate-spin w-3 h-3 text-green-400 flex-shrink-0" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                </svg>
+                <p class="text-green-400 text-xs">Moving to ROMs directory…</p>
             </div>
             {% endif %}
 
@@ -97,6 +107,8 @@
             <span class="text-purple-400 text-xs">Hashing</span>
             {% elif download.status.value == 'verifying' %}
             <span class="text-blue-400 text-xs">Verifying</span>
+            {% elif download.status.value == 'moving' %}
+            <span class="text-green-400 text-xs">Moving…</span>
             {% elif download.status.value == 'completed' %}
             <span class="text-green-400 text-xs">Complete</span>
             {% elif download.status.value == 'verified' %}

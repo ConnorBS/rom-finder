@@ -55,7 +55,8 @@ Active/completed download queue entries.
 id, game_title, system, file_name, file_path
 source_url, source_id, archive_identifier
 status           — DownloadStatus enum:
-                     pending | downloading | hashing | verifying | completed | failed | verified | pending_approval
+                     pending | downloading | hashing | verifying | completed | failed | verified | pending_approval | moving
+                     (moving = approved, file being moved to the ROMs dir by a background task)
 progress         — 0.0–1.0
 file_hash, hash_verified, ra_game_id
 error_message, created_at, updated_at

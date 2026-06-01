@@ -5,6 +5,18 @@
 ### Status lifecycle
 `pending` → `downloading` → `hashing` → `verifying` (if RA creds set) → `pending_approval` (if check_dir on) or `completed`
 
+On approval: `pending_approval` → **`moving`** → row deleted (LibraryEntry created). `moving` exists so the card flips to a "Moving…" spinner the instant you click, and the file move runs in the **background** instead of inline (see below).
+
+### Approve / Approve-all move in the background (not inline)
+The file move (`check_dir` → `download_dir`) was previously done **synchronously inside the request**, holding the response until every file finished. On Unraid those dirs are usually on **different filesystems**, so `shutil.move` is a full copy+delete — multi-hundred-MB `.rvz`/`.chd` files froze the page (and blocked the event loop) with zero feedback. The user-visible symptom: "Approve all does nothing."
+
+Now both `POST /downloads/{id}/approve` and `POST /downloads/approve-all`:
+1. Flip the row(s) to `DownloadStatus.moving`, commit, and return immediately (single approve returns the "Moving…" card; approve-all re-renders the page with all cards in the moving state).
+2. Kick a `BackgroundTask` (`_approve_move` / `_approve_all_move`) that registers an **activity-tray entry** — an individual task (`approve-{id}`) or a progress batch (`approve-all`, "Moving N approved file(s)…") — and calls `_do_approve_move` per file. `_do_approve_move` uses a **fresh session** and offloads the blocking `shutil.move` via `run_in_executor` so the loop isn't held, then creates the LibraryEntry, marks the Wanted verified, and deletes the row (commit per file). On failure it reverts the row to `pending_approval` with an `error_message` so the user can retry.
+3. The `moving` card polls `/downloads/{id}/status` every 2s; when the row is gone that endpoint returns **`""`** (not "Download not found") so the card removes itself. The `/api/changes` `downloads` token also moves (pending_approval count drops, then total drops) so the live morph drains cards even with the per-item poll off.
+
+`moving` items render in the **Pending Approval** section (grouped via `_APPROVAL_STATUSES`, not the Active list), and the **Approve all** button is gated on there being at least one still-`pending_approval` item (`selectattr` in the template), so it hides once everything is moving. `moving` is deliberately **NOT** in `activity.py`'s `_ACTIVE_STATUSES` — the activity batch/individual task already represents the work in the tray; adding it would double-count each row.
+
 ### Automatic pipeline (`_run_download` in `downloads.py`)
 1. File saved to `check_dir` or `download_dir`
 2. Status → `hashing`: RAHasher binary first, falls back to Python MD5
