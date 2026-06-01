@@ -27,6 +27,10 @@ class _FakeClient(DownloadClient):
 
     def __init__(self, content_dir):
         self._dir = content_dir
+        self.completed = True
+        self.progress = 1.0
+        self.files = []          # torrents/files response for the selection path
+        self.set_calls = []      # recorded set_wanted_files(keep_indices) calls
 
     async def search(self, query, system=""):
         return []
@@ -35,8 +39,15 @@ class _FakeClient(DownloadClient):
         return {"job_handle": "h1", "protocol": "torrent", "needs_file_selection": False}
 
     async def status(self, job_handle, protocol):
-        return {"state": "uploading", "progress": 1.0, "completed": True, "failed": False,
+        return {"state": "uploading" if self.completed else "downloading",
+                "progress": self.progress, "completed": self.completed, "failed": False,
                 "content_path": str(self._dir), "save_path": str(self._dir), "error": ""}
+
+    async def list_files(self, job_handle):
+        return self.files
+
+    async def set_wanted_files(self, job_handle, keep_indices):
+        self.set_calls.append(list(keep_indices))
 
     async def cleanup(self, job_handle, protocol, delete_files=False):
         self.cleaned = (job_handle, delete_files)
@@ -53,7 +64,7 @@ def fake_client(tmp_path):
     client_registry.unregister("download_client")
 
 
-def _seed(tmp_path, accepted, ra_game_id=42):
+def _seed(tmp_path, accepted, ra_game_id=42, needs_sel=False):
     check = tmp_path / "check"; check.mkdir()
     with Session(engine) as s:
         for k, v in {"use_review_dir": "true", "check_dir": str(check),
@@ -71,12 +82,12 @@ def _seed(tmp_path, accepted, ra_game_id=42):
         ext = ExternalDownload(
             wanted_game_id=g.id, download_id=dl.id, client_id="download_client",
             protocol="torrent", job_handle="h1", release_title="Test Game (USA)",
-            status="downloading", needs_file_selection=False,
+            status="downloading", needs_file_selection=needs_sel,
             match_data=json.dumps({"ra_stems": ["test game (usa)"], "title_terms": ["test", "game"],
                                    "accepted_md5s": list(accepted)}),
         )
-        s.add(ext); s.commit()
-        return g.id, dl.id
+        s.add(ext); s.commit(); s.refresh(ext)
+        return g.id, dl.id, ext.id
 
 
 def _patch_ra(monkeypatch, file_hash, matched_id):
@@ -93,7 +104,7 @@ def _patch_ra(monkeypatch, file_hash, matched_id):
 
 def test_completed_job_ingests_and_verifies(fresh_engine, fake_client, monkeypatch):
     client, tmp_path = fake_client
-    wid, dlid = _seed(tmp_path, accepted={"aacc11"})
+    wid, dlid, _ = _seed(tmp_path, accepted={"aacc11"})
     _patch_ra(monkeypatch, file_hash="aacc11", matched_id=None)  # verifies via accepted list
 
     counts = asyncio.run(external_hunt.poll_active())
@@ -113,7 +124,7 @@ def test_completed_job_ingests_and_verifies(fresh_engine, fake_client, monkeypat
 
 def test_bad_hash_job_fails_and_re_exhausts(fresh_engine, fake_client, monkeypatch):
     client, tmp_path = fake_client
-    wid, dlid = _seed(tmp_path, accepted={"aacc11"})
+    wid, dlid, _ = _seed(tmp_path, accepted={"aacc11"})
     _patch_ra(monkeypatch, file_hash="deadbeef", matched_id=999)  # wrong game, not in accepted
 
     counts = asyncio.run(external_hunt.poll_active())
@@ -125,3 +136,50 @@ def test_bad_hash_job_fails_and_re_exhausts(fresh_engine, fake_client, monkeypat
         ext = s.exec(select(ExternalDownload)).first()
         assert ext.status == "failed"
     assert getattr(client, "cleaned", (None, None))[1] is True   # deleteFiles on bad hash
+
+
+def test_stalled_job_fails_and_re_exhausts(fresh_engine, fake_client, monkeypatch):
+    """Regression for the stall-timer blocker: a flat-progress job must eventually
+    fail (it doesn't keep refreshing updated_at on every poll)."""
+    import datetime as _dt
+    client, tmp_path = fake_client
+    client.completed = False
+    client.progress = 0.0
+    wid, dlid, eid = _seed(tmp_path, accepted={"aacc11"})
+    with Session(engine) as s:                       # backdate past the stall window
+        s.add(AppSetting(key="external_download_stall_minutes", value="120"))
+        ext = s.get(ExternalDownload, eid)
+        ext.updated_at = _dt.datetime.utcnow() - _dt.timedelta(minutes=200)
+        ext.progress = 0.0
+        s.add(ext); s.commit()
+
+    counts = asyncio.run(external_hunt.poll_active())
+    assert counts["failed"] == 1
+    with Session(engine) as s:
+        assert s.get(WantedGame, wid).status == HuntStatus.exhausted
+        assert s.get(Download, dlid) is None
+        assert s.get(ExternalDownload, eid).status == "failed"
+
+
+def test_pack_file_selection_trims_then_waits(fresh_engine, fake_client, monkeypatch):
+    """needs_file_selection torrent: classify a pack, set qBit file-priority to keep
+    only the matching file, store target_files, and keep waiting (not yet complete)."""
+    client, tmp_path = fake_client
+    client.completed = False
+    client.progress = 0.3
+    client.files = [
+        {"index": 0, "name": "Crash Bandicoot (USA).bin", "size": 100, "priority": 1},
+        {"index": 1, "name": "Test Game (USA).nes", "size": 100, "priority": 1},
+        {"index": 2, "name": "Spyro (USA).bin", "size": 100, "priority": 1},
+    ]
+    wid, dlid, eid = _seed(tmp_path, accepted={"aacc11"}, needs_sel=True)
+    with Session(engine) as s:                        # job is pre-metadata
+        ext = s.get(ExternalDownload, eid); ext.status = "submitted"; s.add(ext); s.commit()
+
+    asyncio.run(external_hunt.poll_active())
+    assert client.set_calls == [[1]]                  # kept only the matching index
+    with Session(engine) as s:
+        ext = s.get(ExternalDownload, eid)
+        assert json.loads(ext.target_files) == ["Test Game (USA).nes"]
+        assert ext.status in ("metadata", "downloading")   # still in flight
+        assert s.get(WantedGame, wid).status == HuntStatus.awaiting_external

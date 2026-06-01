@@ -24,7 +24,9 @@ _DISC_RE = re.compile(r'[\s(_\-]*(?:disc|disk|cd|dvd|side)\s*\d+', re.IGNORECASE
 _PACK_RE = re.compile(
     r'\b(?:collection|romset|rom\s*set|full\s*set|no[-\s]?intro|redump|merged|'
     r'\d{2,}\s*(?:in\s*1|games|roms|titles)|complete\s*(?:set|collection)|'
-    r'everything|all\s*games|tosec|goodset|good[a-z]+\b)',
+    r'everything|all\s*games|tosec|'
+    # GoodTools sets only — NOT arbitrary "good…" words (Goodbye/Goodgame):
+    r'good(?:tools|set|nes|n64|gba|gbc|gb|gen|gg|sms|pce|col|lynx|2600|5200|7800)\b)',
     re.IGNORECASE,
 )
 

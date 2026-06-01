@@ -291,7 +291,9 @@ class TorrentUsenetClient(DownloadClient):
             raise SourceNetworkError(f"SABnzbd add rejected: {data.get('error', 'unknown')}")
         ids = data.get("nzo_ids") or []
         handle = ids[0] if ids else ""
-        # nzo_ids can be empty (NZB fetched async) — the poller then matches by title.
+        # addurl fetches the NZB async, so nzo_ids is occasionally empty. We don't get a
+        # handle then, so the poller can't match the job → it fails fast (the game falls
+        # back to exhausted). Acceptable; most adds return the id immediately.
         return {"job_handle": handle, "protocol": "usenet", "needs_file_selection": False,
                 "release_title": release.get("title", "")}
 

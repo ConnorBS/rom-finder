@@ -31,6 +31,7 @@ from app.services.rahasher import ra_hash_or_fallback
 from app.services.ra_client import DEFAULT_FOLDER_MAP, RAClient
 
 _NON_TERMINAL = ("submitted", "metadata", "downloading", "verifying")
+_ADVANCING = ("submitted", "metadata", "downloading")   # pre-ingest states _touch may advance
 
 
 def _gs(session: Session, key: str, default: str = "") -> str:
@@ -164,24 +165,26 @@ async def _advance(ext_id: int, stall_min: int) -> str:
             return ""
         handle, protocol = ext.job_handle, ext.protocol
         md = json.loads(ext.match_data or "{}")
+        needs_sel = ext.needs_file_selection      # capture before the session closes
+        cur_status = ext.status                   # (detached reads after an await are fragile)
         stale = datetime.utcnow() - (ext.updated_at or ext.created_at) > timedelta(minutes=stall_min)
 
     st = await client.status(handle, protocol)
 
     if st.get("failed"):
-        return await _fail(ext_id,st.get("error", "download failed"), delete_files=False)
+        return await _fail(ext_id, st.get("error", "download failed"), delete_files=False)
 
     # Torrent file-selection once metadata is present (trim packs / keep all discs).
-    if protocol == "torrent" and ext.needs_file_selection and ext.status in ("submitted", "metadata"):
+    if protocol == "torrent" and needs_sel and cur_status in ("submitted", "metadata"):
         files = await client.list_files(handle)
         if not files:
             _touch(ext_id, "metadata", st.get("progress", 0.0))
             if stale:
-                return await _fail(ext_id,"metadata never arrived", delete_files=True)
+                return await _fail(ext_id, "metadata never arrived", delete_files=True)
             return ""
         cls = selection.classify_files(files, set(md.get("ra_stems", [])), set(md.get("title_terms", [])))
         if cls["kind"] == "none":
-            return await _fail(ext_id,"no file in the release matches the game", delete_files=True)
+            return await _fail(ext_id, "no file in the release matches the game", delete_files=True)
         await client.set_wanted_files(handle, cls["keep_indices"])
         _set_targets(ext_id, cls["keep_names"])
 
@@ -192,7 +195,7 @@ async def _advance(ext_id: int, stall_min: int) -> str:
         return await _ingest(ext_id, st)
 
     if stale:
-        return await _fail(ext_id,f"stalled > {stall_min} min", delete_files=True)
+        return await _fail(ext_id, f"stalled > {stall_min} min", delete_files=True)
     return ""
 
 
@@ -223,12 +226,12 @@ async def _ingest(ext_id: int, st: dict) -> str:
     content_path = Path(st.get("content_path") or st.get("save_path") or "")
     rom_path = _locate_and_stage(content_path, client_save_path, targets, stage_dir)
     if rom_path is None:
-        return await _fail(ext_id,f"completed file not found/accessible at {content_path}", delete_files=False)
+        return await _fail(ext_id, f"completed file not found/accessible at {content_path}", delete_files=False)
 
     try:
         file_hash, _ = await ra_hash_or_fallback(rom_path, system)
     except Exception as exc:
-        return await _fail(ext_id,f"hash failed: {exc}", delete_files=False)
+        return await _fail(ext_id, f"hash failed: {exc}", delete_files=False)
 
     matched_id = None
     if ra_user and ra_key:
@@ -250,7 +253,7 @@ async def _ingest(ext_id: int, st: dict) -> str:
                 rom_path.unlink(missing_ok=True)
             except OSError:
                 pass
-            return await _fail(ext_id,"downloaded dump did not hash-verify", delete_files=True)
+            return await _fail(ext_id, "downloaded dump did not hash-verify", delete_files=True)
         dl_status = DownloadStatus.pending_approval if use_review else DownloadStatus.completed
         d = session.get(Download, dl_id) if dl_id else None
         if d is None:
@@ -329,13 +332,23 @@ def _locate_and_stage(content_path: Path, save_path: str, targets: list, stage_d
 
 
 def _touch(ext_id: int, status: str, progress: float) -> None:
+    """Update a job's progress/status. Only bumps `updated_at` when something actually
+    CHANGES — otherwise a stuck (flat-progress) job would keep refreshing its timestamp
+    and the `external_download_stall_minutes` guard could never fire. Never moves a
+    `verifying`/terminal job back to `downloading`."""
     with Session(engine) as session:
         ext = session.get(ExternalDownload, ext_id)
-        if not ext:
+        if not ext or ext.status not in _ADVANCING:
             return
-        if ext.status in _NON_TERMINAL:
+        changed = False
+        if status in _ADVANCING and status != ext.status:
             ext.status = status
-        ext.progress = progress
+            changed = True
+        if abs(progress - (ext.progress or 0.0)) > 1e-6:
+            ext.progress = progress
+            changed = True
+        if not changed:
+            return  # no real change → leave updated_at alone so the stall window advances
         ext.updated_at = datetime.utcnow()
         session.add(ext)
         if ext.download_id:
