@@ -6,6 +6,7 @@ from typing import Any
 
 from app.services.sources import registry as source_registry
 from app.services.cover_sources import registry as cover_source_registry
+from app.services.download_clients import registry as download_client_registry
 
 # ext_id -> list of setting schema dicts from EXTENSION_SETTINGS
 _settings_schemas: dict[str, list] = {}
@@ -48,6 +49,14 @@ def load_extension_file(ext_path: Path, config: dict | None = None) -> dict | No
             if config and hasattr(instance, "configure"):
                 instance.configure(config)
             cover_source_registry.register(instance)
+        elif ext_type == "download_client":
+            cls = getattr(module, "CLIENT_CLASS", None)
+            if cls is None:
+                return None
+            instance = cls()
+            if config and hasattr(instance, "configure"):
+                instance.configure(config)
+            download_client_registry.register(instance)
         else:
             return None
 
@@ -95,6 +104,7 @@ def unload_extension(ext_id: str) -> None:
     """Deregister a loaded extension from all registries."""
     source_registry.unregister(ext_id)
     cover_source_registry.unregister(ext_id)
+    download_client_registry.unregister(ext_id)
     _settings_schemas.pop(ext_id, None)
     _loaded_modules.pop(ext_id, None)
 
@@ -116,5 +126,9 @@ def configure_extension(ext_id: str, config: dict) -> None:
             instance.configure(config)
     elif ext_type == "cover_source":
         instance = cover_source_registry.get(ext_id)
+        if instance and hasattr(instance, "configure"):
+            instance.configure(config)
+    elif ext_type == "download_client":
+        instance = download_client_registry.get(ext_id)
         if instance and hasattr(instance, "configure"):
             instance.configure(config)

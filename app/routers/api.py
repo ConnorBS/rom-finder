@@ -18,6 +18,7 @@ from app.db.models import (
 from app.db import repository
 from app.services import sources as source_registry
 from app.services.cover_sources import registry as cover_source_registry
+from app.services.download_clients import registry as download_client_registry
 from app.services.ra_client import SYSTEMS, RA_UNSUPPORTED_SYSTEMS
 from app.services.title_utils import clean_title, canonical_system
 from app.services import logger as applog
@@ -375,6 +376,20 @@ async def api_status(session: Session = Depends(get_session)):
     except Exception as e:
         status["subsets"] = {"error": str(e)}
 
+    # External torrent/usenet jobs (qBittorrent/SABnzbd via Prowlarr download client).
+    try:
+        from app.db.models import ExternalDownload
+        rows = session.exec(sa_select(ExternalDownload.status)).all()
+        active = sum(1 for s in rows if s in ("submitted", "metadata", "downloading", "verifying"))
+        status["external"] = {
+            "active": active,
+            "verified": sum(1 for s in rows if s == "verified"),
+            "failed": sum(1 for s in rows if s == "failed"),
+            "clients": [c.client_id for c in download_client_registry.all_clients()],
+        }
+    except Exception as e:
+        status["external"] = {"error": str(e)}
+
     try:
         srcs = []
         for src in source_registry.all_sources():
@@ -541,6 +556,19 @@ async def api_changes(session: Session = Depends(get_session)):
         changes["hunts"] = f"{total}:{last_id}"
     except Exception as e:
         changes["hunts"] = f"err:{e}"
+
+    # external — torrent/usenet jobs change state on the scheduler poll, so the
+    # downloads page morphs when their status/count moves (progress excluded, like
+    # downloads — the per-item poll drives the bar).
+    try:
+        from app.db.models import ExternalDownload
+        total = _count(session, ExternalDownload)
+        active = _count(session, ExternalDownload,
+                        ExternalDownload.status.in_(("submitted", "metadata", "downloading", "verifying")))
+        last_touch = session.scalar(sa_select(func.max(ExternalDownload.updated_at)))
+        changes["external"] = f"{total}:{active}:{last_touch}"
+    except Exception as e:
+        changes["external"] = f"err:{e}"
 
     try:
         total = _count(session, AppLog)

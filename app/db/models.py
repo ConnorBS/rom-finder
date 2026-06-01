@@ -82,6 +82,34 @@ class HuntAttempt(SQLModel, table=True):
     tried_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class ExternalDownload(SQLModel, table=True):
+    """A torrent/usenet job submitted to a download client (qBittorrent/SABnzbd via
+    Prowlarr) as a LAST-RESORT hunt fallback. Polled to completion by the scheduler
+    `run_poll_external` task, which then ingests + RA-verifies the file. New table →
+    created by create_all at startup; no migration needed (per db/CLAUDE.md)."""
+    __tablename__ = "external_download"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    wanted_game_id: int = Field(index=True)
+    download_id: Optional[int] = None          # the linked Download row showing progress
+    client_id: str = ""                        # download-client integration id
+    protocol: str = ""                         # "torrent" | "usenet"
+    job_handle: str = ""                       # qBit infohash or SAB nzo_id
+    release_title: str = ""
+    indexer: str = ""
+    save_path: str = ""
+    target_files: str = "[]"                   # JSON list of selected filenames (pack/multi-disc)
+    # JSON {ra_stems, title_terms, accepted_md5s} captured at submit so the poller can
+    # do file-selection + RA-hash verification with NO extra RA calls.
+    match_data: str = "{}"
+    needs_file_selection: bool = False         # torrent pack/multi-disc: trim files once metadata arrives
+    # submitted | metadata | downloading | completed | verifying | verified | failed
+    status: str = "submitted"
+    progress: float = 0.0
+    error_message: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class LogLevel(str, Enum):
     debug = "debug"
     info = "info"

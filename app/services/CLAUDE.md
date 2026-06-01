@@ -131,6 +131,17 @@ Each source returns candidate files; the hunter scores them against **RA's accep
 
 ---
 
+## Torrent / Usenet download client (`download_clients/`, `external_hunt.py`) — LAST RESORT
+
+A **third extension type** (`type="download_client"`, beside `rom_source`/`cover_source`) for async/external downloads. The shipped one is `extensions/download_client.py` (`TorrentUsenetClient`): Prowlarr search → qBittorrent (torrents) or SABnzbd (usenet). It is **NOT** in the in-hunt source loop — a torrent/NZB downloads over minutes-to-hours, which doesn't fit `RomSource.download_file`'s 5-min synchronous contract.
+
+Flow:
+- **`DownloadClient` ABC** (`download_clients/base.py`) + `download_clients/registry.py` (mirrors `sources/registry`). Loaded via the `download_client` branch in `extension_loader.py`; enabled flag is `download_client_{id}_enabled`. qBittorrent **5.x** uses `start`/`stop` + add-param `stopped` (the client detects WebAPI version); LAN auth-bypass means username/password are optional.
+- **`download_clients/selection.py`** (LOCAL, pure, tested): `classify_files` → single / **multidisc (keep all discs)** / **pack (keep only matching files via qBit `filePrio`)** / none; reuses `hunter._file_score`. `looks_like_pack` skips usenet multi-ROM packs (no per-file selection). `release_is_relevant` = title-level filter.
+- **`external_hunt.submit_external`** runs at hunt **HTTP-source exhaustion** (gated on a configured+enabled client) — one Prowlarr search, best acceptable release → `client.submit` (qBit add-paused / SAB addurl) → records an **`ExternalDownload`** + a `downloading` `Download` card, and sets `WantedGame.status = awaiting_external`. **Makes NO RA calls** (the hunt passes in `ra_hashes`/stems/terms, stored in `ExternalDownload.match_data`).
+- **`scheduler.run_poll_external` → `external_hunt.poll_active`** runs every scheduler tick **while any job is non-terminal** (not a daily slot). It advances torrent file-selection once metadata arrives, updates the Download card's progress, and on completion **ingests + RA-verifies** (`ra_hash_or_fallback` → `lookup_hash` → `_verified_game_id` against the stored accepted hashes — at most one RA call per completed file). Verified → Download promoted to `pending_approval`, Wanted→verified, LibraryEntry (non-review). Bad-hash/fail/stall → transient Download deleted, `ExternalDownload`→failed, Wanted→exhausted, qBit torrent removed (deleteFiles on bad hash).
+- **Deployment caveat:** ingest moves the file from the client's completed path into rom-finder's staging dir, so the **rom-finder container must be able to read qBittorrent/SABnzbd's download folder** (a shared mount). If it can't, ingest logs a clear warning and the job fails. `/api/status.external` + the `external` `/api/changes` scope surface state. Settings: `sched_poll_external_enabled`, `external_download_stall_minutes`, + the extension's `ext_download_client_*` (Prowlarr/qBit/SAB URLs+keys).
+
 ## Cover Sources (`cover_sources/`)
 
 Each source extends `BaseCoverSource`:

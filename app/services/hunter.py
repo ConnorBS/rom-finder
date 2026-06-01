@@ -268,6 +268,18 @@ async def auto_hunt(wanted_id: int) -> None:
         # (which happens to contain "genesis/mega/drive") outscores it. search_title
         # drops both (clean_title keeps [Subset] for the stored title).
         title_terms = _significant_terms(search_title(game_title))
+
+        async def _try_external() -> bool:
+            """LAST RESORT: when the HTTP sources can't produce a verified dump,
+            hand the game to a configured torrent/usenet download client (it then
+            downloads async and the scheduler poll ingests + RA-verifies it)."""
+            try:
+                from app.services.external_hunt import submit_external
+                return await submit_external(wanted_id, ra_stems, title_terms, ra_hashes, system, game_title)
+            except Exception as exc:
+                applog.warning("hunt", f"External fallback error: {exc}", {"wanted_id": wanted_id})
+                return False
+
         search_results: list[tuple] = []  # (src, result_dict)
         for src in srcs:
             src_hits: list[tuple] = []
@@ -317,6 +329,8 @@ async def auto_hunt(wanted_id: int) -> None:
 
         if not candidates:
             applog.info("hunt", f"No downloadable files found: {game_title}", {"wanted_id": wanted_id})
+            if await _try_external():
+                return
             _mark_exhausted(wanted_id)
             return
 
@@ -546,6 +560,8 @@ async def auto_hunt(wanted_id: int) -> None:
 
         if tried == 0:
             applog.info("hunt", f"All candidates already attempted: {game_title}", {"wanted_id": wanted_id})
+        if await _try_external():
+            return
         _mark_exhausted(wanted_id)
         applog.info("hunt", f"Auto-hunt exhausted all candidates: {game_title}", {
             "wanted_id": wanted_id, "tried": tried,

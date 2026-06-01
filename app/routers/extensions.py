@@ -33,6 +33,15 @@ def _set_setting(session: Session, key: str, value: str) -> None:
     session.commit()
 
 
+def _enabled_key(ext_type: str, ext_id: str) -> str:
+    """The AppSetting key that gates whether an extension is enabled, per type."""
+    if ext_type == "download_client":
+        return f"download_client_{ext_id}_enabled"
+    if ext_type == "cover_source":
+        return f"cover_source_{ext_id}_enabled"
+    return f"source_{ext_id}_enabled"
+
+
 def _build_ext_config(session: Session, ext_id: str) -> dict:
     """Read ext_{ext_id}_* settings from DB into a config dict."""
     prefix = f"ext_{ext_id}_"
@@ -229,16 +238,17 @@ async def install_extension(request: Request, session: Session = Depends(get_ses
             enabled=True,
         ))
 
-    enabled_key = f"source_{ext_id}_enabled" if ext_type == "rom_source" else f"cover_source_{ext_id}_enabled"
+    enabled_key = _enabled_key(ext_type, ext_id)
     _set_setting(session, enabled_key, "true")
     session.commit()
 
     # Build the updated browse card showing "Installed"
-    type_badge = (
-        '<span class="text-xs px-2 py-0.5 rounded-full bg-blue-900/50 text-blue-300">ROM Source</span>'
-        if ext_type == "rom_source" else
-        '<span class="text-xs px-2 py-0.5 rounded-full bg-purple-900/50 text-purple-300">Cover Source</span>'
-    )
+    if ext_type == "download_client":
+        type_badge = '<span class="text-xs px-2 py-0.5 rounded-full bg-amber-900/50 text-amber-300">Download Client</span>'
+    elif ext_type == "cover_source":
+        type_badge = '<span class="text-xs px-2 py-0.5 rounded-full bg-purple-900/50 text-purple-300">Cover Source</span>'
+    else:
+        type_badge = '<span class="text-xs px-2 py-0.5 rounded-full bg-blue-900/50 text-blue-300">ROM Source</span>'
     author_badge = f'<span class="text-xs text-gray-500">by {author}</span>' if author else ""
     desc_html = f'<p class="text-sm text-gray-400 mt-1">{description}</p>' if description else ""
     card_html = (
@@ -283,7 +293,7 @@ async def toggle_extension(ext_id: str, request: Request, session: Session = Dep
     ext.updated_at = datetime.utcnow()
     session.add(ext)
 
-    enabled_key = f"source_{ext_id}_enabled" if ext.ext_type == "rom_source" else f"cover_source_{ext_id}_enabled"
+    enabled_key = _enabled_key(ext.ext_type, ext_id)
 
     if ext.enabled:
         ext_dir = _get_setting(session, "extensions_dir", "extensions")
@@ -357,7 +367,7 @@ async def uninstall_extension(ext_id: str, request: Request, session: Session = 
 
     extension_loader.unload_extension(ext_id)
 
-    enabled_key = f"source_{ext_id}_enabled" if ext.ext_type == "rom_source" else f"cover_source_{ext_id}_enabled"
+    enabled_key = _enabled_key(ext.ext_type, ext_id)
     _set_setting(session, enabled_key, "false")
 
     session.delete(ext)

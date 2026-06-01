@@ -67,6 +67,9 @@ error_message, created_at, updated_at
 ```
 `HuntStatus`: `hunting | verified | exhausted | awaiting_external` (last = submitted to a torrent/usenet download client, polled to completion — Phase 2).
 
+### `ExternalDownload` (table: `external_download`)
+A torrent/usenet job submitted to a download client (qBittorrent/SABnzbd via Prowlarr) as a **last-resort** hunt fallback. `wanted_game_id`, `download_id` (the linked progress `Download`), `client_id`, `protocol`, `job_handle` (qBit infohash / SAB nzo_id), `release_title`, `indexer`, `save_path`, `target_files` (JSON, selected filenames), `match_data` (JSON `{ra_stems,title_terms,accepted_md5s}` captured at submit so the poller verifies with **no extra RA call**), `needs_file_selection`, `status` (submitted→metadata→downloading→completed→verifying→verified | failed), `progress`. Polled by `scheduler.run_poll_external`. **New table → created by `create_all`; no migration.** See `app/services/CLAUDE.md` → *Torrent/Usenet download client*.
+
 ### `AppSetting` (table: `app_settings`)
 Simple key/value store. Defaults seeded in `main.py::DEFAULT_SETTINGS`.
 

@@ -71,6 +71,10 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "sched_verify_enabled": "true",
     "sched_verify_time": "05:00",
     "sched_verify_last_run": "",
+    # Torrent/usenet last-resort downloads (qBittorrent/SABnzbd via Prowlarr). The
+    # poller runs every scheduler tick while jobs are in flight (not a daily slot).
+    "sched_poll_external_enabled": "true",
+    "external_download_stall_minutes": "120",
     "ra_verify_in_progress": "false",
     "ra_verify_paused_until": "",
     "ra_verify_last_run": "",

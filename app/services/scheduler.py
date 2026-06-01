@@ -286,6 +286,14 @@ async def run_verify() -> dict:
     return result
 
 
+async def run_poll_external() -> dict:
+    """One pass over in-flight torrent/usenet jobs (qBittorrent/SABnzbd): advance
+    file-selection, update progress, ingest + RA-verify completed ones. Driven from
+    the loop every tick while jobs are active — NOT a daily slot."""
+    from app.services.external_hunt import poll_active
+    return await poll_active()
+
+
 async def scheduler_loop() -> None:
     """Wake every minute; fire tasks whose scheduled local time has arrived."""
     while True:
@@ -325,3 +333,20 @@ async def scheduler_loop() -> None:
                 await runners[task_name]()
             except Exception as exc:
                 applog.warning("scheduler", f"Task '{task_name}' failed: {exc}")
+
+        # External torrent/usenet jobs: poll every tick (not a daily slot) while any
+        # are in flight, so progress advances and completed downloads get ingested.
+        with Session(engine) as session:
+            poll_on = _get(session, "sched_poll_external_enabled", "true") == "true"
+        if poll_on:
+            from app.db.models import ExternalDownload
+            with Session(engine) as session:
+                has_active = session.exec(
+                    select(ExternalDownload).where(ExternalDownload.status.in_(
+                        ("submitted", "metadata", "downloading", "verifying")))
+                ).first() is not None
+            if has_active:
+                try:
+                    await run_poll_external()
+                except Exception as exc:
+                    applog.warning("scheduler", f"External poll failed: {exc}")

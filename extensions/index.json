@@ -36,6 +36,15 @@
       "author": "ConnorBS",
       "description": "Downloads ROMs from ROMsFun.com (per-system search + signed CDN URL). Streams the CDN in the same session that minted the token (admin-ajax primary, embedded URL fallback) and retries the anti-leech 403 with backoff. ROMsFun is behind Cloudflare — set a FlareSolverr URL to bypass the search challenge.",
       "pkg_url": "https://raw.githubusercontent.com/ConnorBS/rom-finder/main/extensions/romsfun.py"
+    },
+    {
+      "id": "download_client",
+      "name": "Torrent / Usenet (Prowlarr + qBittorrent + SABnzbd)",
+      "version": "1.0.0",
+      "type": "download_client",
+      "author": "ConnorBS",
+      "description": "Last-resort downloader: searches Prowlarr and submits torrents to qBittorrent or NZBs to SABnzbd, used only after the direct HTTP sources fail. qBittorrent packs are trimmed to the wanted ROM via file-priority; usenet multi-ROM packs are skipped. The result is hash-verified against RetroAchievements before it lands in Pending Approval.",
+      "pkg_url": "https://raw.githubusercontent.com/ConnorBS/rom-finder/main/extensions/download_client.py"
     }
   ]
 }
