@@ -40,3 +40,8 @@ services:
       WATCHTOWER_CLEANUP: "true"        # prune the old image after each update
       WATCHTOWER_POLL_INTERVAL: "300"   # poll GHCR every 5 minutes
       WATCHTOWER_INCLUDE_RESTARTING: "true"
+      # The containrrr/watchtower image ships an old Docker API client (1.25) that a
+      # modern Unraid daemon rejects ("client version 1.25 is too old. Minimum
+      # supported API version is 1.40"). Pin to the daemon's minimum so it connects.
+      # (Or use the maintained fork ghcr.io/nicholas-fedor/watchtower, which doesn't need this.)
+      DOCKER_API_VERSION: "1.40"

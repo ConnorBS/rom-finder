@@ -18,6 +18,12 @@ failure modes below.
    (`redeploy.sh` already sets this on the container it creates).
 3. Private GHCR? Also mount the host's `~/.docker/config.json` (see the compose).
 
+**Gotcha:** `containrrr/watchtower` ships an old Docker API client (1.25) that a
+modern Unraid daemon rejects (`client version 1.25 is too old. Minimum supported
+API version is 1.40`), so the container starts then immediately exits. Fix: set env
+`DOCKER_API_VERSION=1.40` (already in the compose), or use the maintained fork
+`ghcr.io/nicholas-fedor/watchtower` which doesn't need it.
+
 Verify: `curl http://192.168.0.100:19846/api/status` → `version` matches the pushed
 SHA within ~5 min of the CI build.
 
