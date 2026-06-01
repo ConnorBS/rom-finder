@@ -17,6 +17,40 @@ Active-link detection:
 - `base.html` polls `/activity/tray` every 3s via HTMX → updates sidebar tray
 - `collection.html` polls `/activity/card-states` every 2s via JS → shows per-card overlays
 
+## Live in-place updates (idiomorph)
+
+Pages update **in place** as background work changes the DB — no manual refresh, no
+"refresh" prompt, and **without losing** scroll, an open detail panel, a multi-select,
+or a half-typed input. Mechanism (all in `base.html` `<head>`, so the interval/listeners
+register exactly once — a `hx-target="body"` filter nav re-runs body scripts and would
+otherwise stack duplicate intervals):
+
+1. A poller hits **`GET /api/changes`** every 4s — a cheap per-scope fingerprint feed
+   (see `routers/CLAUDE.md`). It builds a fingerprint from the scopes the current page
+   declares and compares to the previous poll (first poll = baseline; re-baselines when
+   the page/scope changes).
+2. On change it re-fetches **the current URL** (so query-string filters are preserved) and
+   morphs the response's `#live-content` into the live `#live-content` via
+   **idiomorph** (`hx-ext="morph"`, `swap:'morph:innerHTML'`, CDN `idiomorph-ext`). Morph
+   diffs the DOM and only touches what changed — preserving focus, the active input's value,
+   scroll, and untouched nodes. Then it dispatches a **`live:updated`** event.
+3. The poller **defers** (skips the tick) while a text input/`select` inside `#live-content`
+   is focused, so it never interrupts typing/selecting.
+
+**Opt-in per page**: `<main id="live-content">` carries `data-live-scope` /
+`data-live-mode` from two overridable Jinja blocks. Each page sets
+`{% block live_scope %}…{% endblock %}` (space-separated scope names); empty ⇒ the page is
+static (Settings/Extensions). Wired: collection=`library wanted`, downloads=`downloads hunts`,
+wanted=`wanted library downloads`, logs=`logs`, scheduler=`scheduler`. **Dashboard** pages use
+`{% block live_mode %}reload{% endblock %}` (ApexCharts can't survive a morph) so they do an
+idle `location.reload()` when the mirror token changes — i.e. right after a manual RA Refresh
+completes. Escape hatch: `localStorage.liveUpdates = 'off'`. Interval is hardcoded (4s), like
+the 3s tray poll — no Settings toggle (no shared Jinja env to thread one in per route).
+
+The detail slide-over, sidebar tray, and mobile indicator live **outside** `#live-content`,
+so a morph never touches them. **Charts**: never morph a chart container — dashboard uses
+reload mode for exactly this reason.
+
 ## RA Badge Links
 
 Wherever an RA match badge appears (`collection.html`, `library.html`, `download_item.html`), it is an `<a>` linking to `https://retroachievements.org/game/{ra_game_id}` when `ra_game_id` is known. Falls back to a plain `<span>` when ID is absent.
@@ -25,7 +59,7 @@ Wherever an RA match badge appears (`collection.html`, `library.html`, `download
 
 The cover top-left badge stack renders the RA award tier — **🏅 Mastered** (gold) / **✅ Completed** / **🏆 Beaten** — with **Mastered superseding** (first-match `{% if %}/{% elif %}`), plus subset markers (**⊂ Subset** copy, amber **⊕ N subset** available / muted **⊕ subset** when all compatible subsets are mastered). Driven by `item.mastered` / `item.ra_award` / `item.is_subset_rom` / `item.subsets_available`.
 
-Multi-select is minimal JS (sanctioned, like the card-states poller): `.sel-check[data-lib-id]` checkboxes (card info area — kept off the cover so they don't trigger the detail slide-over; list view first column), a `#selection-bar` shown when the `window._sel` Set is non-empty, and `selectAllFiltered()` using `window.allFilteredLibIds`. The Set **resets on every full render** (filter/paginate/HX-Refresh), matching the filter→select-all→act flow. Action buttons post `library_ids` via `hx-vals` (body, not URL). `#col-perpage` (50–1000) is wired like `#col-system`; every nav link threads `&per_page`.
+Multi-select is minimal JS (sanctioned, like the card-states poller): `.sel-check[data-lib-id]` checkboxes (card info area — kept off the cover so they don't trigger the detail slide-over; list view first column), a `#selection-bar` shown when the `window._sel` Set is non-empty, and `selectAllFiltered()` using `window.allFilteredLibIds`. **`window._sel` is initialised in `base.html`** (not the page's inline script) so it **survives a live in-place morph**; it still **resets on a real full render** (filter/paginate/HX-Refresh) via base.html's `htmx:afterSwap` handler that clears it when the swap target is `document.body`. The collection page re-applies it to checkboxes (`bindSelChecks()`) both at load and on the `live:updated` event after each morph. Action buttons post `library_ids` via `hx-vals` (body, not URL). `#col-perpage` (50–1000) is wired like `#col-system`; every nav link threads `&per_page`.
 
 ## Cover Refresh Button
 

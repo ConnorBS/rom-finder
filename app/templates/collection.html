@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Collection — ROM Finder{% endblock %}
+{% block live_scope %}library wanted{% endblock %}
 {% block content %}
 {% macro fsize(n) %}{% if n and n >= 1073741824 %}{{ (n / 1073741824) | round(2) }} GB{% elif n %}{{ (n / 1048576) | round(1) }} MB{% endif %}{% endmacro %}
 <div class="p-4 sm:p-6 max-w-7xl mx-auto">
@@ -665,10 +666,11 @@
 
 <script>
 // --- Multi-select -------------------------------------------------------
-// Reset on every full render (filter / paginate / HX-Refresh), so the flow is
-// filter → "select all" → act. Off-page ids live in the Set even with no checkbox.
+// window._sel is owned by base.html so it SURVIVES a live in-place morph; it's
+// reset on a real full render (filter / paginate / HX-Refresh) by base.html's
+// htmx:afterSwap(body) handler. The flow stays filter → "select all" → act.
+// Off-page ids live in the Set even with no checkbox.
 window.allFilteredLibIds = {{ all_filtered_lib_ids | tojson }};
-window._sel = new Set();
 function selectedIds() { return Array.from(window._sel).join(','); }
 function updateSelBar() {
     const bar = document.getElementById('selection-bar');
@@ -699,6 +701,8 @@ function bindSelChecks() {
     updateSelBar();
 }
 bindSelChecks();
+// Re-apply selection + rebind onchange after a live in-place morph adds/removes rows.
+document.addEventListener('live:updated', bindSelChecks);
 
 const _ICONS = {
     cover:  { svg: `<svg class="animate-spin w-6 h-6 text-blue-400"   fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>`,   label: 'Fetching cover', labelClass: 'text-blue-300' },

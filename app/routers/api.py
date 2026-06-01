@@ -7,12 +7,12 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from pydantic import BaseModel
 from sqlmodel import Session, select
-from sqlalchemy import func, select as sa_select
+from sqlalchemy import func, select as sa_select, cast as sa_cast, Integer
 from typing import Optional
 
 from app.db.database import get_session, engine
 from app.db.models import (
-    AppSetting, WantedGame, HuntStatus,
+    AppSetting, WantedGame, HuntStatus, HuntAttempt,
     Download, DownloadStatus, LibraryEntry, AppLog, InstalledExtension,
 )
 from app.db import repository
@@ -460,3 +460,111 @@ async def api_logs(
             "category": l.category, "message": l.message, "details": details,
         })
     return out
+
+
+# ---------------------------------------------------------------------------
+# Live change-signal (front-end auto-update backbone)
+#
+# /api/changes returns a cheap per-scope fingerprint string. The base.html
+# poller compares the scopes a page cares about against the previous poll; when
+# one changes it morphs the page in place (idiomorph), so background work shows
+# up without a manual refresh and without losing the user's scroll/selection.
+# Tokens only need to CHANGE when something user-visible changes — collisions
+# just defer the update to the next real change; spurious changes cause a
+# harmless no-op morph. Each scope is independently guarded so one failure can't
+# blank the whole feed. NO network I/O here — fast DB reads only, so holding the
+# pooled connection for the request is fine.
+# ---------------------------------------------------------------------------
+
+@router.get("/changes")
+async def api_changes(session: Session = Depends(get_session)):
+    changes: dict = {}
+
+    # library — LibraryEntry has no single updated_at (cover/award/subset/dup
+    # writes don't bump one), so fingerprint the visible aggregate in one query.
+    try:
+        row = session.execute(
+            sa_select(
+                func.count(),
+                func.count(LibraryEntry.file_hash),
+                # cast bool→int so the SUM stays a true count (SQLAlchemy otherwise
+                # applies Boolean result-processing and collapses it to True/False).
+                func.coalesce(func.sum(sa_cast(LibraryEntry.ra_matched, Integer)), 0),
+                func.coalesce(func.sum(func.length(LibraryEntry.cover_path)), 0),
+                func.count(LibraryEntry.duplicate_of),
+                func.coalesce(func.sum(sa_cast(LibraryEntry.missing, Integer)), 0),
+                func.coalesce(func.sum(LibraryEntry.save_count), 0),
+                func.coalesce(func.sum(func.length(LibraryEntry.ra_award)), 0),
+                func.coalesce(func.sum(func.length(LibraryEntry.subset_info)), 0),
+                func.max(LibraryEntry.added_at),
+                func.max(LibraryEntry.hashed_at),
+                func.max(LibraryEntry.ra_checked_at),
+                func.max(LibraryEntry.missing_at),
+            ).select_from(LibraryEntry)
+        ).one()
+        changes["library"] = ":".join(str(v) for v in row)
+    except Exception as e:
+        changes["library"] = f"err:{e}"
+
+    # wanted — count + last touch + cover state (status→verified bumps updated_at;
+    # cover fetch only writes cover_path, hence the length sum).
+    try:
+        row = session.execute(
+            sa_select(
+                func.count(),
+                func.max(WantedGame.updated_at),
+                func.coalesce(func.sum(func.length(WantedGame.cover_path)), 0),
+            ).select_from(WantedGame)
+        ).one()
+        changes["wanted"] = ":".join(str(v) for v in row)
+    except Exception as e:
+        changes["wanted"] = f"err:{e}"
+
+    # downloads — structural only (new item, reached pending_approval, failed,
+    # hash computed). Progress is DELIBERATELY excluded so this token doesn't tick
+    # every 2s during a download; the per-item /downloads/{id}/status poll drives
+    # the live progress bars.
+    try:
+        total = _count(session, Download)
+        pending_approval = _count(session, Download, Download.status == DownloadStatus.pending_approval)
+        failed = _count(session, Download, Download.status == DownloadStatus.failed)
+        hashed = _count(session, Download, Download.file_hash != None)  # noqa: E711
+        last_created = session.scalar(sa_select(func.max(Download.created_at)))
+        changes["downloads"] = f"{total}:{pending_approval}:{failed}:{hashed}:{last_created}"
+    except Exception as e:
+        changes["downloads"] = f"err:{e}"
+
+    # hunts / logs — append-only tables: count + max(id) is enough.
+    try:
+        total = _count(session, HuntAttempt)
+        last_id = session.scalar(sa_select(func.max(HuntAttempt.id)))
+        changes["hunts"] = f"{total}:{last_id}"
+    except Exception as e:
+        changes["hunts"] = f"err:{e}"
+
+    try:
+        total = _count(session, AppLog)
+        last_id = session.scalar(sa_select(func.max(AppLog.id)))
+        changes["logs"] = f"{total}:{last_id}"
+    except Exception as e:
+        changes["logs"] = f"err:{e}"
+
+    # scheduler — the three last-run stamps; change when a scheduled task fires.
+    try:
+        changes["scheduler"] = ":".join(
+            _get_setting(session, f"sched_{t}_last_run", "") for t in ("scan", "hash", "autodiscover")
+        )
+    except Exception as e:
+        changes["scheduler"] = f"err:{e}"
+
+    # dashboard — the local RA mirror; only changes after a manual Refresh completes.
+    try:
+        from app.db.models import RAAchievement, RAGameProgress
+        ach = _count(session, RAAchievement)
+        games = _count(session, RAGameProgress)
+        last_sync = _get_setting(session, "ra_dashboard_last_sync", "")
+        changes["dashboard"] = f"{ach}:{games}:{last_sync}"
+    except Exception as e:
+        changes["dashboard"] = f"err:{e}"
+
+    return changes

@@ -7,10 +7,73 @@
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <!-- idiomorph: DOM-morphing swap so live updates mutate in place (preserving
+         scroll, focus, the active input, and untouched nodes) instead of replacing. -->
+    <script src="https://unpkg.com/idiomorph@0.7.4/dist/idiomorph-ext.min.js"></script>
     <!-- ApexCharts — only the dashboard uses it; loaded globally for simplicity -->
     <script src="https://cdn.jsdelivr.net/npm/apexcharts@3.49.1"></script>
     <script>
         tailwind.config = { darkMode: 'class' }
+    </script>
+    <!-- ── Live in-place updates ──────────────────────────────────────────────
+         A single poller hits the cheap /api/changes signal; when the scopes the
+         current page declares (data-live-scope on #live-content) actually change,
+         it morphs the current URL's fresh HTML into #live-content in place. Lives
+         in <head> so the interval + listeners are registered exactly once (a
+         hx-target="body" filter nav re-runs body scripts, which would otherwise
+         stack duplicate intervals). -->
+    <script>
+        // Multi-select state for the collection page. Owned here (not in the page's
+        // inline script) so it SURVIVES an in-place morph; the collection page only
+        // re-applies it to checkboxes via bindSelChecks(). Reset on a real full-page
+        // nav is handled by the htmx:afterSwap listener below (target === body).
+        window._sel = window._sel || new Set();
+
+        document.addEventListener('htmx:afterSwap', function(e) {
+            // A filter/paginate/approve-all swap replaces the whole body — treat it
+            // as a fresh view and drop any multi-select. A live morph targets only
+            // #live-content, so it falls through and the selection persists.
+            if (e.detail && e.detail.target === document.body) {
+                if (window._sel) window._sel.clear();
+                if (typeof window.bindSelChecks === 'function') window.bindSelChecks();
+            }
+        });
+
+        (function () {
+            if (localStorage.getItem('liveUpdates') === 'off') return;  // escape hatch
+            var last = null, lastScope = '';
+            function fingerprint(data, scopes) {
+                return scopes.map(function (s) { return data[s] || ''; }).join('|');
+            }
+            function focusedInside(el) {
+                var a = document.activeElement;
+                if (!a) return false;
+                var t = a.tagName;
+                return (t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT') && el.contains(a);
+            }
+            async function tick() {
+                var el = document.getElementById('live-content');
+                if (!el) return;
+                var scope = (el.getAttribute('data-live-scope') || '').trim();
+                if (!scope) { lastScope = ''; last = null; return; }  // page opted out — don't even poll
+                var scopes = scope.split(/\s+/);
+                var mode = el.getAttribute('data-live-mode') || 'morph';
+                var data;
+                try { data = await fetch('/api/changes').then(function (r) { return r.json(); }); }
+                catch (e) { return; }
+                var cur = fingerprint(data, scopes);
+                if (scope !== lastScope) { lastScope = scope; last = cur; return; }  // re-baseline on page change
+                if (last === null) { last = cur; return; }                          // first poll = baseline
+                if (cur === last) return;
+                if (focusedInside(el)) return;   // don't consume the change while typing/selecting — retry next tick
+                last = cur;
+                if (mode === 'reload') { location.reload(); return; }
+                htmx.ajax('GET', window.location.href, {
+                    target: '#live-content', select: '#live-content', swap: 'morph:innerHTML'
+                }).then(function () { document.dispatchEvent(new CustomEvent('live:updated')); });
+            }
+            setInterval(tick, 4000);
+        })();
     </script>
     <style>
         /* HTMX loading states */
@@ -20,7 +83,7 @@
         .htmx-request .htmx-label { display: none; }
     </style>
 </head>
-<body class="dark bg-gray-950 text-gray-100 flex min-h-screen">
+<body class="dark bg-gray-950 text-gray-100 flex min-h-screen" hx-ext="morph">
 
     <!-- Mobile backdrop — tapping closes sidebar -->
     <div id="nav-backdrop"
@@ -87,7 +150,10 @@
                  class="ml-auto flex items-center"></div>
         </header>
 
-        <main class="flex-1 overflow-y-auto">
+        <main class="flex-1 overflow-y-auto"
+              id="live-content"
+              data-live-scope="{% block live_scope %}{% endblock %}"
+              data-live-mode="{% block live_mode %}morph{% endblock %}">
             {% block content %}{% endblock %}
         </main>
     </div>

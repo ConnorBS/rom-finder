@@ -90,7 +90,7 @@ FastAPI `BackgroundTasks` runs after the HTTP response in the same event loop. C
 - `get_card_states()` → `{states: {"lib-N": "cover|rehash|verify", ...}, batch_types: []}`
 
 ### Tray polling
-`base.html` polls `/activity/tray` every 3s via HTMX. `collection.html` polls `/activity/card-states` every 2s via JS for per-card overlays.
+`base.html` polls `/activity/tray` every 3s via HTMX. `collection.html` polls `/activity/card-states` every 2s via JS for per-card overlays. Separately, a `base.html` poller hits `/api/changes` every 4s and **morphs the page in place** (idiomorph) when its scope's fingerprint changes — see `templates/CLAUDE.md` → *Live in-place updates* and `routers/CLAUDE.md` → `/api/changes`.
 
 ### Task ID conventions
 - `"cover-{wanted_id}"` — cover fetch for a WantedGame
