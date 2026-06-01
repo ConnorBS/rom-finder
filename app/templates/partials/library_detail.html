@@ -115,7 +115,8 @@
 <!-- Duplicates -->
 {% if dup_group %}
 <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-  Same content <span class="text-purple-400 normal-case font-normal">({{ dup_group|length }} files — pick any to remove)</span>
+  {% if mixed_dump %}Duplicate group{% else %}Same content{% endif %}
+  <span class="text-purple-400 normal-case font-normal">{% if mixed_dump %}({{ dup_group|length }} copies — ⚠ some are different dumps of the same title; check each before removing){% else %}({{ dup_group|length }} files — identical content, pick any to remove){% endif %}</span>
 </h3>
 <div class="space-y-2 mb-5">
   {% for m in dup_group %}
@@ -124,6 +125,15 @@
       <span class="text-gray-300 font-mono break-all">{{ m.file_name }}</span>
     </div>
     <p class="text-gray-600 mb-1">{{ m.system }}{% if m.file_size %} · {{ fsize(m.file_size) }}{% endif %}{% if m.id == entry.id %} · <span class="text-gray-400">this entry</span>{% endif %}</p>
+    {% if m.id != entry.id and m.file_hash and entry.file_hash %}
+    <p class="mb-1">
+      {% if m.file_hash == entry.file_hash %}
+      <span class="bg-gray-800 border border-gray-700 text-gray-400 text-[11px] px-1.5 py-0.5 rounded-full">identical copy</span>
+      {% else %}
+      <span class="bg-amber-900/40 border border-amber-700 text-amber-200 text-[11px] px-1.5 py-0.5 rounded-full">different dump</span>{% if m.ra_game_id %} <a href="https://retroachievements.org/game/{{ m.ra_game_id }}" target="_blank" rel="noopener" class="text-blue-400 hover:text-blue-300 text-[11px]">RA #{{ m.ra_game_id }} ↗</a>{% endif %}
+      {% endif %}
+    </p>
+    {% endif %}
     {% if m.file_hash %}<p class="text-gray-600 font-mono break-all leading-relaxed mb-2">{{ m.file_hash }}{% if m.ra_matched %} <span class="text-green-500">✓ RA</span>{% endif %}</p>{% endif %}
     <div class="flex gap-1.5">
       <button hx-post="/collection/library/{{ m.id }}/delete"

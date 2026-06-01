@@ -149,6 +149,13 @@ async def library_detail(
     if siblings:
         canonical = session.get(LibraryEntry, canonical_id) or entry
         dup_group = [canonical] + list(siblings)
+    # A group can mix truly-identical copies (same hash) with same-title-but-different-dump
+    # copies grouped only by title+system (e.g. Dragon Quest MSX1 #16399 vs MSX2 #16400).
+    # Flag that so the panel warns instead of calling them all "same content".
+    mixed_dump = any(
+        m.file_hash and entry.file_hash and m.file_hash != entry.file_hash
+        for m in dup_group if m.id != entry.id
+    )
     # Matched save files (read-only — listed so the user can see the naming).
     try:
         saves = json.loads(entry.save_files) if entry.save_files else []
@@ -161,8 +168,8 @@ async def library_detail(
     return templates.TemplateResponse(
         request, "partials/library_detail.html",
         {"entry": entry, "downloads": downloads,
-         "dup_group": dup_group, "canonical_id": canonical_id, "saves": saves,
-         "subsets": subsets},
+         "dup_group": dup_group, "canonical_id": canonical_id, "mixed_dump": mixed_dump,
+         "saves": saves, "subsets": subsets},
     )
 
 
