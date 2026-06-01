@@ -1,8 +1,12 @@
 """Auto-hunt wrong-game guard: a hash that matches a DIFFERENT RA game must not
 verify the wanted game (the Kirby-hunt-downloads-Solaris bug)."""
 
+from sqlmodel import Session
+
+from app.db.models import LibraryEntry
 from app.services.hunter import (
     _match_is_correct_game, _verified_game_id, _file_score, _significant_terms,
+    _owned_accepted_copy,
 )
 
 
@@ -82,3 +86,31 @@ def test_verified_subset_accepts_hash_in_own_list():
 
 def test_verified_hash_match_is_case_insensitive():
     assert _verified_game_id(None, 42, "AbCdEf", {"abcdef"}) == 42
+
+
+# --- _owned_accepted_copy: skip hunting a subset you already own (SM64 case) ----
+
+def test_owned_accepted_copy_finds_base_rom_for_subset(fresh_engine):
+    with Session(fresh_engine) as s:
+        s.add(LibraryEntry(game_title="Super Mario 64", system="Nintendo 64",
+                           file_name="Super Mario 64 (USA).z64", file_path="/n64/sm64.z64",
+                           file_hash="20b854b239203baf6c961b850a4a51a2"))
+        s.add(LibraryEntry(game_title="Other", system="NES", file_name="o.nes",
+                           file_path="/nes/o.nes", file_hash="ffffffffffffffffffffffffffffffff"))
+        s.commit()
+    with Session(fresh_engine) as s:
+        # The Coin Collector subset accepts the plain base SM64 hash — owned copy
+        # is found even though we pass the hash upper-cased (case-insensitive).
+        hit = _owned_accepted_copy(s, {"20B854B239203BAF6C961B850A4A51A2",
+                                       "7b3285c7f6aee1f9a3891fd75abe0a39"})
+        assert hit is not None and hit.file_name == "Super Mario 64 (USA).z64"
+
+
+def test_owned_accepted_copy_none_when_not_owned(fresh_engine):
+    with Session(fresh_engine) as s:
+        s.add(LibraryEntry(game_title="Other", system="NES", file_name="o.nes",
+                           file_path="/nes/o.nes", file_hash="ffffffffffffffffffffffffffffffff"))
+        s.commit()
+    with Session(fresh_engine) as s:
+        assert _owned_accepted_copy(s, {"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}) is None
+        assert _owned_accepted_copy(s, set()) is None

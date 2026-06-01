@@ -22,7 +22,7 @@ from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
-from sqlmodel import Session, select
+from sqlmodel import Session, select, func
 
 from app.db.database import engine
 from app.db.models import (
@@ -136,6 +136,25 @@ def _match_is_correct_game(matched_id, expected_id) -> bool:
     return bool(matched_id) and (expected_id is None or matched_id == expected_id)
 
 
+def _owned_accepted_copy(session: Session, accepted_hashes: set[str]):
+    """An owned LibraryEntry whose hash is in this game's accepted-hash list, or
+    None. Used to skip hunting a game the user already owns a satisfying copy of.
+
+    This is the SUBSET case: a Subset game's ra_game_id differs from the base
+    game's, and the subset reuses the base ROM (e.g. SM64 'Coin Collector'
+    accepts the plain Super Mario 64 (USA) dump). The user owns that ROM under
+    the BASE game's id, so add-wanted's `ra_game_id` ownership check can't see it
+    and the hunt would download a redundant, byte-identical duplicate."""
+    lowered = [h.lower() for h in accepted_hashes if h]
+    if not lowered:
+        return None
+    return session.exec(
+        select(LibraryEntry)
+        .where(LibraryEntry.file_hash.isnot(None))
+        .where(func.lower(LibraryEntry.file_hash).in_(lowered))
+    ).first()
+
+
 def _verified_game_id(matched_id, expected_id, file_hash, accepted_hashes) -> int | None:
     """The RA game id this dump verifies as, or None if it doesn't belong to the
     wanted game. Accepts two ways:
@@ -197,6 +216,31 @@ async def auto_hunt(wanted_id: int) -> None:
                     ra_stems.add(Path(h["Name"]).stem.lower())
         except Exception as exc:
             applog.warning("hunt", f"Could not fetch RA hashes: {exc}", {"wanted_id": wanted_id})
+
+        # Already own a satisfying copy? Then there's nothing to hunt — downloading
+        # another copy just makes a byte-identical duplicate. Common for SUBSETs:
+        # the subset reuses the base ROM, owned under the BASE game's id, so the
+        # add-wanted ownership check (by ra_game_id) can't see it. Mark verified
+        # and stop. (SM64 'Coin Collector' accepts plain Super Mario 64 (USA),
+        # which the user already owns.)
+        owned_info: tuple | None = None
+        if ra_hashes:
+            with Session(engine) as session:
+                owned = _owned_accepted_copy(session, ra_hashes)
+                if owned:
+                    owned_info = (owned.file_name, owned.file_hash, owned.id)
+                    g = session.get(WantedGame, wanted_id)
+                    if g:
+                        g.status = HuntStatus.verified
+                        g.last_hunt_at = datetime.utcnow()
+                        session.add(g)
+                        session.commit()
+        if owned_info:
+            applog.info("hunt", f"Already owned — no download needed: {game_title}", {
+                "wanted_id": wanted_id, "owned_file": owned_info[0],
+                "owned_hash": owned_info[1], "owned_library_id": owned_info[2],
+            })
+            return
 
         # Build ordered search queries: RA ROM name stems first, then title variants
         queries: list[str] = []
