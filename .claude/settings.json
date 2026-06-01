@@ -17,7 +17,8 @@
       "mcp__godot-mcp-pro__get_scene_tree",
       "mcp__claude_ai_Google_Drive__search_files",
       "mcp__godot-mcp-pro__get_game_scene_tree",
-      "mcp__chrome-devtools__take_screenshot"
+      "mcp__chrome-devtools__take_screenshot",
+      "mcp__ssh-sre__resource"
     ]
   }
 }
