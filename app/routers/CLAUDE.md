@@ -103,6 +103,16 @@ Search endpoints (`games.search`, `api.api_search`) query each enabled source in
 
 ---
 
+## Browser-extension endpoints (`api.py`)
+
+The `rom-finder-extension/` Chrome extension (floating panel on `retroachievements.org/game/*`) talks to these JSON endpoints, proxied through its background service worker (so HTTPS RA pages can reach the HTTP app):
+
+- **`POST /api/wanted`** (`WantedAddRequest{ra_game_id, game_title, system, system_id}`) — adds to Wanted; returns `{status: "added"|"exists", id, game_title}`. System is resolved server-side via `canonical_system(system, system_id)` (the RA console id wins), so a wrong/empty scraped name is fixed at the source. **Cover gotcha:** the cover BackgroundTask is `_fetch_cover(game.id, ra_game_id, game.game_title, system)` — pass the **title + canonical system**, never the RA creds. Passing `username` as `game_title` made title-based cover sources (SteamGridDB) fetch one identical image for *every* extension-added game (regression fixed; `tests/test_api_extension.py` guards it).
+- **`GET /api/game-status?ra_game_id=N`** → `{ra_game_id, wanted: bool, wanted_status, owned: bool}`. The panel calls this on load to advise before you click Add (badges the floating icon, disables/relabels the button). `owned` = a `LibraryEntry` matched to that id exists — RA files many ROMs under one id and an unverified dump has no `ra_game_id`, so it's the "verified copy on hand" signal, not raw file presence.
+- **`GET /api/search?q=&system=`** — runs enabled sources (same relevance rules as the hunt); one source's failure is logged, not fatal.
+
+**The widget's `RA_SYSTEMS` map (content.js) must mirror `ra_client.SYSTEMS` ids** — GameCube=16, Wii=19, Wii U=20 (NOT 80/20). A wrong id shows "Unknown system" in the panel even though the server still stores the right console (it resolves from `system_id`). Bump `manifest.json` `version` when `content.js` changes — it's a separately-loaded client, reloaded in `chrome://extensions`, not deployed with the app.
+
 ## Agent-Observable Diagnostics (`api.py`)
 
 Two JSON endpoints let any agent confirm the running app's state over HTTP — no browser, no Docker socket, no human checking the site. They are the agent-facing twins of the UI; the verifier agents (`deploy-verifier`, `prod-health-monitor`) consume them instead of scraping HTML.

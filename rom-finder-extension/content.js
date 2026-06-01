@@ -68,7 +68,8 @@
     15: "Game Gear",
     17: "Atari Jaguar",
     18: "Nintendo DS",
-    20: "Wii",
+    19: "Wii",
+    20: "Wii U",
     21: "PlayStation 2",
     23: "Magnavox Odyssey 2",
     24: "Pokemon Mini",
@@ -98,7 +99,7 @@
     72: "WASM-4",
     76: "PC Engine CD",
     78: "Nintendo DSi",
-    80: "GameCube",
+    16: "GameCube",
     89: "Uzebox",
   };
 
@@ -326,9 +327,26 @@
   body.appendChild(searchRow);
   body.appendChild(resultsEl);
 
+  // Floating advisory badge above the toggle — set once /api/game-status resolves
+  // so you can tell at a glance (without opening the panel) whether you already
+  // own or already want this game.
+  const statusBadge = document.createElement('div');
+  applyStyles(statusBadge, {
+    display: 'none',
+    marginLeft: 'auto',
+    marginBottom: '6px',
+    padding: '3px 10px',
+    borderRadius: '12px',
+    fontSize: '11px',
+    fontWeight: '600',
+    whiteSpace: 'nowrap',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
+  });
+
   panel.appendChild(header);
   panel.appendChild(body);
   root.appendChild(panel);
+  root.appendChild(statusBadge);
   root.appendChild(toggleBtn);
   document.body.appendChild(root);
 
@@ -421,6 +439,43 @@
       addStatus.style.color = '#f87171';
     }
   });
+
+  // -------------------------------------------------------------------------
+  // Already owned / already wanted pre-check
+  // -------------------------------------------------------------------------
+
+  function applyGameStatus(st) {
+    if (!st || (!st.owned && !st.wanted)) return;
+    addBtn.disabled = true;
+    addBtn.style.cursor = 'default';
+    if (st.owned) {
+      statusBadge.textContent = '✓ In your collection';
+      applyStyles(statusBadge, { display: 'block', background: '#14532d', color: '#86efac', border: '1px solid #166534' });
+      addBtn.textContent = '✓ In your collection';
+      addBtn.style.background = '#14532d';
+      addStatus.textContent = 'You already own a verified copy of this game.';
+      addStatus.style.color = '#4ade80';
+    } else {
+      statusBadge.textContent = '★ In your Wanted list';
+      applyStyles(statusBadge, { display: 'block', background: '#1e3a8a', color: '#bfdbfe', border: '1px solid #1d4ed8' });
+      addBtn.textContent = '✓ Already in Wanted';
+      addBtn.style.background = '#1e3a1e';
+      addStatus.textContent = 'Already tracked in your Wanted list.';
+      addStatus.style.color = '#4ade80';
+    }
+  }
+
+  (async function checkGameStatus() {
+    try {
+      const items = await storageGet({ romFinderUrl: 'http://127.0.0.1:8080' });
+      const base = items.romFinderUrl.replace(/\/$/, '');
+      const resp = await apiFetch(`${base}/api/game-status?ra_game_id=${gameId}`);
+      if (!resp.ok) return;
+      applyGameStatus(await resp.json());
+    } catch (err) {
+      // Server unreachable — leave the Add button active rather than guessing.
+    }
+  })();
 
   // -------------------------------------------------------------------------
   // Search sources

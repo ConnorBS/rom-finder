@@ -208,9 +208,32 @@ async def api_add_wanted(
     api_key = _get_setting(session, "ra_api_key")
     if username and api_key:
         from app.routers.wanted import _fetch_cover
-        background_tasks.add_task(_fetch_cover, game.id, req.ra_game_id, username, api_key)
+        # Pass the game's title + canonical system (NOT the RA creds): _fetch_cover's
+        # signature is (wanted_id, ra_game_id, game_title, system). Passing username
+        # as game_title made title-based cover sources (SteamGridDB) fetch one constant
+        # image for every extension-added game.
+        background_tasks.add_task(_fetch_cover, game.id, req.ra_game_id, game.game_title, system)
 
     return {"status": "added", "id": game.id, "game_title": game.game_title}
+
+
+@router.get("/game-status")
+async def api_game_status(ra_game_id: int, session: Session = Depends(get_session)):
+    """Pre-check for the browser extension: is this RA game already in the Wanted
+    list and/or owned? Lets the panel reflect state on load instead of only after a
+    POST. `owned` keys off a LibraryEntry matched to the id — RA files many ROMs
+    under one game id and an unverified on-disk dump carries no ra_game_id, so this
+    is the "verified copy on hand" signal, not raw file presence."""
+    wanted = repository.wanted_by_ra_game_id(session, ra_game_id)
+    owned = session.exec(
+        select(LibraryEntry).where(LibraryEntry.ra_game_id == ra_game_id).limit(1)
+    ).first()
+    return {
+        "ra_game_id": ra_game_id,
+        "wanted": wanted is not None,
+        "wanted_status": wanted.status.value if wanted else None,
+        "owned": owned is not None,
+    }
 
 
 @router.get("/wanted")
