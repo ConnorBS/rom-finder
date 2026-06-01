@@ -1,5 +1,5 @@
 {# Mirror of collection.html's fsize so the panel matches the card/list size format. #}
-{% macro fsize(n) %}{% if n and n >= 1073741824 %}{{ (n / 1073741824) | round(2) }} GB{% elif n %}{{ (n / 1048576) | round(1) }} MB{% endif %}{% endmacro %}
+{% macro fsize(n) %}{% if n and n >= 1073741824 %}{{ (n / 1073741824) | round(2) }} GB{% elif n and n >= 1048576 %}{{ (n / 1048576) | round(1) }} MB{% elif n and n >= 1024 %}{{ (n / 1024) | round | int }} KB{% elif n %}{{ n }} B{% endif %}{% endmacro %}
 <!-- Header -->
 <div class="flex gap-4 mb-5">
   {% if entry.cover_path %}

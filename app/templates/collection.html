@@ -2,7 +2,7 @@
 {% block title %}Collection — ROM Finder{% endblock %}
 {% block live_scope %}library wanted{% endblock %}
 {% block content %}
-{% macro fsize(n) %}{% if n and n >= 1073741824 %}{{ (n / 1073741824) | round(2) }} GB{% elif n %}{{ (n / 1048576) | round(1) }} MB{% endif %}{% endmacro %}
+{% macro fsize(n) %}{% if n and n >= 1073741824 %}{{ (n / 1073741824) | round(2) }} GB{% elif n and n >= 1048576 %}{{ (n / 1048576) | round(1) }} MB{% elif n and n >= 1024 %}{{ (n / 1024) | round | int }} KB{% elif n %}{{ n }} B{% endif %}{% endmacro %}
 <div class="p-4 sm:p-6 max-w-7xl mx-auto">
 
     <!-- Header -->

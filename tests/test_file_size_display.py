@@ -25,6 +25,21 @@ def test_detail_panel_shows_file_size(client):
     assert "12.0 MB" in html           # formatted with the same fsize() as the cards
 
 
+def test_small_rom_shows_kb_not_zero_mb(client):
+    """A tiny NES ROM (tens of KB) must read as 'NN KB', not round to '0.0 MB'."""
+    with Session(engine) as s:
+        e = LibraryEntry(game_title="Duck Hunt", system="NES", file_name="dh.nes",
+                         file_path="/roms/NES/dh.nes", file_size=24592)  # ~24 KB
+        s.add(e)
+        s.commit()
+        s.refresh(e)
+        eid = e.id
+
+    html = client.get(f"/library/{eid}/detail").text
+    assert "24 KB" in html
+    assert "0.0 MB" not in html
+
+
 def test_detail_panel_shows_size_for_each_duplicate(client):
     """The 'Same content' list shows each copy's size so the user can pick which to
     remove (e.g. a compressed .zip vs the larger raw dump)."""
