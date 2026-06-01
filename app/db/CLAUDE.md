@@ -21,7 +21,7 @@ disc_id          — 4-char Wii title-ID-low from the disc header (migration 001
 ra_award         — own highest RA award tier (migration 0017): mastered|completed|beaten|beaten-softcore|""
 is_subset_rom    — this entry is itself an RA "Subset" copy (title/filename marker)
 subset_info      — JSON [{game_id,title,mastered}] of subsets whose accepted hash list contains this ROM's hash
-file_size        — ROM file size in bytes (migration 0018); enables the collection size sort; set on scan/rehash
+file_size        — ROM file size in bytes (migration 0018); enables the collection size sort + the detail-panel Size row; set on scan/rehash AND on download-approval (create_library_entry_from_download stats the file)
 added_at
 ```
 
@@ -160,7 +160,7 @@ A deliberately small data-access seam — **NOT** a general ORM wrapper. Functio
 Current functions (each existed in 3+ near-identical copies before extraction):
 - `wanted_by_ra_game_id(session, ra_game_id)` — the most-duplicated query (downloads ×3, api, hunter).
 - `mark_wanted_verified(session, ra_game_id)` — find wanted → set verified + touch `updated_at`; no-op when id is None/unmatched. Used by all three download-approval paths.
-- `create_library_entry_from_download(session, download, file_path, file_hash=None)` — the LibraryEntry construction copy-pasted into approve / approve-all / `_run_download`.
+- `create_library_entry_from_download(session, download, file_path, file_hash=None)` — the LibraryEntry construction copy-pasted into approve / approve-all / `_run_download`. Stats the on-disk file to set `file_size` so a fresh download/approval is sized immediately (not 0 until the next scan).
 - `unverified_library_entries(session)` — `file_hash IS NOT NULL AND ra_matched == False`; the `no_ra` set + the Phase 5 resumable-verify work set.
 - `library_pending_ra_check(session, stale_days, limit, exclude_systems=None)` — the resumable-verify work set. `exclude_systems` (a set of system names) drops platforms RA can't verify; the caller passes `ra_client.RA_UNSUPPORTED_SYSTEMS` so this module stays db-pure (no `app.services` import).
 

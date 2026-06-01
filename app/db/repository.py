@@ -80,6 +80,10 @@ def create_library_entry_from_download(
     `file_path` is the final on-disk path; `file_hash` overrides download.file_hash
     when the hash was computed in this pass (the _run_download path). Caller commits."""
     p = Path(file_path)
+    try:
+        file_size = p.stat().st_size   # so size sort + detail size work without a rescan
+    except OSError:
+        file_size = 0
     entry = LibraryEntry(
         game_title=download.game_title,
         system=download.system,
@@ -89,6 +93,7 @@ def create_library_entry_from_download(
         hash_verified=download.hash_verified,
         ra_game_id=download.ra_game_id,
         ra_matched=download.hash_verified,
+        file_size=file_size,
     )
     session.add(entry)
     return entry

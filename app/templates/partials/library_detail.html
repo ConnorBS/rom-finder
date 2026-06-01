@@ -1,3 +1,5 @@
+{# Mirror of collection.html's fsize so the panel matches the card/list size format. #}
+{% macro fsize(n) %}{% if n and n >= 1073741824 %}{{ (n / 1073741824) | round(2) }} GB{% elif n %}{{ (n / 1048576) | round(1) }} MB{% endif %}{% endmacro %}
 <!-- Header -->
 <div class="flex gap-4 mb-5">
   {% if entry.cover_path %}
@@ -45,6 +47,12 @@
     <span class="text-gray-500 w-20 flex-shrink-0">Filename</span>
     <span class="text-gray-300 font-mono break-all">{{ entry.file_name }}</span>
   </div>
+  {% if entry.file_size %}
+  <div class="flex gap-3">
+    <span class="text-gray-500 w-20 flex-shrink-0">Size</span>
+    <span class="text-gray-300">{{ fsize(entry.file_size) }}</span>
+  </div>
+  {% endif %}
   <div class="flex gap-3">
     <span class="text-gray-500 w-20 flex-shrink-0">Path</span>
     <span class="text-gray-400 font-mono break-all text-xs leading-relaxed">{{ entry.file_path }}</span>
@@ -115,7 +123,7 @@
     <div class="mb-1">
       <span class="text-gray-300 font-mono break-all">{{ m.file_name }}</span>
     </div>
-    <p class="text-gray-600 mb-1">{{ m.system }}{% if m.id == entry.id %} · <span class="text-gray-400">this entry</span>{% endif %}</p>
+    <p class="text-gray-600 mb-1">{{ m.system }}{% if m.file_size %} · {{ fsize(m.file_size) }}{% endif %}{% if m.id == entry.id %} · <span class="text-gray-400">this entry</span>{% endif %}</p>
     {% if m.file_hash %}<p class="text-gray-600 font-mono break-all leading-relaxed mb-2">{{ m.file_hash }}{% if m.ra_matched %} <span class="text-green-500">✓ RA</span>{% endif %}</p>{% endif %}
     <div class="flex gap-1.5">
       <button hx-post="/collection/library/{{ m.id }}/delete"
