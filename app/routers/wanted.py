@@ -5,7 +5,7 @@ from sqlmodel import Session, select, func
 from pathlib import Path
 from datetime import datetime
 
-from app.db.database import get_session
+from app.db.database import get_session, engine
 from app.db.models import AppSetting, WantedGame, HuntStatus, HuntAttempt, LibraryEntry
 from app.services import sources as source_registry
 from app.services import activity as activity_store
@@ -184,15 +184,18 @@ async def remove_wanted(game_id: int, session: Session = Depends(get_session)):
 async def wanted_sources(
     request: Request,
     game_id: int,
-    session: Session = Depends(get_session),
 ):
     """Return the source-search panel. Fetches RA hashes once, then renders one
     auto-loading section per enabled source so results trickle in in parallel."""
-    wanted = session.get(WantedGame, game_id)
-    if not wanted:
-        return HTMLResponse('<p class="text-red-400 text-xs">Not found.</p>')
+    # Read the wanted game, RA creds, and enabled sources in a short session and
+    # release it before the RA hash fetch — never hold a connection across an await.
+    with Session(engine) as session:
+        wanted = session.get(WantedGame, game_id)
+        if not wanted:
+            return HTMLResponse('<p class="text-red-400 text-xs">Not found.</p>')
+        ra = _get_ra_client(session)
+        enabled_srcs = source_registry.enabled_sources(_enabled_source_ids(session))
 
-    ra = _get_ra_client(session)
     rom_names: list[dict] = []
     error: str | None = None
 
@@ -226,8 +229,6 @@ async def wanted_sources(
             queries.append(variant)
             seen_q.add(variant)
 
-    enabled_ids = _enabled_source_ids(session)
-    enabled_srcs = source_registry.enabled_sources(enabled_ids)
     queries_param = "|".join(queries)
 
     applog.info("navigation", f"Source search opened: {wanted.game_title}", {
@@ -254,11 +255,14 @@ async def wanted_source_results(
     source_id: str,
     queries: str = Query(default=""),
     system: str = Query(default=""),
-    session: Session = Depends(get_session),
 ):
     """HTMX: search a single source for a wanted game. Fires in parallel for
     each source section via hx-trigger='load'."""
-    wanted = session.get(WantedGame, game_id)
+    # Read the wanted game in a short session and release it before the source
+    # search below — these sections fire in parallel per source, so holding a
+    # connection across each search await is exactly what starved the pool.
+    with Session(engine) as session:
+        wanted = session.get(WantedGame, game_id)
     src = source_registry.get(source_id)
     results: list[dict] = []
     error: str | None = None

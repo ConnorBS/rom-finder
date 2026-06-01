@@ -57,6 +57,8 @@ Endpoints that are HTMX targets return `HTMLResponse` with a snippet. Use `hx-ta
 ### Session usage
 Always `with Session(engine) as session:`. Never hold a session open across an `await` — open a new one after each async gap.
 
+**`Depends(get_session)` holds a pooled connection for the WHOLE request** — including any `await` inside it. So an async endpoint that does network I/O (source search, RA lookup, download) must NOT take `session = Depends(get_session)`. Instead read what it needs in a short `with Session(engine)` block, release it, then do the slow `await`s with no connection checked out (see `wanted_source_results`, `api_search`, `games.search/ra_search/ra_game_sources` — and `_fetch_cover` for the canonical read-then-network-then-write shape). The fix for a real prod outage: these search/hunt endpoints fired in parallel each held a connection while httpx waited ~20s on Cloudflare-blocked mirrors, draining the pool → `QueuePool limit ... connection timed out` 500s on every other page.
+
 ### Avoid blocking the event loop
 Synchronous file I/O (hashing) → `await loop.run_in_executor(None, fn, *args)`. Network calls use httpx async client.
 

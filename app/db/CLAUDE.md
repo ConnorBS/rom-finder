@@ -139,6 +139,9 @@ MIGRATIONS = [..., ("0006_my_change", _m_0006_my_change)]
 ### SQLite pragmas
 `database.py` sets `journal_mode=WAL`, `busy_timeout=5000`, `synchronous=NORMAL` on every connect (via a `connect` event listener, SQLite-only). This lets the scheduler, a live download, and a bulk verify write concurrently without `database is locked`. WAL produces `*.db-wal` / `*.db-shm` sidecar files (already gitignored).
 
+### Connection pool
+The engine is configured `pool_size=20, max_overflow=40, pool_timeout=30, pool_pre_ping=True`. The pool only stays healthy because **no route holds a pooled connection across a network `await`** — search/hunt endpoints read what they need in a short session, release it, then do their httpx calls (see the `Depends(get_session)` pitfall note in `app/CLAUDE.md`). Bumping the pool is headroom, NOT the fix; a connection held across a slow await still starves it. These are async routes calling sync `session.exec()` in the single event-loop thread, so DB access is effectively single-threaded — a connection is "stuck" only while its coroutine is suspended at an await holding it.
+
 ---
 
 ## Repository (`repository.py`)

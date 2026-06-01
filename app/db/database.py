@@ -3,7 +3,22 @@ from sqlalchemy import event
 from app.config import get_settings
 
 settings = get_settings()
-engine = create_engine(settings.db_url, echo=settings.debug)
+
+# Pool sized for many concurrent searches/downloads. The rule that keeps it from
+# starving (the QueuePool "connection timed out" 500s): a pooled connection is
+# only ever held for actual DB work, NEVER across a network await. The search /
+# hunt endpoints read what they need in a short `with Session(engine)` block,
+# release it, then do their slow httpx calls (source search, RA lookup) with no
+# connection checked out — so suspended request coroutines hold zero connections.
+# pool_pre_ping discards a connection that went stale between checkouts.
+engine = create_engine(
+    settings.db_url,
+    echo=settings.debug,
+    pool_size=20,
+    max_overflow=40,
+    pool_timeout=30,
+    pool_pre_ping=True,
+)
 
 
 # WAL + busy_timeout let the scheduler, live downloads, and bulk verify write

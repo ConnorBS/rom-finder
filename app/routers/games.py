@@ -4,7 +4,7 @@ from fastapi.templating import Jinja2Templates
 from pathlib import Path
 from sqlmodel import Session
 
-from app.db.database import get_session
+from app.db.database import get_session, engine
 from app.db.models import AppSetting
 from app.services import sources as source_registry
 from app.services.ra_client import SYSTEMS, RAClient
@@ -76,15 +76,16 @@ async def search(
     q: str = Query(default=""),
     system: str = Query(default=""),
     source_id: str = Query(default=""),
-    session: Session = Depends(get_session),
 ):
     """HTMX: search enabled sources and return a results partial."""
     results = []
     error = None
 
     if q:
-        # Determine which sources to query
-        enabled_ids = _enabled_source_ids(session)
+        # Read enabled sources in a short session and release it before the slow
+        # source searches below — never hold a pooled connection across an await.
+        with Session(engine) as session:
+            enabled_ids = _enabled_source_ids(session)
         if source_id and source_id in enabled_ids:
             srcs = [source_registry.get(source_id)]
         else:
@@ -167,13 +168,14 @@ async def ra_search(
     system_id: str = Query(default=""),
     q: str = Query(default=""),
     mode: str = Query(default="lookup"),
-    session: Session = Depends(get_session),
 ):
     """HTMX: search RA game list for a system by title.
     mode='add'    → 'Add to Wanted' button (Wanted page)
     mode='lookup' → 'Find Sources' button (default)
     """
-    ra = _get_ra_client(session)
+    # Read RA creds in a short session, then release it before the RA call.
+    with Session(engine) as session:
+        ra = _get_ra_client(session)
     if not ra:
         return HTMLResponse(
             '<p class="text-yellow-500 text-sm">Add your RetroAchievements credentials in '
@@ -216,10 +218,13 @@ async def ra_game_sources(
     game_id: int,
     game_title: str = Query(default=""),
     system_name: str = Query(default=""),
-    session: Session = Depends(get_session),
 ):
     """HTMX: fetch RA hashes, then search enabled sources for matching collections."""
-    ra = _get_ra_client(session)
+    # Read RA creds + enabled sources in a short session and release it before the
+    # RA hash fetch + per-source searches below (no connection held across awaits).
+    with Session(engine) as session:
+        ra = _get_ra_client(session)
+        enabled_ids = _enabled_source_ids(session) if ra else set()
     if not ra:
         return HTMLResponse('<p class="text-red-400 text-sm">RA not configured.</p>')
 
@@ -255,7 +260,6 @@ async def ra_game_sources(
                 seen_queries.add(variant)
 
         seen_ids: set[str] = set()
-        enabled_ids = _enabled_source_ids(session)
         # Keep only results that actually name the game, so the source list
         # matches what the auto-hunt would accept (a loose site search surfaces
         # sibling titles — a different 'Pajama Sam' game).

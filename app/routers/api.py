@@ -10,7 +10,7 @@ from sqlmodel import Session, select
 from sqlalchemy import func, select as sa_select
 from typing import Optional
 
-from app.db.database import get_session
+from app.db.database import get_session, engine
 from app.db.models import (
     AppSetting, WantedGame, HuntStatus,
     Download, DownloadStatus, LibraryEntry, AppLog, InstalledExtension,
@@ -259,13 +259,16 @@ async def api_list_wanted(session: Session = Depends(get_session)):
 async def api_search(
     q: str,
     system: str = "",
-    session: Session = Depends(get_session),
 ):
     if not q:
         return []
 
     system = canonical_system(system, None)  # fix doubled scraped system ("WiiWii" -> "Wii")
-    enabled_ids = _enabled_source_ids(session)
+    # Read enabled sources in a short session and release it BEFORE the slow
+    # per-source searches — holding the connection across these awaits is what
+    # starved the pool. The searches below need no DB connection.
+    with Session(engine) as session:
+        enabled_ids = _enabled_source_ids(session)
     results = []
     for src in source_registry.enabled_sources(enabled_ids):
         try:
