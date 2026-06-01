@@ -86,10 +86,14 @@ def _build_collection(session: Session) -> list[dict]:
         points_by_game[a.game_id] = points_by_game.get(a.game_id, 0) + (a.points or 0)
 
     def _meta(ra_game_id):
+        # (pct_complete, total base achievements, earned points, earned base achievements).
+        # max_possible/num_awarded are the BASE (core) set — RA files subsets under their
+        # own game ids, so the matched id's counts are inherently base.
         p = prog_by_game.get(ra_game_id) if ra_game_id else None
         return (p.pct_complete if p else 0.0,
                 p.max_possible if p else 0,
-                points_by_game.get(ra_game_id, 0))
+                points_by_game.get(ra_game_id, 0),
+                p.num_awarded if p else 0)
 
     lib_by_ra: dict[int, LibraryEntry] = {}
     lib_by_key: dict[tuple, LibraryEntry] = {}
@@ -139,6 +143,7 @@ def _build_collection(session: Session) -> list[dict]:
             "progress": _meta(w.ra_game_id)[0],
             "achievements": _meta(w.ra_game_id)[1],
             "points": _meta(w.ra_game_id)[2],
+            "achievements_earned": _meta(w.ra_game_id)[3],
             "unsupported": is_ra_unsupported(w.system),
             "added_at": w.added_at,
         })
@@ -171,6 +176,7 @@ def _build_collection(session: Session) -> list[dict]:
                 "progress": _meta(e.ra_game_id)[0],
                 "achievements": _meta(e.ra_game_id)[1],
                 "points": _meta(e.ra_game_id)[2],
+                "achievements_earned": _meta(e.ra_game_id)[3],
                 "unsupported": is_ra_unsupported(e.system),
                 "added_at": e.added_at,
             })
