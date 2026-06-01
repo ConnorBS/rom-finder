@@ -37,6 +37,7 @@ docker run -d \
   --label "net.unraid.docker.icon=https://github.com/ConnorBS/rom-finder/blob/main/rom-finder-extension/icons/icon128.png?raw=true" \
   --label "net.unraid.docker.managed=dockerman" \
   --label "net.unraid.docker.webui=http://[IP]:[PORT:19846]/" \
+  --label "com.centurylinklabs.watchtower.enable=true" \
   "$IMAGE"
 
 echo "[$(date)] Redeploy complete. Tag: $TAG"

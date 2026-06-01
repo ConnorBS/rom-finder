@@ -20,7 +20,7 @@ Every ROM kept must be a hash-verified, RA-accepted dump — not just any ROM th
 | Backend | Python 3.11, FastAPI (async) |
 | Frontend | Jinja2 templates, HTMX 2, Tailwind CSS (CDN) |
 | Database | SQLite via SQLModel (sync sessions, async routes) |
-| Deploy | Docker on Unraid, GitHub Actions CI/CD → webhook triggers pull+restart |
+| Deploy | Docker on Unraid, GitHub Actions CI/CD → GHCR; Watchtower auto-pulls (see `deploy/`) |
 | HTTP client | httpx (async) |
 | Headless browser | Playwright (Chromium) — bundled in the Docker image for the Vimm extension's JS-challenge bypass |
 
@@ -31,10 +31,11 @@ Every ROM kept must be a hash-verified, RA-accepted dump — not just any ROM th
 ## Deployment
 
 - Source: `https://github.com/ConnorBS/rom-finder`
-- Docker image built by GitHub Actions on push to `main`
+- Docker image built by GitHub Actions on push to `main` → pushes `ghcr.io/connorbs/rom-finder:latest` (git SHA baked in as `APP_VERSION`)
 - Unraid at `192.168.0.100`; app on port `19846`
 - Appdata (DB + covers): `/mnt/ssd_cache/appdata/rom-finder/`
-- Deploy verification: check `rom-finder-webhook` container logs or image revision label
+- **Auto-redeploy: Watchtower** (LAN-local, polls GHCR, label-scoped to rom-finder) — see `deploy/README.md` + `deploy/docker-compose.watchtower.yml`. Replaced the GH→public-webhook path, which failed both ways (502 public route + `docker.sock` permission in the non-root webhook container). The `deploy`/webhook job is kept but deprecated.
+- Deploy verification: `curl /api/status` → `version` == pushed git SHA (also on the Settings page)
 
 ---
 

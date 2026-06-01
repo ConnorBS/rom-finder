@@ -1,0 +1,42 @@
+# Auto-deploy rom-finder on Unraid via Watchtower.
+#
+# WHY: the previous path was GitHub Actions → a PUBLIC webhook URL → the
+# `rom-finder-webhook` container → redeploy.sh. It failed on BOTH ends:
+#   1. the public route returned HTTP 502 (GitHub's cloud runner can't reach the LAN
+#      except through that tunnel/proxy, which was down), and
+#   2. redeploy.sh died with "permission denied … /var/run/docker.sock" because the
+#      webhook container runs as the non-root `webhook` user.
+#
+# Watchtower removes the whole fragile path: it runs ON the LAN as root, polls GHCR
+# itself, and pulls + restarts the image — no public route, no GH→LAN, no webhook
+# socket-permission problem. After `git push` → CI builds & pushes
+# `ghcr.io/connorbs/rom-finder:latest` → Watchtower redeploys within the poll window.
+#
+# It ONLY touches containers labelled `com.centurylinklabs.watchtower.enable=true`
+# (WATCHTOWER_LABEL_ENABLE), so the *arr stack and everything else is left alone.
+#
+# Setup on Unraid:
+#   1. Add this container (Repository: containrrr/watchtower:latest) with the
+#      docker.sock mount + env below (Unraid: Add Container → fill these in, or
+#      `docker compose -f deploy/docker-compose.watchtower.yml up -d`).
+#   2. On the rom-finder container, add the label:
+#        com.centurylinklabs.watchtower.enable=true
+#      (deploy/redeploy.sh already sets this label on the container it creates.)
+#   3. If ghcr.io/connorbs/rom-finder is a PRIVATE package, also mount the host's
+#      docker creds (uncomment the config.json line) so Watchtower can pull. If it's
+#      public, no creds are needed.
+services:
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Private GHCR only — the host already has these creds (it pulls manually):
+      # - /root/.docker/config.json:/config.json:ro
+    environment:
+      TZ: America/New_York
+      WATCHTOWER_LABEL_ENABLE: "true"   # only update labelled containers (not the whole stack)
+      WATCHTOWER_CLEANUP: "true"        # prune the old image after each update
+      WATCHTOWER_POLL_INTERVAL: "300"   # poll GHCR every 5 minutes
+      WATCHTOWER_INCLUDE_RESTARTING: "true"
