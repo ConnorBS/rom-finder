@@ -60,12 +60,22 @@ _VERSION_PARENS = re.compile(
 
 
 def clean_title(title: str) -> str:
-    """Return a title stripped of RA suffixes, the [Subset …] tag, and platform
-    disambiguation (incl. slash combos like "(Genesis/Mega Drive)")."""
+    """Title stripped of RA suffixes and platform disambiguation (incl. slash combos
+    like "(Genesis/Mega Drive)"). **KEEPS the [Subset …] tag** — this is the
+    normalized form used for the STORED/displayed title (e.g. `api_add_wanted`), so a
+    subset keeps its identity ("Super Mario 64 [Subset - Coin Collector]"). For source
+    search / relevance use `search_title()`, which additionally drops the subset tag."""
     t = _RA_SUFFIXES.sub('', title)
-    t = _SUBSET_TAG.sub('', t)
     t = _PLATFORM_PARENS.sub('', t)
     return re.sub(r'  +', ' ', t).strip()
+
+
+def search_title(title: str) -> str:
+    """Title reduced for SOURCE SEARCH + relevance: `clean_title` plus the [Subset …]
+    tag stripped — a hash-only subset reuses the base game's ROM, so we search for and
+    match against the base game. Distinct from `clean_title`, which keeps the marker
+    so the stored title (and duplicates/mastery, which key off it) stay intact."""
+    return clean_title(_SUBSET_TAG.sub('', title))
 
 
 def search_variations(title: str) -> list[str]:
@@ -77,7 +87,9 @@ def search_variations(title: str) -> list[str]:
 
     Duplicates and blank strings are removed.
     """
-    clean = clean_title(title)
+    # Search the base game even for a subset (it reuses the base ROM), so strip the
+    # [Subset …] tag here too.
+    clean = search_title(title)
 
     no_tags = _VERSION_PARENS.sub('', _REGION_PARENS.sub('', clean)).strip()
     # Also collapse leftover double-spaces

@@ -11,7 +11,7 @@ from app.services import sources as source_registry
 from app.services import activity as activity_store
 from app.services.ra_client import SYSTEMS, RAClient
 from app.services.title_utils import (
-    clean_title, search_variations, stem_from_rom_name, significant_terms, title_is_relevant,
+    search_title, search_variations, stem_from_rom_name, significant_terms, title_is_relevant,
 )
 from app.services import logger as applog
 
@@ -275,9 +275,10 @@ async def wanted_source_results(
         # Only show results that actually name the wanted game, so the panel
         # matches what the auto-hunt would accept ("search == hunt") — a loose
         # site search surfaces sibling titles (a different 'Pajama Sam' game).
-        # Clean the title first (drop the platform suffix / "[Subset …]" tag) so a
-        # game like "Ristar (Genesis/Mega Drive)" matches a plain "Ristar" result.
-        want_terms = significant_terms(clean_title(wanted.game_title)) if wanted else set()
+        # Use the SEARCH title (drops the platform suffix AND "[Subset …]" tag) so a
+        # game like "Ristar (Genesis/Mega Drive)" matches a plain "Ristar" result and
+        # a subset matches its base-game ROM.
+        want_terms = significant_terms(search_title(wanted.game_title)) if wanted else set()
 
         for query in query_list:
             try:

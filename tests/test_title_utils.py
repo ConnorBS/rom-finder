@@ -1,7 +1,8 @@
 """Tests for app/services/title_utils.py"""
 import pytest
 from app.services.title_utils import (
-    clean_title, search_variations, stem_from_rom_name, significant_terms, title_is_relevant,
+    clean_title, search_title, search_variations, stem_from_rom_name,
+    significant_terms, title_is_relevant,
 )
 
 
@@ -20,9 +21,17 @@ def test_clean_title_strips_single_platform():
     assert clean_title("Some Game (PlayStation 2)") == "Some Game"
 
 
-def test_clean_title_strips_subset_tag():
-    assert clean_title("Super Mario 64 [Subset - Glitch Showcase]") == "Super Mario 64"
-    assert clean_title("Sonic Adventure 2 (Subset - Foo)") == "Sonic Adventure 2"
+def test_clean_title_KEEPS_subset_tag():
+    # Regression guard: clean_title is the STORED/displayed title, so the subset
+    # marker must survive (api_add_wanted stores clean_title) — duplicates/mastery
+    # key off it. Only search_title drops it.
+    assert clean_title("Super Mario 64 [Subset - Coin Collector]") == "Super Mario 64 [Subset - Coin Collector]"
+
+
+def test_search_title_strips_subset_and_platform():
+    assert search_title("Super Mario 64 [Subset - Coin Collector]") == "Super Mario 64"
+    assert search_title("Sonic Adventure 2 (Subset - Foo)") == "Sonic Adventure 2"
+    assert search_title("Ristar (Genesis/Mega Drive)") == "Ristar"
 
 
 def test_clean_title_preserves_real_subtitle():
@@ -30,16 +39,16 @@ def test_clean_title_preserves_real_subtitle():
     assert clean_title("Castlevania: Symphony of the Night") == "Castlevania: Symphony of the Night"
 
 
-def test_clean_title_restores_relevance_for_platform_suffixed_title():
-    terms = significant_terms(clean_title("Ristar (Genesis/Mega Drive)"))
+def test_search_title_restores_relevance_for_platform_suffixed_title():
+    terms = significant_terms(search_title("Ristar (Genesis/Mega Drive)"))
     assert terms == {"ristar"}
     assert title_is_relevant("Ristar", terms)
     # …and a whole-system romset is still NOT relevant.
     assert not title_is_relevant("Sega - Mega Drive - Genesis (Parent-Clone) [1G1R]", terms)
 
 
-def test_clean_title_restores_relevance_for_subset_base():
-    terms = significant_terms(clean_title("Super Mario 64 [Subset - Glitch Showcase]"))
+def test_search_title_restores_relevance_for_subset_base():
+    terms = significant_terms(search_title("Super Mario 64 [Subset - Glitch Showcase]"))
     assert title_is_relevant("Super Mario 64 (USA)", terms)
 
 

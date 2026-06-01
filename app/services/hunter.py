@@ -35,7 +35,7 @@ from app.services import sources as source_registry
 from app.services.hasher import extract_rom_from_zip, hash_rom
 from app.services.ra_client import DEFAULT_FOLDER_MAP, RAClient
 from app.services.rahasher import compute_ra_hash, ra_hash_or_fallback
-from app.services.title_utils import clean_title, search_variations, significant_terms, title_is_relevant
+from app.services.title_utils import search_title, search_variations, significant_terms, title_is_relevant
 from app.services import settings as app_settings
 
 
@@ -260,11 +260,12 @@ async def auto_hunt(wanted_id: int) -> None:
         # search). Unrelated hits are still collected and later dropped by
         # _file_score == 0, so a generically-titled archive.org collection that
         # actually holds the file isn't lost.
-        # Derive match terms from the CLEANED title — a platform suffix
+        # Derive match terms from the SEARCH title — a platform suffix
         # ("Ristar (Genesis/Mega Drive)") or "[Subset …]" tag otherwise poisons the
         # term set so the real ROM is judged irrelevant and a whole-system romset
-        # (which happens to contain "genesis/mega/drive") outscores it.
-        title_terms = _significant_terms(clean_title(game_title))
+        # (which happens to contain "genesis/mega/drive") outscores it. search_title
+        # drops both (clean_title keeps [Subset] for the stored title).
+        title_terms = _significant_terms(search_title(game_title))
         search_results: list[tuple] = []  # (src, result_dict)
         for src in srcs:
             src_hits: list[tuple] = []
