@@ -71,10 +71,12 @@ Wired as the scheduler **`verify`** task (`sched_verify_*`, default 05:00) and t
 `sync_library_awards(session)` stamps `LibraryEntry.ra_award` (mastered|completed|beaten|beaten-softcore|"") from the dashboard mirror — zero RA calls, full rebuild. **"mastered" = hardcore 100%** (`highest_award_kind == "mastered"`); subsets do NOT gate it. A subset copy usually shares the base game's hash (so its `ra_game_id` points at the base), so subset entries (`duplicates._is_subset`) resolve their award by **normalized title first** (`base_title` strips the `[Subset …]`/`(Subset …)` suffix), falling back to `ra_game_id`.
 
 ### Goal auto-completion (`goals.py`) — LOCAL
-`evaluate_goals(session)` flips every active, RA-linked, non-custom `Goal` to completed when
-the local RA mirror (`ra_game_progress`) satisfies it — zero RA calls. `award_satisfies` is
-**hardcore-only**: `master` ⇐ `highest_award_kind == "mastered"`, `beaten` ⇐ `in ("beaten","mastered")`;
-softcore awards (`beaten-softcore`/`completed`) never count, and `custom` never auto-completes.
+`evaluate_goals(session)` flips every active, non-custom `Goal` to completed when the local RA
+mirror satisfies it — zero RA calls. **Hardcore-only** across the board: `master` ⇐
+`highest_award_kind == "mastered"`, `beaten` ⇐ `in ("beaten","mastered")` (both from
+`ra_game_progress` via `award_satisfies`), and `achievement` ⇐ a **hardcore** `ra_achievement`
+row exists for the goal's `achievement_id`. Softcore awards/unlocks never count; `custom` never
+auto-completes.
 Stamps `auto=True` + `completed_at`; idempotent (already-completed goals aren't re-flipped).
 Called from `ra_dashboard.refresh()` (after `sync_library_awards`/`recompute_subset_flags`) and
 on every `/goals` page load — the only two moments the mirror can change. Deliberately NOT a

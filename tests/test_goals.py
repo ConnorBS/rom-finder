@@ -9,8 +9,10 @@ Covers the two halves of the feature:
 import pytest
 from sqlmodel import Session, select
 
+from datetime import datetime
+
 from app.db.database import engine
-from app.db.models import Goal, GoalObjective, GoalStatus, RAGameProgress
+from app.db.models import Goal, GoalObjective, GoalStatus, RAAchievement, RAGameProgress
 from app.services.goals import evaluate_goals, award_satisfies
 
 
@@ -90,6 +92,83 @@ def test_evaluate_is_idempotent(fresh_engine):
         assert evaluate_goals(s)["completed"] == 1
     with Session(engine) as s:
         assert evaluate_goals(s)["completed"] == 0  # already done, nothing new to flip
+
+
+def test_evaluate_achievement_goal_hardcore_only(fresh_engine):
+    with Session(engine) as s:
+        # achievement 555 earned in SOFTCORE only — must NOT satisfy the goal
+        s.add(RAAchievement(achievement_id=555, game_id=42, earned_at=datetime.utcnow(), hardcore=False))
+        s.commit()
+        g = Goal(game_title="Game", ra_game_id=42, achievement_id=555,
+                 objective=GoalObjective.achievement, custom_text="Beat the boss")
+        s.add(g)
+        s.commit()
+        s.refresh(g)
+        gid = g.id
+
+    with Session(engine) as s:
+        assert evaluate_goals(s)["completed"] == 0
+        assert s.get(Goal, gid).status == GoalStatus.active
+
+    # Now earn it in hardcore → the goal completes.
+    with Session(engine) as s:
+        s.add(RAAchievement(achievement_id=555, game_id=42, earned_at=datetime.utcnow(), hardcore=True))
+        s.commit()
+    with Session(engine) as s:
+        assert evaluate_goals(s)["completed"] == 1
+        g = s.get(Goal, gid)
+        assert g.status == GoalStatus.completed and g.auto is True
+
+
+# --- extension API ---------------------------------------------------------
+
+def test_api_goal_achievement_add_dedup_and_status(client):
+    payload = {
+        "ra_game_id": 42, "game_title": "Some Game", "system": "", "system_id": 12,
+        "objective": "achievement", "achievement_id": 555,
+        "achievement_title": "Beat the boss", "event_name": "Collectathon",
+        "deadline": "2026-07-18",
+    }
+    r = client.post("/api/goal", json=payload)
+    assert r.status_code == 200 and r.json()["status"] == "added"
+
+    # Re-post the same achievement → exists, not a duplicate row.
+    r = client.post("/api/goal", json=payload)
+    assert r.json()["status"] == "exists"
+
+    with Session(engine) as s:
+        goals = s.exec(select(Goal)).all()
+        assert len(goals) == 1
+        g = goals[0]
+        assert g.objective == "achievement" and g.achievement_id == 555
+        assert g.custom_text == "Beat the boss"
+        assert g.system == "PlayStation"  # resolved from system_id=12 via canonical_system
+        assert g.deadline.month == 7 and g.deadline.day == 18
+
+    st = client.get("/api/goal-status?ra_game_id=42&achievement_id=555").json()
+    assert st["goal"] is True and st["completed"] is False and st["objective"] == "achievement"
+
+    # A game-level query (no achievement_id) must NOT match the achievement goal.
+    st2 = client.get("/api/goal-status?ra_game_id=42").json()
+    assert st2["goal"] is False
+
+
+def test_api_goal_requires_achievement_id(client):
+    r = client.post("/api/goal", json={
+        "ra_game_id": 1, "game_title": "G", "objective": "achievement",
+    })
+    assert r.json()["status"] == "error"
+
+
+def test_api_goal_game_level(client):
+    r = client.post("/api/goal", json={
+        "ra_game_id": 99, "game_title": "Ape Escape", "system_id": 12,
+        "objective": "master", "deadline": "2026-07-31",
+    })
+    assert r.json()["status"] == "added"
+    with Session(engine) as s:
+        g = s.exec(select(Goal).where(Goal.ra_game_id == 99)).first()
+        assert g.objective == "master" and g.achievement_id is None
 
 
 # --- router CRUD -----------------------------------------------------------

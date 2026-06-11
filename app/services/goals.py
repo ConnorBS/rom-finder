@@ -9,7 +9,7 @@ from datetime import datetime
 
 from sqlmodel import Session, select
 
-from app.db.models import Goal, GoalObjective, GoalStatus, RAGameProgress
+from app.db.models import Goal, GoalObjective, GoalStatus, RAAchievement, RAGameProgress
 from app.services import logger as applog
 
 
@@ -20,24 +20,35 @@ def award_satisfies(objective: str, kind: str) -> bool:
         return kind == "mastered"
     if objective == GoalObjective.beaten:
         return kind in ("beaten", "mastered")
-    return False  # custom never auto-completes
+    return False  # custom / achievement use a different signal (see evaluate_goals)
 
 
 def evaluate_goals(session: Session) -> dict:
-    """Flip active, RA-linked, non-custom goals to completed when the local RA mirror
-    satisfies them. LOCAL (no RA calls). Returns {"completed": N} newly flipped."""
+    """Flip active, auto-trackable goals to completed when the local RA mirror satisfies
+    them — LOCAL (no RA calls). master/beaten read the per-game award tier; achievement
+    goals are done once the achievement is unlocked in HARDCORE. Custom never auto-flips.
+    Returns {"completed": N} newly flipped."""
     rows = {r.game_id: r for r in session.exec(select(RAGameProgress)).all()}
+    # Hardcore-earned achievement ids (the mirror dedupes on (achievement_id, hardcore)).
+    earned_hc = {
+        a.achievement_id
+        for a in session.exec(select(RAAchievement).where(RAAchievement.hardcore == True)).all()  # noqa: E712
+    }
     goals = session.exec(
         select(Goal).where(
             Goal.status == GoalStatus.active,
             Goal.objective != GoalObjective.custom,
-            Goal.ra_game_id != None,  # noqa: E711
         )
     ).all()
     flipped = 0
     for g in goals:
-        row = rows.get(g.ra_game_id)
-        if row and award_satisfies(g.objective, row.highest_award_kind):
+        done = False
+        if g.objective == GoalObjective.achievement:
+            done = g.achievement_id is not None and g.achievement_id in earned_hc
+        elif g.ra_game_id is not None:
+            row = rows.get(g.ra_game_id)
+            done = bool(row and award_satisfies(g.objective, row.highest_award_kind))
+        if done:
             g.status = GoalStatus.completed
             g.auto = True
             g.completed_at = g.updated_at = datetime.utcnow()

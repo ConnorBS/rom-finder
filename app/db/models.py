@@ -71,6 +71,7 @@ class WantedGame(SQLModel, table=True):
 class GoalObjective(str, Enum):
     master = "master"    # satisfied when RAGameProgress.highest_award_kind == "mastered"
     beaten = "beaten"    # satisfied when highest_award_kind in ("beaten", "mastered") — hardcore only
+    achievement = "achievement"  # satisfied when achievement_id is unlocked in hardcore (ra_achievement)
     custom = "custom"    # freeform objective (e.g. "finish level 5"); marked done by hand
 
 
@@ -89,9 +90,10 @@ class Goal(SQLModel, table=True):
     game_title: str
     system: str = ""
     ra_game_id: Optional[int] = Field(default=None, index=True)  # None for custom/non-RA goals
+    achievement_id: Optional[int] = Field(default=None, index=True)  # set for objective=achievement
     cover_path: str = ""             # "covers/{ra_game_id}.png" (reuses any cover already on disk)
     objective: str = GoalObjective.beaten
-    custom_text: str = ""            # freeform label (e.g. "finish level 5"); custom objectives only
+    custom_text: str = ""            # custom: freeform label ("finish level 5"); achievement: the achievement's title
     event_name: str = Field(default="", index=True)   # "" = ungrouped
     deadline: Optional[datetime] = None   # midnight UTC of target day; None = no deadline
     status: str = GoalStatus.active

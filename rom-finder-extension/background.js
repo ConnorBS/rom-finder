@@ -11,13 +11,17 @@
  */
 
 const GAME_PATH_RE = /\/game\/\d+/;
+const ACH_PATH_RE = /\/achievement\/\d+/;
 
 chrome.webNavigation.onHistoryStateUpdated.addListener(
   (details) => {
-    if (!GAME_PATH_RE.test(details.url)) return;
+    let file = null;
+    if (GAME_PATH_RE.test(details.url)) file = 'content.js';
+    else if (ACH_PATH_RE.test(details.url)) file = 'achievement.js';
+    if (!file) return;
     chrome.scripting.executeScript({
       target: { tabId: details.tabId, frameId: details.frameId },
-      files: ['content.js'],
+      files: [file],
     });
   },
   { url: [{ hostEquals: 'retroachievements.org' }] }

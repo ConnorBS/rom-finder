@@ -19,6 +19,7 @@
         <div class="absolute top-2 left-2 bg-gray-900/85 border border-gray-700 rounded-full px-2 py-0.5 text-xs">
             {% if goal.objective == 'master' %}<span class="text-yellow-400">🏅 Master</span>
             {% elif goal.objective == 'beaten' %}<span class="text-indigo-300">🏆 Beat</span>
+            {% elif goal.objective == 'achievement' %}<span class="text-pink-300">🎯 Achievement</span>
             {% else %}<span class="text-gray-300">✎ Custom</span>{% endif %}
         </div>
 
@@ -49,12 +50,13 @@
         <p class="text-gray-200 text-xs font-medium leading-tight line-clamp-2" title="{{ goal.game_title }}">{{ goal.game_title }}</p>
         <p class="text-gray-600 text-xs truncate">{{ goal.system or '—' }}</p>
 
-        {% if goal.objective == 'custom' and goal.custom_text %}
-        <p class="text-gray-400 text-xs italic leading-tight">“{{ goal.custom_text }}”</p>
+        {% if goal.objective in ('custom', 'achievement') and goal.custom_text %}
+        <p class="text-gray-400 text-xs italic leading-tight" title="{{ goal.custom_text }}">
+            {% if goal.objective == 'achievement' %}🎯 {% endif %}“{{ goal.custom_text }}”</p>
         {% endif %}
 
-        <!-- Progress (RA goals with a mirror row) -->
-        {% if progress %}
+        <!-- Progress (master/beaten goals, from the game's mirror row) -->
+        {% if progress and goal.objective in ('master', 'beaten') %}
         <div class="mt-0.5">
             <div class="flex items-center justify-between text-xs mb-0.5">
                 <span class="{% if progress.num_awarded %}text-yellow-500{% else %}text-gray-600{% endif %}">🏆 {{ progress.num_awarded }}/{{ progress.max_possible }}</span>
