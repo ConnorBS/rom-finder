@@ -92,6 +92,20 @@ Called from `ra_dashboard.refresh()` (after `sync_library_awards`/`recompute_sub
 on every `/goals` page load — the only two moments the mirror can change. Deliberately NOT a
 scheduler task (the mirror is manual-refresh only).
 
+### Event import + nightly sync (`events.py`)
+`sync_event(game_id, …)` imports every achievement of an RA event/game hub as `achievement`
+goals in **ONE** `API_GetGameExtended` call (never holds a DB session across the await). It skips
+**placeholder tiles** (BadgeName `00000` → empty badge_url), de-dups against existing goals, and —
+when `include_completed` is False — skips achievements already earned in hardcore. It records/refreshes
+a `GoalEvent` (`auto_sync=True`) and runs `evaluate_goals` so imported-as-already-earned ones flip to
+completed. `build_event_goals` is the pure-DB core (reused by import + sync); `parse_event_ref` pulls
+the id from a pasted URL/`/game/N`/`/event/N`/bare number. `sync_all_auto()` is the **nightly** pass
+(scheduler `eventsync` task): one call per auto-sync event (globally rate-limited to 2 req/s), adding
+any newly-published achievements — that's how AotW/random-roll events grow over time. Stores the
+achievement's own RA `points` per goal (NB: this is the achievement's points, **not** the event's
+own point value, which the V1 API doesn't expose). `routers/goals._refresh_goal_art` re-pulls badges
+(one call per distinct game) + box art on demand, also rate-limited.
+
 **Achievement-goal enrichment** (`routers/goals._enrich_achievement_goal`, background): on add, an
 achievement goal is enriched from `RAClient.get_achievements(game_id)` — canonical title
 (`custom_text`), `achievement_desc`, and the **badge image** stored as an absolute `cover_path`
@@ -195,6 +209,7 @@ Three daily tasks configured via `/scheduler`:
 | **Library scan** | Walk `download_dir` → insert new ROMs → hash → fetch cover → RA verify |
 | **Hash check** | Backfill `hashed_at`; clear stale hashes (mtime > hashed_at); hash un-hashed entries |
 | **RA autodiscover** | `get_game_list()` per tracked system; add games with new achievement sets to Wanted |
+| **Event sync** (`eventsync`, ~05:30) | Re-check each auto-sync `GoalEvent` for newly-added achievements (`events.sync_all_auto`); one RA call per event |
 
 `scheduler_loop()` wakes every 60s, checks `_should_run()` per enabled task against configured local time. Started as `asyncio.create_task()` in `lifespan`.
 

@@ -286,6 +286,15 @@ async def run_verify() -> dict:
     return result
 
 
+async def run_event_sync() -> dict:
+    """Nightly: re-check each auto-sync RA event for newly-added achievements (AotW,
+    random rolls, etc. grow over time) and import them as goals. One RA call per event."""
+    from app.services.events import sync_all_auto
+    result = await sync_all_auto()
+    _set_last_run("sched_eventsync_last_run")
+    return result
+
+
 async def run_poll_external() -> dict:
     """One pass over in-flight torrent/usenet jobs (qBittorrent/SABnzbd): advance
     file-selection, update progress, ingest + RA-verify completed ones. Driven from
@@ -320,10 +329,16 @@ async def scheduler_loop() -> None:
                     _get(session, "sched_verify_time", "05:00"),
                     _get(session, "sched_verify_last_run", ""),
                 ),
+                "eventsync": (
+                    _get(session, "sched_eventsync_enabled", "true"),
+                    _get(session, "sched_eventsync_time", "05:30"),
+                    _get(session, "sched_eventsync_last_run", ""),
+                ),
             }
 
         runners = {"scan": run_scan, "hash": run_hash_check,
-                   "autodiscover": run_autodiscover, "verify": run_verify}
+                   "autodiscover": run_autodiscover, "verify": run_verify,
+                   "eventsync": run_event_sync}
         for task_name, (enabled, time_str, last_run) in task_configs.items():
             if enabled != "true":
                 continue

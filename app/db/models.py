@@ -95,6 +95,7 @@ class Goal(SQLModel, table=True):
     objective: str = GoalObjective.beaten
     custom_text: str = ""            # custom: freeform label ("finish level 5"); achievement: the achievement's title
     achievement_desc: str = ""       # achievement goals: the achievement's description (from the RA API)
+    points: int = 0                  # achievement goals: the achievement's RA point value (event header sums these)
     event_name: str = Field(default="", index=True)   # "" = ungrouped
     deadline: Optional[datetime] = None   # midnight UTC of target day; None = no deadline
     status: str = GoalStatus.active
@@ -102,6 +103,27 @@ class Goal(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     completed_at: Optional[datetime] = None
+
+
+class GoalEvent(SQLModel, table=True):
+    """A named event that groups goals. Either a CUSTOM event (user-made, with an
+    optional URL — e.g. a Google Sheet — for quick navigation) or an RA-sourced event
+    that auto-syncs new achievements nightly (AotW, random rolls, etc. grow over time).
+    Goals join by matching Goal.event_name == GoalEvent.name. New table → created by
+    create_all at startup; no migration needed. (Table is `goal_events` — plural — so
+    its auto-named index ix_goal_events_name doesn't collide with goal.event_name's
+    ix_goal_event_name.)"""
+    __tablename__ = "goal_events"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(index=True)          # grouping key; matches Goal.event_name
+    url: str = ""                          # optional link (Google Sheet / event page) for navigation
+    ra_game_id: Optional[int] = Field(default=None, index=True)  # set for an RA event/game hub
+    auto_sync: bool = False                # nightly re-check the RA hub for new achievements
+    include_completed: bool = True         # remembered import option for nightly adds
+    deadline: Optional[datetime] = None    # default deadline stamped on newly-synced achievement goals
+    last_synced_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class HuntAttempt(SQLModel, table=True):

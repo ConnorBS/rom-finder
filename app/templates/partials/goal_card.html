@@ -49,15 +49,19 @@
 
     <!-- Info -->
     <div class="p-2.5 flex-1 flex flex-col gap-1.5">
+        {% if goal.objective == 'achievement' %}
+        <p class="text-gray-200 text-xs font-medium leading-tight line-clamp-2" title="{{ goal.custom_text }}">🎯 {{ goal.custom_text or 'Achievement' }}</p>
+        <p class="text-gray-500 text-xs truncate" title="{{ goal.game_title }}{% if goal.system %} · {{ goal.system }}{% endif %}">from {{ goal.game_title }}{% if goal.system %} · {{ goal.system }}{% endif %}</p>
+        {% if goal.achievement_desc %}
+        <p class="text-gray-400 text-xs leading-tight line-clamp-2" title="{{ goal.achievement_desc }}">{{ goal.achievement_desc }}</p>
+        {% endif %}
+        {% if goal.points %}<p class="text-yellow-600 text-xs">{{ goal.points }} pts</p>{% endif %}
+        {% else %}
         <p class="text-gray-200 text-xs font-medium leading-tight line-clamp-2" title="{{ goal.game_title }}">{{ goal.game_title }}</p>
         <p class="text-gray-600 text-xs truncate">{{ goal.system or '—' }}</p>
-
-        {% if goal.objective in ('custom', 'achievement') and goal.custom_text %}
-        <p class="text-gray-300 text-xs italic leading-tight" title="{{ goal.custom_text }}">
-            {% if goal.objective == 'achievement' %}🎯 {% endif %}“{{ goal.custom_text }}”</p>
+        {% if goal.objective == 'custom' and goal.custom_text %}
+        <p class="text-gray-300 text-xs italic leading-tight" title="{{ goal.custom_text }}">“{{ goal.custom_text }}”</p>
         {% endif %}
-        {% if goal.objective == 'achievement' and goal.achievement_desc %}
-        <p class="text-gray-500 text-xs leading-tight line-clamp-2" title="{{ goal.achievement_desc }}">{{ goal.achievement_desc }}</p>
         {% endif %}
 
         <!-- Progress (master/beaten goals, from the game's mirror row) -->

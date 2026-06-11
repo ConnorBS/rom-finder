@@ -158,6 +158,19 @@ so `POST /goals/add` (with an `achievement_id`) creates an `achievement` goal an
 `_enrich_achievement_goal` (badge + description). The card renders achievement goals with a 🎯 badge,
 the achievement title + description, the badge image as cover, and skips the game-level progress bar.
 
+**Import a whole event** — `POST /goals/import-event` (Form: `event_ref` URL/id, `event_name`,
+`deadline`, `include_completed`) bulk-imports every achievement of an RA event/game hub in ONE
+`API_GetGameExtended` call (`services/events.sync_event`; async, no `Depends(get_session)`), skipping
+placeholder tiles and (optionally) already-earned ones, and records a `GoalEvent(auto_sync=True)`.
+The achievement-list panel's **⇊ Import all as event** button bridges to this (`prepImportEvent` fills
+the Import-event tab). **Custom events**: `POST /goals/event` (Form: `name`, `url`) upserts a
+`GoalEvent` with a navigation link (no RA). **`POST /goals/refresh-art`** backgrounds a rate-limited
+re-pull of badges (one call per distinct game) + box art. The list page groups by event with a header
+showing the event link, an ⟳ auto-sync badge, a done/total progress bar, and the achievement/points
+tally; multi-game events **subdivide by game · console**. Nightly growth is the scheduler `eventsync`
+task (`POST /scheduler/run/eventsync` to run now). Goal `points` (migration 0021) and `achievement_desc`
+(0020) are the new columns. `/api/events` lists distinct event names for the datalists.
+
 ## Agent-Observable Diagnostics (`api.py`)
 
 These JSON endpoints let any agent confirm the running app's state over HTTP — no browser, no Docker socket, no human checking the site. They are the agent-facing twins of the UI; the verifier agents (`deploy-verifier`, `prod-health-monitor`) consume them instead of scraping HTML.
