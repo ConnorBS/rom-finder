@@ -15,7 +15,7 @@ from app.services.ra_client_v2 import RAClientV2
 
 def _game_payload():
     return {
-        "data": {"type": "games", "id": "10003", "attributes": {"title": "Super Mario 64"}},
+        "data": {"type": "games", "id": "10003", "attributes": {"title": "Super Mario 64", "medianTimeToBeatMinutes": 150}},
         "included": [
             {"type": "achievement-sets", "id": "100", "attributes": {"title": "Core", "types": ["core"], "pointsTotal": 400}},
             {"type": "achievement-sets", "id": "9282", "attributes": {"title": "Coin Collector", "types": ["bonus"], "pointsTotal": 100}},
@@ -58,6 +58,9 @@ def test_refresh_game_sets_caches_per_game(fresh_engine, monkeypatch):
         assert {r.title for r in rows} == {"Coin Collector", "Ultimate"}
         ultimate = next(r for r in rows if r.title == "Ultimate")
         assert ultimate.compatibility == "patch-required" and ultimate.patch_url.endswith("x.zip")
+        # Same V2 call captured median time-to-beat onto the owned LibraryEntry.
+        entry = s.exec(select(LibraryEntry).where(LibraryEntry.ra_game_id == 10003)).first()
+        assert entry.time_to_beat_min == 150
 
     # game_sets_for helper returns the cached rows for the detail panel.
     with Session(engine) as s:

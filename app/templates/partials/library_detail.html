@@ -53,6 +53,12 @@
     <span class="text-gray-300">{{ fsize(entry.file_size) }}</span>
   </div>
   {% endif %}
+  {% if entry.time_to_beat_min %}
+  <div class="flex gap-3">
+    <span class="text-gray-500 w-20 flex-shrink-0">Time to beat</span>
+    <span class="text-gray-300" title="RetroAchievements median time to beat">⏱ {% if entry.time_to_beat_min >= 60 %}~{{ entry.time_to_beat_min // 60 }}h{% if entry.time_to_beat_min % 60 %} {{ entry.time_to_beat_min % 60 }}m{% endif %}{% else %}~{{ entry.time_to_beat_min }}m{% endif %} <span class="text-gray-600">(median)</span></span>
+  </div>
+  {% endif %}
   <div class="flex gap-3">
     <span class="text-gray-500 w-20 flex-shrink-0">Path</span>
     <span class="text-gray-400 font-mono break-all text-xs leading-relaxed">{{ entry.file_path }}</span>

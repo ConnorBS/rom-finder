@@ -3,6 +3,7 @@
 {% block live_scope %}library wanted{% endblock %}
 {% block content %}
 {% macro fsize(n) %}{% if n and n >= 1073741824 %}{{ (n / 1073741824) | round(2) }} GB{% elif n and n >= 1048576 %}{{ (n / 1048576) | round(1) }} MB{% elif n and n >= 1024 %}{{ (n / 1024) | round | int }} KB{% elif n %}{{ n }} B{% endif %}{% endmacro %}
+{% macro ttb(m) %}{% if m and m >= 60 %}~{{ m // 60 }}h{% if m % 60 %}{{ m % 60 }}m{% endif %}{% elif m %}~{{ m }}m{% endif %}{% endmacro %}
 <div class="p-4 sm:p-6 max-w-7xl mx-auto">
 
     <!-- Header -->
@@ -464,7 +465,7 @@
                 </label>
                 {% endif %}
                 <p class="text-gray-200 text-xs font-medium leading-tight line-clamp-2" title="{{ item.game_title }}">{{ item.game_title }}</p>
-                <p class="text-gray-600 text-xs truncate">{{ item.system }}{% if item.file_size %} · <span class="text-gray-500">{{ fsize(item.file_size) }}</span>{% endif %}</p>
+                <p class="text-gray-600 text-xs truncate">{{ item.system }}{% if item.file_size %} · <span class="text-gray-500">{{ fsize(item.file_size) }}</span>{% endif %}{% if item.time_to_beat_min %} · <span class="text-gray-500" title="Median time to beat (RetroAchievements)">⏱ {{ ttb(item.time_to_beat_min) }}</span>{% endif %}</p>
                 {% if item.achievements %}
                 <p class="text-xs truncate {% if item.achievements_earned %}text-amber-300{% else %}text-gray-600{% endif %}"
                    title="{{ item.achievements_earned }} of {{ item.achievements }} base achievements earned{% if not item.achievements_earned %} — not started{% endif %}">🏆 {{ item.achievements_earned }}/{{ item.achievements }}</p>

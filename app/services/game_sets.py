@@ -51,6 +51,9 @@ async def refresh_game_sets(game_ids: list[int] | None = None) -> dict:
                 activity_store.increment("game-sets-sync")
                 continue
             sets = RAClientV2.sets_from_game(data)
+            # Same payload carries medianTimeToBeatMinutes — capture it for free.
+            ttb = (data.get("data") or {}).get("attributes", {}).get("medianTimeToBeatMinutes")
+            ttb = int(ttb) if isinstance(ttb, (int, float)) and ttb else 0
             with Session(engine) as s:
                 s.exec(text(f"DELETE FROM ra_game_set WHERE game_id = {int(gid)}"))
                 for st in sets:
@@ -60,6 +63,11 @@ async def refresh_game_sets(game_ids: list[int] | None = None) -> dict:
                         patch_url=st["patch_url"], points_total=st["points_total"],
                         updated_at=datetime.utcnow(),
                     ))
+                if ttb:
+                    for e in s.exec(select(LibraryEntry).where(LibraryEntry.ra_game_id == gid)).all():
+                        if e.time_to_beat_min != ttb:
+                            e.time_to_beat_min = ttb
+                            s.add(e)
                 s.commit()
             total_sets += len(sets)
             activity_store.increment("game-sets-sync")
