@@ -20,7 +20,8 @@ Sources are tried in user-configured priority order. First returning `bytes` win
 
 ## Current Sources
 
-- `retroachievements` — uses `ra_game_id` to fetch from RA's CDN. **Guard**: `if not ra_game_id: return None` — otherwise makes a request with `?i=None`.
+- `retroachievements` — uses `ra_game_id` to fetch the game ICON from RA's V1 CDN. **Guard**: `if not ra_game_id: return None`.
+- `ra_v2_boxart` — full **box art** from RA **V2** (`/games/{id}` → `imageBoxArtUrl`); uses the RA API key (Bearer). Higher quality than the V1 icon; off by default (`cover_source_ra_v2_boxart_enabled`). Falls through to the next source if V2 is unreachable.
 - `steamgriddb` — title-based search; requires API key.
 
 ## Cover Filename Convention

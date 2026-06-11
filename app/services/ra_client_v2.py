@@ -44,6 +44,13 @@ class RAClientV2:
         resp.raise_for_status()
         return resp.json()
 
+    async def get_game(self, game_id: int, include: str = "") -> dict:
+        """`/games/{id}` → box art (`imageBoxArtUrl`), `medianTimeToBeatMinutes`,
+        `releasedAt`, points, etc. `include=achievementSets,hashes` for set-aware data."""
+        resp = await self.get(f"/games/{game_id}", params={"include": include} if include else None)
+        resp.raise_for_status()
+        return resp.json()
+
     # --- JSON:API payload parsers (static; tolerant of missing fields) ---------
 
     @staticmethod
