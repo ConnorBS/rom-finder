@@ -12,6 +12,7 @@ app/
   routers/
     collection.py      # /collection — unified library+wanted view, bulk actions
     wanted.py          # /wanted — hunt list management, per-game source search
+    goals.py           # /goals — per-game event objectives (master/beat/custom) + deadlines
     library.py         # /library — raw library browser
     downloads.py       # /downloads — download queue
     settings_router.py # /settings — all config
@@ -28,6 +29,7 @@ app/
     autodiscover.py    # One-shot: check RA for new games in tracked systems
     scheduler.py       # Scheduled task runners + scheduler_loop()
     logger.py          # Structured app logging to app_logs table
+    goals.py           # Goal auto-completion from the RA mirror (LOCAL) — evaluate_goals
     settings.py        # Canonical settings accessors + DEFAULT_SETTINGS (leaf: imports only app.db)
     title_utils.py     # Search query generation + result relevance (search == hunt)
     sources/           # ROM download sources

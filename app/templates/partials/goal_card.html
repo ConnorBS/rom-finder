@@ -1,0 +1,111 @@
+{% set done = (goal.status == 'completed') %}
+<div id="goal-{{ goal.id }}"
+     class="goal-card bg-gray-900 border rounded-lg overflow-hidden flex flex-col group
+            {% if done %}border-green-900/60{% elif overdue %}border-red-900/60{% else %}border-gray-800{% endif %}"
+     data-status="{{ goal.status }}"
+     data-event="{{ goal.event_name }}">
+
+    <!-- Cover -->
+    <div class="relative bg-gray-800 aspect-[3/4] overflow-hidden">
+        {% if goal.cover_path %}
+        <img src="/static/{{ goal.cover_path }}" alt="{{ goal.game_title }}" class="w-full h-full object-cover {% if done %}opacity-70{% endif %}">
+        {% else %}
+        <div class="w-full h-full flex items-center justify-center">
+            <span class="text-gray-600 text-3xl font-bold select-none">{{ goal.game_title[0] | upper }}</span>
+        </div>
+        {% endif %}
+
+        <!-- Objective badge -->
+        <div class="absolute top-2 left-2 bg-gray-900/85 border border-gray-700 rounded-full px-2 py-0.5 text-xs">
+            {% if goal.objective == 'master' %}<span class="text-yellow-400">🏅 Master</span>
+            {% elif goal.objective == 'beaten' %}<span class="text-indigo-300">🏆 Beat</span>
+            {% else %}<span class="text-gray-300">✎ Custom</span>{% endif %}
+        </div>
+
+        {% if done %}
+        <div class="absolute top-2 right-2 bg-green-600 rounded-full p-1" title="Completed{% if goal.auto %} (auto){% endif %}">
+            <svg class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
+            </svg>
+        </div>
+        {% endif %}
+
+        <!-- Delete (hover) -->
+        <button
+            class="absolute bottom-2 right-2 bg-gray-900/80 hover:bg-red-900/80 border border-gray-700 rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+            hx-delete="/goals/{{ goal.id }}"
+            hx-target="#goal-{{ goal.id }}"
+            hx-swap="outerHTML"
+            hx-confirm="Delete the goal for {{ goal.game_title }}?"
+            title="Delete goal">
+            <svg class="w-3 h-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+        </button>
+    </div>
+
+    <!-- Info -->
+    <div class="p-2.5 flex-1 flex flex-col gap-1.5">
+        <p class="text-gray-200 text-xs font-medium leading-tight line-clamp-2" title="{{ goal.game_title }}">{{ goal.game_title }}</p>
+        <p class="text-gray-600 text-xs truncate">{{ goal.system or '—' }}</p>
+
+        {% if goal.objective == 'custom' and goal.custom_text %}
+        <p class="text-gray-400 text-xs italic leading-tight">“{{ goal.custom_text }}”</p>
+        {% endif %}
+
+        <!-- Progress (RA goals with a mirror row) -->
+        {% if progress %}
+        <div class="mt-0.5">
+            <div class="flex items-center justify-between text-xs mb-0.5">
+                <span class="{% if progress.num_awarded %}text-yellow-500{% else %}text-gray-600{% endif %}">🏆 {{ progress.num_awarded }}/{{ progress.max_possible }}</span>
+                {% if progress.highest_award_kind == 'mastered' %}<span class="text-yellow-400">🏅 Mastered</span>
+                {% elif progress.highest_award_kind == 'beaten' %}<span class="text-indigo-300">🏆 Beaten</span>
+                {% elif progress.highest_award_kind in ('completed', 'beaten-softcore') %}<span class="text-gray-400">softcore</span>{% endif %}
+            </div>
+            <div class="w-full bg-gray-800 rounded-full h-1.5 overflow-hidden">
+                <div class="h-full {% if done %}bg-green-500{% else %}bg-blue-500{% endif %}" style="width: {{ progress.pct_complete | round(0, 'floor') }}%"></div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Deadline state -->
+        <div class="mt-auto pt-1 text-xs">
+            {% if done %}
+            <span class="text-green-400">✓ Completed{% if goal.completed_at %} {{ goal.completed_at.strftime('%b %d') }}{% endif %}{% if goal.auto %} <span class="text-gray-600">(auto)</span>{% endif %}</span>
+            {% elif goal.deadline and overdue %}
+            <span class="text-red-400">⚠ Overdue — was due {{ goal.deadline.strftime('%b %d, %Y') }}</span>
+            {% elif goal.deadline %}
+            <span class="{% if days_left is not none and days_left <= 7 %}text-amber-400{% else %}text-gray-400{% endif %}">📅 Due {{ goal.deadline.strftime('%b %d, %Y') }}{% if days_left is not none %} <span class="text-gray-600">({{ days_left }}d)</span>{% endif %}</span>
+            {% else %}
+            <span class="text-gray-600">No deadline</span>
+            {% endif %}
+        </div>
+
+        <!-- Actions -->
+        <div class="flex gap-1.5 mt-1">
+            {% if done %}
+            <button class="flex-1 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-400 hover:text-white text-xs px-2 py-1 rounded transition-colors"
+                    hx-post="/goals/{{ goal.id }}/reopen" hx-target="#goal-{{ goal.id }}" hx-swap="outerHTML">↺ Reopen</button>
+            {% elif goal.objective == 'custom' %}
+            <button class="flex-1 bg-green-900/40 hover:bg-green-900/60 border border-green-800 text-green-300 text-xs px-2 py-1 rounded transition-colors"
+                    hx-post="/goals/{{ goal.id }}/complete" hx-target="#goal-{{ goal.id }}" hx-swap="outerHTML">✓ Mark done</button>
+            {% endif %}
+            <button class="flex-1 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-400 hover:text-white text-xs px-2 py-1 rounded transition-colors"
+                    onclick="document.getElementById('goal-edit-{{ goal.id }}').classList.toggle('hidden')">✎ Edit</button>
+        </div>
+
+        <!-- Edit form (toggle) -->
+        <form id="goal-edit-{{ goal.id }}" class="hidden mt-1 space-y-1.5 border-t border-gray-800 pt-2"
+              hx-post="/goals/{{ goal.id }}/edit" hx-target="#goal-{{ goal.id }}" hx-swap="outerHTML">
+            <input type="text" name="event_name" value="{{ goal.event_name }}" placeholder="Event"
+                   class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500">
+            <input type="date" name="deadline" value="{{ goal.deadline.strftime('%Y-%m-%d') if goal.deadline else '' }}"
+                   class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500">
+            {% if goal.objective == 'custom' %}
+            <input type="text" name="custom_text" value="{{ goal.custom_text }}" placeholder="Objective"
+                   class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500">
+            {% endif %}
+            <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white text-xs px-2 py-1 rounded transition-colors">Save</button>
+        </form>
+    </div>
+</div>

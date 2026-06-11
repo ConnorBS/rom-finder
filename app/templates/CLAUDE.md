@@ -2,10 +2,10 @@
 
 ## Sidebar Navigation (`base.html`)
 
-Nav order: Collection, Dashboard, Wanted, Search, Downloads, Settings, Scheduler, Extensions, Logs.
+Nav order: Collection, Dashboard, Wanted, Goals, Search, Downloads, Settings, Scheduler, Extensions, Logs.
 
 Active-link detection:
-- Exact match: `/collection`, `/wanted`, `/search`, `/logs`
+- Exact match: `/collection`, `/wanted`, `/goals`, `/search`, `/logs`
 - `startsWith`: `/dashboard`, `/settings`, `/scheduler`, `/downloads` (so `/dashboard/timeline` etc. highlight Dashboard)
 
 ## Charts (ApexCharts)
@@ -41,7 +41,7 @@ otherwise stack duplicate intervals):
 `data-live-mode` from two overridable Jinja blocks. Each page sets
 `{% block live_scope %}…{% endblock %}` (space-separated scope names); empty ⇒ the page is
 static (Settings/Extensions). Wired: collection=`library wanted`, downloads=`downloads hunts`,
-wanted=`wanted library downloads`, logs=`logs`, scheduler=`scheduler`. **Dashboard** pages use
+wanted=`wanted library downloads`, goals=`goals`, logs=`logs`, scheduler=`scheduler`. **Dashboard** pages use
 `{% block live_mode %}reload{% endblock %}` (ApexCharts can't survive a morph) so they do an
 idle `location.reload()` when the mirror token changes — i.e. right after a manual RA Refresh
 completes. Escape hatch: `localStorage.liveUpdates = 'off'`. Interval is hardcoded (4s), like
@@ -62,6 +62,22 @@ The cover top-left badge stack renders the RA award tier — **🏅 Mastered** (
 Each card/list row also shows **base achievements earned/total** (`🏆 {item.achievements_earned}/{item.achievements}` = `RAGameProgress.num_awarded`/`max_possible` for the matched base game id, from the local mirror — subsets are separate ids so these are inherently the core set). Gold when `earned > 0`, muted when 0; **absent when there's no progress row** (never played / not in the mirror) — so "has a count" itself means "started." Surfaces in cards (under system·size) and a list **Achievements** column.
 
 Multi-select is minimal JS (sanctioned, like the card-states poller): `.sel-check[data-lib-id]` checkboxes (card info area — kept off the cover so they don't trigger the detail slide-over; list view first column), a `#selection-bar` shown when the `window._sel` Set is non-empty, and `selectAllFiltered()` using `window.allFilteredLibIds`. **`window._sel` is initialised in `base.html`** (not the page's inline script) so it **survives a live in-place morph**; it still **resets on a real full render** (filter/paginate/HX-Refresh) via base.html's `htmx:afterSwap` handler that clears it when the swap target is `document.body`. The collection page re-applies it to checkboxes (`bindSelChecks()`) both at load and on the `live:updated` event after each morph. Action buttons post `library_ids` via `hx-vals` (body, not URL). `#col-perpage` (50–1000) is wired like `#col-system`; every nav link threads `&per_page`.
+
+## Goals page (`goals.html`, `partials/goal_card.html`)
+
+`/goals` lists event objectives grouped by `event_name` ("No event" last) with a "N of M done"
+tally per group; opts into live morph via `{% block live_scope %}goals{% endblock %}`. The add
+panel has two tabs (`switchGoalTab`): **RA game** (reuses the `/ra/search` system-select + query
+inputs with `hx-vals='{"mode":"goal"}'`, results into `#goal-add-results`; a "Select →" button
+calls `selectGoalGame(...)` to fill the add-form's hidden fields and enable submit) and **Custom
+objective** (free-text game/system/objective). Both forms post into `#goal-feedback`; the new
+goal then appears via the live morph. **`goal_card.html`** receives the per-goal `_card_ctx`
+(`goal`, `progress`, `overdue`, `days_left`, `now`): objective badge (🏅 Master / 🏆 Beat / ✎
+Custom), a live progress bar + `🏆 earned/total` + award badge from the joined `RAGameProgress`
+row (absent when not started), and a three-state deadline line (green ✓ Completed / red ⚠ Overdue
+/ amber-when-≤7d "📅 Due {date} (Nd)"). Actions: custom → "✓ Mark done"; completed → "↺ Reopen";
+all → "✎ Edit" (toggles an inline event/deadline[/custom_text] form posting `/goals/{id}/edit`)
+and a hover delete.
 
 ## Cover Refresh Button
 

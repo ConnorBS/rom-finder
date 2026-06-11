@@ -357,6 +357,21 @@ async def api_status(session: Session = Depends(get_session)):
     except Exception as e:
         status["dashboard"] = {"error": str(e)}
 
+    # Goals — event objectives + their deadline/completion state.
+    try:
+        from app.db.models import Goal, GoalStatus, GoalObjective
+        now = datetime.utcnow()
+        status["goals"] = {
+            "total": _count(session, Goal),
+            "active": _count(session, Goal, Goal.status == GoalStatus.active),
+            "completed": _count(session, Goal, Goal.status == GoalStatus.completed),
+            "overdue": _count(session, Goal, Goal.status == GoalStatus.active,
+                              Goal.deadline != None, Goal.deadline < now),  # noqa: E711
+            "custom": _count(session, Goal, Goal.objective == GoalObjective.custom),
+        }
+    except Exception as e:
+        status["goals"] = {"error": str(e)}
+
     # Hash-aware subset cache state (RA-backed, cached locally).
     try:
         from app.db.models import RASubsetHash
@@ -520,6 +535,19 @@ async def api_changes(session: Session = Depends(get_session)):
         changes["library"] = ":".join(str(v) for v in row)
     except Exception as e:
         changes["library"] = f"err:{e}"
+
+    # goals — count + completed count + cover state + last touch (add/complete/reopen/
+    # edit/auto-complete all bump updated_at; a background cover write only sets
+    # cover_path, hence the length sum, mirroring the wanted scope).
+    try:
+        from app.db.models import Goal, GoalStatus
+        total = _count(session, Goal)
+        completed = _count(session, Goal, Goal.status == GoalStatus.completed)
+        cover_len = session.scalar(sa_select(func.coalesce(func.sum(func.length(Goal.cover_path)), 0)))
+        last_touch = session.scalar(sa_select(func.max(Goal.updated_at)))
+        changes["goals"] = f"{total}:{completed}:{cover_len}:{last_touch}"
+    except Exception as e:
+        changes["goals"] = f"err:{e}"
 
     # wanted — count + last touch + cover state (status→verified bumps updated_at;
     # cover fetch only writes cover_path, hence the length sum).

@@ -118,6 +118,7 @@
                 <a href="/collection" class="nav-item block px-3 py-2 rounded-md text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">Collection</a>
                 <a href="/dashboard"  class="nav-item block px-3 py-2 rounded-md text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">Dashboard</a>
                 <a href="/wanted"     class="nav-item block px-3 py-2 rounded-md text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">Wanted</a>
+                <a href="/goals"      class="nav-item block px-3 py-2 rounded-md text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">Goals</a>
                 <a href="/search"     class="nav-item block px-3 py-2 rounded-md text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">Search</a>
                 <a href="/downloads"  class="nav-item block px-3 py-2 rounded-md text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">Downloads</a>
                 <a href="/settings"   class="nav-item block px-3 py-2 rounded-md text-gray-400 hover:bg-gray-800 hover:text-white transition-colors">Settings</a>
@@ -177,7 +178,7 @@
         document.querySelectorAll('.nav-item').forEach(function(link) {
             var href = link.getAttribute('href');
             var path = window.location.pathname;
-            var exact = ['/collection', '/wanted', '/search', '/logs'];
+            var exact = ['/collection', '/wanted', '/goals', '/search', '/logs'];
             var match = path === href || (!exact.includes(href) && path.startsWith(href));
             if (match) {
                 link.classList.add('bg-gray-800', 'text-white');
