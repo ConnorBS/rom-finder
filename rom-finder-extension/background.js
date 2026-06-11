@@ -16,15 +16,23 @@ const EVENT_PATH_RE = /\/event\/\d+/;
 
 chrome.webNavigation.onHistoryStateUpdated.addListener(
   (details) => {
-    let file = null;
-    if (GAME_PATH_RE.test(details.url)) file = 'content.js';
-    else if (ACH_PATH_RE.test(details.url)) file = 'achievement.js';
-    else if (EVENT_PATH_RE.test(details.url)) file = 'event.js';
-    if (!file) return;
-    chrome.scripting.executeScript({
-      target: { tabId: details.tabId, frameId: details.frameId },
-      files: [file],
-    });
+    const inject = (file, delay) => setTimeout(() => {
+      chrome.scripting.executeScript({
+        target: { tabId: details.tabId, frameId: details.frameId },
+        files: [file],
+      }).catch(() => { /* tab closed / navigated away */ });
+    }, delay);
+
+    if (GAME_PATH_RE.test(details.url)) {
+      inject('content.js', 0);
+    } else if (ACH_PATH_RE.test(details.url)) {
+      // Achievement page: the goal panel + the game panel (stacked). content.js is
+      // delayed so RA has rendered the breadcrumb /game/ link it reads the game from.
+      inject('achievement.js', 0);
+      inject('content.js', 500);
+    } else if (EVENT_PATH_RE.test(details.url)) {
+      inject('event.js', 0);
+    }
   },
   { url: [{ hostEquals: 'retroachievements.org' }] }
 );

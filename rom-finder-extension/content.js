@@ -1,10 +1,12 @@
 /**
  * ROM Finder — content script
- * Injected on: https://retroachievements.org/game/*
+ * Injected on: https://retroachievements.org/game/*  AND  /achievement/*
  *
  * Injects a floating panel that lets you:
- *   • Add the current game to your ROM Finder Wanted list
+ *   • Add the current game to your ROM Finder Wanted list (or as a goal)
  *   • Search your enabled sources for ROM files
+ * On an /achievement/ page it targets the achievement's PARENT game and sits below
+ * the achievement.js "Set Goal" button (stacked, bottom-right).
  */
 (function () {
   'use strict';
@@ -14,8 +16,28 @@
   // -------------------------------------------------------------------------
 
   const pathMatch = window.location.pathname.match(/\/game\/(\d+)/);
-  if (!pathMatch) return;
-  const gameId = parseInt(pathMatch[1], 10);
+  const onAchPage = !pathMatch && /\/achievement\/\d+/.test(window.location.pathname);
+  if (!pathMatch && !onAchPage) return;
+
+  // On an ACHIEVEMENT page we still show the game panel for the achievement's PARENT
+  // game — derive it from the breadcrumb /game/ link (the URL has no game id).
+  function scrapeGameLink() {
+    for (const link of document.querySelectorAll('a[href*="/game/"]')) {
+      if (link.closest('nav, header, [role="navigation"], [role="menu"]')) continue;
+      const mm = link.href.match(/\/game\/(\d+)/);
+      if (mm) return { id: parseInt(mm[1], 10), title: (link.textContent || '').trim() };
+    }
+    return null;
+  }
+  let gameId, achGameLinkTitle = '';
+  if (pathMatch) {
+    gameId = parseInt(pathMatch[1], 10);
+  } else {
+    const gl = scrapeGameLink();
+    if (!gl) return;   // parent game not in the DOM yet — achievement.js still handles goals
+    gameId = gl.id;
+    achGameLinkTitle = gl.title;
+  }
 
   // A page can be an achievement SUBSET — either a multiset set (?set=NNNN in the
   // URL, sharing the base game's id) or a title carrying a "[Subset - …]" tag.
@@ -42,6 +64,8 @@
   }
 
   function getGameTitle() {
+    // On an achievement page the <h1> is the ACHIEVEMENT — use the parent /game/ link text.
+    if (onAchPage && achGameLinkTitle) return cleanTitle(achGameLinkTitle);
     // RA uses several possible selectors over time
     const selectors = [
       'h3.longTitle',

@@ -57,7 +57,9 @@
   const root = document.createElement('div');
   root.id = PANEL_ID;
   applyStyles(root, {
-    position: 'fixed', bottom: '20px', right: '20px', zIndex: '2147483647',
+    // Stacked ABOVE the content.js "🎮 ROM Finder" button (which sits at bottom:20px on
+    // the same achievement page), so the two don't overlap in the bottom-right corner.
+    position: 'fixed', bottom: '68px', right: '20px', zIndex: '2147483647',
     fontFamily: 'system-ui, -apple-system, sans-serif', fontSize: '13px', lineHeight: '1.4',
   });
 
