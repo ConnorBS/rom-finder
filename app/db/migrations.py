@@ -208,6 +208,7 @@ MIGRATIONS: list[tuple[str, "callable"]] = [
     ("0018_library_file_size", _m_0018_library_file_size),
     ("0019_download_hunt_task_id", _m_0019_download_hunt_task_id),
     ("0020_goal_achievement_desc", _m_0020_goal_achievement_desc),
+    ("0021_goal_points", _m_0021_goal_points),
 ]
 
 
