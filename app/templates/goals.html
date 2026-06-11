@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block title %}Goals — ROM Finder{% endblock %}
+{% block live_scope %}goals{% endblock %}
+{% block content %}
+<div class="p-4 sm:p-6 max-w-7xl mx-auto">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <h1 class="text-xl font-semibold text-white">Goals</h1>
+            <p class="text-gray-500 text-sm mt-0.5">{{ count }} goal{{ 's' if count != 1 }} tracked</p>
+        </div>
+        <button id="goal-add-toggle" onclick="toggleGoalPanel()"
+                class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">+ Add Goal</button>
+    </div>
+
+    <datalist id="event-names">{% for e in event_names %}<option value="{{ e }}">{% endfor %}</datalist>
+
+    <!-- Add Goal panel -->
+    <div id="goal-panel" class="hidden mb-6 bg-gray-900 border border-gray-800 rounded-lg p-5">
+        <!-- Tabs -->
+        <div class="flex gap-1 mb-4">
+            <button id="goal-tab-ra" onclick="switchGoalTab('ra')"
+                    class="px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-700 bg-gray-700 text-white transition-colors">RA game</button>
+            <button id="goal-tab-custom" onclick="switchGoalTab('custom')"
+                    class="px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-700 bg-gray-800 text-gray-400 hover:text-white transition-colors">Custom objective</button>
+        </div>
+
+        <!-- RA game mode -->
+        <div id="goal-mode-ra" {% if not ra_configured %}class="hidden"{% endif %}>
+            {% if ra_configured %}
+            <div class="flex flex-col sm:flex-row gap-3 mb-3">
+                <select id="goal-system-select" name="system_id"
+                        class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 w-full sm:w-64"
+                        hx-get="/ra/search" hx-target="#goal-add-results" hx-include="#goal-query" hx-vals='{"mode": "goal"}' hx-trigger="change">
+                    <option value="">All Systems</option>
+                    {% for id, name in systems %}<option value="{{ id }}">{{ name }}</option>{% endfor %}
+                </select>
+                <input type="search" id="goal-query" name="q" placeholder="Search by game title..." autocomplete="off"
+                       class="flex-1 bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 placeholder-gray-600"
+                       hx-get="/ra/search" hx-target="#goal-add-results" hx-trigger="input changed delay:400ms, search" hx-include="#goal-system-select" hx-vals='{"mode": "goal"}'>
+            </div>
+            <div id="goal-add-results" class="mb-3"><p class="text-gray-600 text-sm">Search for a game, then click Select.</p></div>
+
+            <form hx-post="/goals/add" hx-target="#goal-feedback" hx-swap="innerHTML"
+                  class="border-t border-gray-800 pt-3 flex flex-col sm:flex-row sm:items-end gap-3 flex-wrap">
+                <input type="hidden" id="goal-ra-id" name="ra_game_id" value="">
+                <input type="hidden" id="goal-ra-title" name="game_title" value="">
+                <input type="hidden" id="goal-ra-system" name="system" value="">
+                <div class="flex-1 min-w-[12rem]">
+                    <label class="block text-gray-500 text-xs mb-1">Selected game</label>
+                    <p id="goal-selected" class="text-gray-300 text-sm truncate">None selected yet</p>
+                </div>
+                <div>
+                    <label class="block text-gray-500 text-xs mb-1">Objective</label>
+                    <select name="objective" class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
+                        <option value="beaten">Beat (hardcore)</option>
+                        <option value="master">Master (100% hardcore)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-gray-500 text-xs mb-1">Event (optional)</label>
+                    <input type="text" name="event_name" list="event-names" placeholder="e.g. Collectathon"
+                           class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 w-44">
+                </div>
+                <div>
+                    <label class="block text-gray-500 text-xs mb-1">Deadline (optional)</label>
+                    <input type="date" name="deadline" class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
+                </div>
+                <button id="goal-ra-submit" type="submit" disabled
+                        class="bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">Add goal</button>
+            </form>
+            {% else %}
+            <p class="text-yellow-500 text-sm">Add your <a href="/settings" class="underline">RetroAchievements credentials</a> to search games — or use a Custom objective.</p>
+            {% endif %}
+        </div>
+
+        <!-- Custom mode -->
+        <div id="goal-mode-custom" class="hidden">
+            <form hx-post="/goals/add-custom" hx-target="#goal-feedback" hx-swap="innerHTML"
+                  class="flex flex-col sm:flex-row sm:items-end gap-3 flex-wrap"
+                  hx-on::after-request="if(event.detail.successful) this.reset()">
+                <div class="flex-1 min-w-[12rem]">
+                    <label class="block text-gray-500 text-xs mb-1">Game</label>
+                    <input type="text" name="game_title" required placeholder="e.g. Glitch"
+                           class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
+                </div>
+                <div>
+                    <label class="block text-gray-500 text-xs mb-1">System</label>
+                    <input type="text" name="system" placeholder="e.g. GameCube"
+                           class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 w-40">
+                </div>
+                <div class="flex-1 min-w-[12rem]">
+                    <label class="block text-gray-500 text-xs mb-1">Objective</label>
+                    <input type="text" name="custom_text" required placeholder="e.g. finish level 5"
+                           class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
+                </div>
+                <div>
+                    <label class="block text-gray-500 text-xs mb-1">Event (optional)</label>
+                    <input type="text" name="event_name" list="event-names" placeholder="Event"
+                           class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 w-44">
+                </div>
+                <div>
+                    <label class="block text-gray-500 text-xs mb-1">Deadline (optional)</label>
+                    <input type="date" name="deadline" class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
+                </div>
+                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">Add goal</button>
+            </form>
+        </div>
+
+        <div id="goal-feedback" class="mt-3 text-sm"></div>
+    </div>
+
+    <!-- Goals grouped by event -->
+    {% if groups %}
+    <div class="space-y-8">
+        {% for group in groups %}
+        <section>
+            <div class="flex items-center gap-3 mb-3">
+                <h2 class="text-sm font-semibold {% if group.name %}text-gray-300{% else %}text-gray-500{% endif %}">{{ group.name or 'No event' }}</h2>
+                <span class="text-gray-600 text-xs">{{ group.done }} of {{ group.total }} done</span>
+                <div class="flex-1 border-t border-gray-800"></div>
+            </div>
+            <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+                {% for card in group.cards %}
+                {% with goal=card.goal, progress=card.progress, overdue=card.overdue, days_left=card.days_left %}
+                {% include "partials/goal_card.html" %}
+                {% endwith %}
+                {% endfor %}
+            </div>
+        </section>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="flex flex-col items-center justify-center py-20 text-center">
+        <p class="text-gray-500 text-sm">No goals yet.</p>
+        <p class="text-gray-600 text-xs mt-1">Click <span class="text-gray-400">+ Add Goal</span> to set an objective for an event — master/beat goals track automatically from your RetroAchievements progress.</p>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+function toggleGoalPanel() {
+    var p = document.getElementById('goal-panel');
+    p.classList.toggle('hidden');
+}
+function switchGoalTab(which) {
+    var ra = document.getElementById('goal-mode-ra'), custom = document.getElementById('goal-mode-custom');
+    var tRa = document.getElementById('goal-tab-ra'), tCustom = document.getElementById('goal-tab-custom');
+    var on = ['bg-gray-700', 'text-white'], off = ['bg-gray-800', 'text-gray-400'];
+    if (which === 'ra') {
+        ra.classList.remove('hidden'); custom.classList.add('hidden');
+        tRa.classList.add.apply(tRa.classList, on);   tRa.classList.remove.apply(tRa.classList, off);
+        tCustom.classList.add.apply(tCustom.classList, off); tCustom.classList.remove.apply(tCustom.classList, on);
+    } else {
+        custom.classList.remove('hidden'); ra.classList.add('hidden');
+        tCustom.classList.add.apply(tCustom.classList, on);  tCustom.classList.remove.apply(tCustom.classList, off);
+        tRa.classList.add.apply(tRa.classList, off); tRa.classList.remove.apply(tRa.classList, on);
+    }
+}
+function selectGoalGame(id, title, system) {
+    document.getElementById('goal-ra-id').value = id;
+    document.getElementById('goal-ra-title').value = title;
+    document.getElementById('goal-ra-system').value = system;
+    document.getElementById('goal-selected').textContent = title + ' · ' + system;
+    document.getElementById('goal-ra-submit').disabled = false;
+}
+</script>
+{% endblock %}

@@ -49,6 +49,32 @@ status           — HuntStatus: hunting | verified
 added_at, updated_at
 ```
 
+### `Goal` (table: `goal`)
+Per-game event objectives the user tracks.
+```
+id, game_title, system
+ra_game_id       — RA game ID; None for custom/non-RA goals
+achievement_id   — RA achievement ID; set only for objective=achievement
+cover_path       — "covers/{ra_game_id}.png" (reuses any cover already on disk)
+objective        — GoalObjective: master | beaten | achievement | custom
+custom_text      — custom: freeform label ("finish level 5"); achievement: the achievement's title
+event_name       — free-text grouping label ("" = ungrouped); indexed
+deadline         — midnight-UTC datetime of the target day; None = no deadline
+status           — GoalStatus: active | completed
+auto             — True once the RA evaluator (not the user) flipped it done
+created_at, updated_at, completed_at
+```
+**New table → created by `create_all` at startup; NO migration** (migrations are only for
+ALTER/index on existing tables). **All auto-tracked objectives are HARDCORE-only** — `master`
+needs `highest_award_kind == "mastered"`, `beaten` needs `in ("beaten","mastered")`, and
+`achievement` needs a hardcore `ra_achievement` row for `achievement_id`; softcore awards/unlocks
+never satisfy a goal. `achievement` goals are added from the browser extension's achievement-page
+panel (`POST /api/goal`). Auto-completion is LOCAL
+(`services/goals.py::evaluate_goals`, run after a dashboard refresh + on every Goals page
+load). **Progress/award are NOT cached on the row** — the page joins live to `RAGameProgress`
+by `ra_game_id` at render time (the mirror is replaced wholesale on refresh, so a cached copy
+would drift). Deadline parsed from an `<input type="date">` (`YYYY-MM-DD`); empty → None.
+
 ### `Download` (table: `download`)
 Active/completed download queue entries.
 ```

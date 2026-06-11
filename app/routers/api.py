@@ -3,6 +3,7 @@
 import json
 import os
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from pydantic import BaseModel
@@ -237,6 +238,111 @@ async def api_game_status(ra_game_id: int, session: Session = Depends(get_sessio
     }
 
 
+# ---------------------------------------------------------------------------
+# Goals (browser extension: add a game- or achievement-level goal with a deadline)
+# ---------------------------------------------------------------------------
+
+class GoalAddRequest(BaseModel):
+    ra_game_id: int
+    game_title: str
+    system: str = ""
+    system_id: Optional[int] = None
+    objective: str = "beaten"        # master | beaten | achievement
+    achievement_id: Optional[int] = None
+    achievement_title: str = ""
+    event_name: str = ""
+    deadline: str = ""               # YYYY-MM-DD; "" = no deadline
+
+
+@router.post("/goal")
+async def api_add_goal(
+    req: GoalAddRequest,
+    background_tasks: BackgroundTasks,
+    session: Session = Depends(get_session),
+):
+    """Create a goal from the browser extension. Used for both a game objective
+    (master/beat from a /game/ page) and an achievement objective (from an
+    /achievement/ page). achievement goals require achievement_id; they auto-complete
+    on a HARDCORE unlock (services/goals.evaluate_goals)."""
+    from app.db.models import Goal, GoalObjective, GoalStatus
+
+    objective = req.objective if req.objective in (
+        GoalObjective.master, GoalObjective.beaten, GoalObjective.achievement
+    ) else GoalObjective.beaten
+    if objective == GoalObjective.achievement and not req.achievement_id:
+        return {"status": "error", "error": "achievement_id required for an achievement goal"}
+
+    # De-dup: same game + objective (+ achievement) already tracked → report it.
+    conds = [Goal.ra_game_id == req.ra_game_id, Goal.objective == objective]
+    conds.append(Goal.achievement_id == req.achievement_id if req.achievement_id
+                 else Goal.achievement_id == None)  # noqa: E711
+    existing = session.exec(select(Goal).where(*conds)).first()
+    if existing:
+        return {"status": "exists", "id": existing.id, "objective": objective}
+
+    system = canonical_system(req.system, req.system_id)
+    goal = Goal(
+        game_title=clean_title(req.game_title),
+        system=system,
+        ra_game_id=req.ra_game_id,
+        achievement_id=req.achievement_id,
+        objective=objective,
+        custom_text=req.achievement_title.strip() if objective == GoalObjective.achievement else "",
+        event_name=req.event_name.strip(),
+        deadline=_parse_goal_deadline(req.deadline),
+    )
+    cover_file = Path(_get_setting(session, "covers_dir", "static/covers")) / f"{req.ra_game_id}.png"
+    if cover_file.exists():
+        goal.cover_path = f"covers/{req.ra_game_id}.png"
+    session.add(goal)
+    session.commit()
+    session.refresh(goal)
+    applog.log_action("add_goal_extension", {
+        "game": goal.game_title, "objective": objective,
+        "achievement_id": req.achievement_id, "id": goal.id,
+    })
+
+    if not goal.cover_path and _get_setting(session, "ra_username") and _get_setting(session, "ra_api_key"):
+        from app.routers.goals import _fetch_cover_goal
+        background_tasks.add_task(_fetch_cover_goal, goal.id, req.ra_game_id, goal.game_title, system)
+
+    return {"status": "added", "id": goal.id, "objective": objective}
+
+
+@router.get("/goal-status")
+async def api_goal_status(
+    ra_game_id: int,
+    achievement_id: Optional[int] = None,
+    session: Session = Depends(get_session),
+):
+    """Pre-check for the extension: is this game/achievement already a goal? On an
+    achievement page pass achievement_id; on a game page omit it (matches any
+    game-level goal — master/beat — for the game)."""
+    from app.db.models import Goal, GoalStatus
+
+    q = select(Goal).where(Goal.ra_game_id == ra_game_id)
+    if achievement_id is not None:
+        q = q.where(Goal.achievement_id == achievement_id)
+    else:
+        q = q.where(Goal.achievement_id == None)  # noqa: E711
+    goal = session.exec(q).first()
+    return {
+        "goal": goal is not None,
+        "completed": bool(goal and goal.status == GoalStatus.completed),
+        "objective": goal.objective if goal else None,
+    }
+
+
+def _parse_goal_deadline(value: str):
+    value = (value or "").strip()
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d")
+    except ValueError:
+        return None
+
+
 @router.get("/wanted")
 async def api_list_wanted(session: Session = Depends(get_session)):
     games = session.exec(select(WantedGame)).all()
@@ -356,6 +462,22 @@ async def api_status(session: Session = Depends(get_session)):
         }
     except Exception as e:
         status["dashboard"] = {"error": str(e)}
+
+    # Goals — event objectives + their deadline/completion state.
+    try:
+        from app.db.models import Goal, GoalStatus, GoalObjective
+        now = datetime.utcnow()
+        status["goals"] = {
+            "total": _count(session, Goal),
+            "active": _count(session, Goal, Goal.status == GoalStatus.active),
+            "completed": _count(session, Goal, Goal.status == GoalStatus.completed),
+            "overdue": _count(session, Goal, Goal.status == GoalStatus.active,
+                              Goal.deadline != None, Goal.deadline < now),  # noqa: E711
+            "custom": _count(session, Goal, Goal.objective == GoalObjective.custom),
+            "achievement": _count(session, Goal, Goal.objective == GoalObjective.achievement),
+        }
+    except Exception as e:
+        status["goals"] = {"error": str(e)}
 
     # Hash-aware subset cache state (RA-backed, cached locally).
     try:
@@ -520,6 +642,19 @@ async def api_changes(session: Session = Depends(get_session)):
         changes["library"] = ":".join(str(v) for v in row)
     except Exception as e:
         changes["library"] = f"err:{e}"
+
+    # goals — count + completed count + cover state + last touch (add/complete/reopen/
+    # edit/auto-complete all bump updated_at; a background cover write only sets
+    # cover_path, hence the length sum, mirroring the wanted scope).
+    try:
+        from app.db.models import Goal, GoalStatus
+        total = _count(session, Goal)
+        completed = _count(session, Goal, Goal.status == GoalStatus.completed)
+        cover_len = session.scalar(sa_select(func.coalesce(func.sum(func.length(Goal.cover_path)), 0)))
+        last_touch = session.scalar(sa_select(func.max(Goal.updated_at)))
+        changes["goals"] = f"{total}:{completed}:{cover_len}:{last_touch}"
+    except Exception as e:
+        changes["goals"] = f"err:{e}"
 
     # wanted — count + last touch + cover state (status→verified bumps updated_at;
     # cover fetch only writes cover_path, hence the length sum).
