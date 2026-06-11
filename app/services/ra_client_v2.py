@@ -51,6 +51,32 @@ class RAClientV2:
         resp.raise_for_status()
         return resp.json()
 
+    async def get_hub_games(self, hub_id: int, page: int = 1, size: int = 100) -> dict:
+        """`/hubs/{id}/games` — the games in an RA hub (series/theme), one page.
+        `include=system` so each game carries its console."""
+        resp = await self.get(f"/hubs/{hub_id}/games",
+                              params={"include": "system", "page[number]": page, "page[size]": size})
+        resp.raise_for_status()
+        return resp.json()
+
+    @staticmethod
+    def games_from_payload(payload: dict) -> list[dict]:
+        """Games from a `/hubs/{id}/games?include=system` page → [{game_id, title, console}]."""
+        inc = {(i.get("type"), str(i.get("id"))): i for i in (payload.get("included") or [])}
+        out = []
+        for d in (payload.get("data") or []):
+            a = d.get("attributes", {}) or {}
+            console = ""
+            sid = (((d.get("relationships") or {}).get("system") or {}).get("data") or {}).get("id")
+            if sid:
+                sysrec = inc.get(("systems", str(sid)))
+                if sysrec:
+                    console = (sysrec.get("attributes") or {}).get("name", "")
+            gid = d.get("id")
+            out.append({"game_id": int(gid) if str(gid).isdigit() else 0,
+                        "title": a.get("title", ""), "console": console})
+        return out
+
     # --- JSON:API payload parsers (static; tolerant of missing fields) ---------
 
     @staticmethod

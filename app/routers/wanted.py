@@ -131,6 +131,57 @@ async def add_wanted(
     )
 
 
+@router.post("/import-hub", response_class=HTMLResponse)
+async def import_hub(hub_ref: str = Form(...)):
+    """Bulk-add every game in an RA hub (V2) to Wanted. Async + no Depends(get_session):
+    fetch_hub_games does the paginated RA awaits, then we write rows in a short session.
+    Skips games already owned or already wanted. Covers are NOT auto-fetched (a hub can be
+    hundreds of games) — use the collection's Fetch-covers action."""
+    from app.services import hubs
+    from app.services.title_utils import clean_title, canonical_system
+
+    hub_id = hubs.parse_hub_ref(hub_ref)
+    if not hub_id:
+        return HTMLResponse('<span class="text-red-400 text-xs">Couldn\'t read a hub id from that.</span>')
+    res = await hubs.fetch_hub_games(hub_id)
+    if res.get("error") == "no_credentials":
+        return HTMLResponse('<span class="text-yellow-500 text-xs">Add RA credentials in Settings first.</span>')
+    if res.get("error"):
+        return HTMLResponse(f'<span class="text-red-400 text-xs">Hub import failed: {res["error"]}</span>')
+    games = res["games"]
+    if not games:
+        return HTMLResponse('<span class="text-gray-400 text-xs">No games found in that hub — check the id.</span>')
+
+    added = skipped_existing = skipped_owned = 0
+    with Session(engine) as session:
+        existing_wanted = {w.ra_game_id for w in session.exec(select(WantedGame)).all()}
+        owned = {e.ra_game_id for e in session.exec(
+            select(LibraryEntry).where(LibraryEntry.ra_game_id != None)  # noqa: E711
+        ).all() if e.ra_game_id}
+        for g in games:
+            gid = g["game_id"]
+            if not gid:
+                continue
+            if gid in existing_wanted:
+                skipped_existing += 1
+                continue
+            if gid in owned:
+                skipped_owned += 1
+                continue
+            system = canonical_system(g["console"], None) or g["console"]
+            session.add(WantedGame(game_title=clean_title(g["title"]), system=system, ra_game_id=gid))
+            existing_wanted.add(gid)
+            added += 1
+        session.commit()
+    applog.log_action("import_hub", {"hub_id": hub_id, "added": added,
+                                     "skipped_existing": skipped_existing, "skipped_owned": skipped_owned})
+    return HTMLResponse(
+        f'<span class="text-green-400 text-xs">✓ Added {added} of {len(games)} game(s) from the hub '
+        f'— {skipped_existing} already wanted, {skipped_owned} already owned.</span>'
+        '<a href="/wanted" class="text-blue-400 text-xs hover:underline ml-2">Reload ↗</a>'
+    )
+
+
 @router.post("/{wanted_id}/refresh-cover", response_class=HTMLResponse)
 async def refresh_wanted_cover(
     wanted_id: int,
