@@ -10,9 +10,9 @@
         {% if goal.cover_path %}
         <img src="{% if goal.cover_path.startswith('http') %}{{ goal.cover_path }}{% else %}/static/{{ goal.cover_path }}{% endif %}"
              alt="{{ goal.game_title }}"
-             class="w-full h-full {% if goal.objective == 'achievement' %}object-contain p-3 bg-gray-900{% else %}object-cover{% endif %} {% if done %}opacity-70{% endif %}">
+             class="w-full h-full transition {% if goal.objective == 'achievement' %}object-contain p-3 bg-gray-900{% else %}object-cover{% endif %} {% if not done %}grayscale opacity-60 group-hover:grayscale-0 group-hover:opacity-100{% endif %}">
         {% else %}
-        <div class="w-full h-full flex items-center justify-center">
+        <div class="w-full h-full flex items-center justify-center {% if not done %}opacity-50{% endif %}">
             <span class="text-gray-600 text-3xl font-bold select-none">{{ goal.game_title[0] | upper }}</span>
         </div>
         {% endif %}

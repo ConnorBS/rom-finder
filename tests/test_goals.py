@@ -524,3 +524,62 @@ def test_import_event_v2_unreachable_is_graceful(client, monkeypatch):
     with Session(engine) as s:
         g = s.exec(select(Goal).where(Goal.ra_game_id == 196)).first()
         assert g.deadline is None
+
+
+# --- goals page filters / sort / delete-event ------------------------------
+
+def _seed_filter_goals():
+    from datetime import timedelta
+    now = datetime.utcnow()
+    with Session(engine) as s:
+        s.add(Goal(game_title="DoneGoal", system="NES", ra_game_id=1, objective=GoalObjective.master,
+                   status=GoalStatus.completed, completed_at=now))
+        s.add(Goal(game_title="PastGoal", system="NES", ra_game_id=2, objective=GoalObjective.master,
+                   deadline=now - timedelta(days=3)))   # overdue + incomplete
+        s.add(Goal(game_title="FutureGoal", system="NES", ra_game_id=3, objective=GoalObjective.master,
+                   deadline=now + timedelta(days=3)))
+        s.commit()
+
+
+def test_goals_default_hides_past_shows_completed(client):
+    _seed_filter_goals()
+    html = client.get("/goals").text
+    assert "DoneGoal" in html        # completed shown by default
+    assert "FutureGoal" in html
+    assert "PastGoal" not in html    # past-deadline hidden by default
+    assert "Showing 2 of 3" in html
+
+
+def test_goals_hide_completed(client):
+    _seed_filter_goals()
+    html = client.get("/goals?show_completed=0").text
+    assert "DoneGoal" not in html
+    assert "FutureGoal" in html
+
+
+def test_goals_show_past(client):
+    _seed_filter_goals()
+    html = client.get("/goals?show_past=1").text
+    assert "PastGoal" in html
+    assert "Showing 3 of 3" in html
+
+
+def test_goals_sort_renders(client):
+    _seed_filter_goals()
+    for sort in ("event", "due", "added", "title"):
+        assert client.get(f"/goals?sort={sort}&show_past=1").status_code == 200
+
+
+def test_delete_whole_event(client):
+    with Session(engine) as s:
+        s.add(GoalEvent(name="Doomed Event", auto_sync=False))
+        s.add(Goal(game_title="A", ra_game_id=10, achievement_id=1, objective=GoalObjective.achievement,
+                   event_name="Doomed Event"))
+        s.add(Goal(game_title="B", ra_game_id=10, achievement_id=2, objective=GoalObjective.achievement,
+                   event_name="Doomed Event"))
+        s.commit()
+    r = client.post("/goals/event/delete", data={"name": "Doomed Event"})
+    assert r.status_code == 200 and r.headers.get("HX-Refresh") == "true"
+    with Session(engine) as s:
+        assert s.exec(select(Goal).where(Goal.event_name == "Doomed Event")).all() == []
+        assert s.exec(select(GoalEvent).where(GoalEvent.name == "Doomed Event")).first() is None
