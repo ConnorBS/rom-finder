@@ -20,6 +20,15 @@ Key methods:
 
 **System name normalization (`title_utils.canonical_system(name, system_id)`)**: the RA console id is authoritative — resolve `SYSTEMS[id]` when present. Otherwise collapse an exact-doubled scraped name (`"WiiWii"` → `"Wii"`). It deliberately does NOT use an endswith/abbrev heuristic ("Super Nintendo Entertainment System" ends with NES's full name). Used by `api.py` (add-wanted + search) so corruption is fixed at the source regardless of what the Chrome extension posts; migration `0010` fixed existing rows, so the old every-startup WiiWii `UPDATE` is gone from `main.py` lifespan.
 
+### RA V2 client (`ra_client_v2.py`) — probe-only for now
+`RAClientV2(api_key)` hits the JSON:API V2 service at **`https://api.retroachievements.org/v2`**
+(separate host from V1's `retroachievements.org/API`), Bearer-auth, sharing the global 2 req/s
+`_limiter`. `get_event(id)` / `get_achievement(id)` exist to back the **`/api/diag/ra-v2`** probe,
+which confirms reachability/auth + captures the real payload (event `awards` tiers; achievement
+`points`/`pointsWeighted` + source `games`). Not yet wired into the UI — verify with the probe in a
+deployment that has the key + RA network first (see root CLAUDE.md → V2 roadmap). Docs source:
+`github.com/Chew/RA-api-docs/tree/feat/v2-docs/docs/v2`.
+
 ### Cover filenames
 `{ra_game_id}.png` when RA ID is known; `lib_{library_id}.png` for entries with no RA ID.
 

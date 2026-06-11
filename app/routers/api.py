@@ -120,6 +120,57 @@ async def diag_rahasher(system: str = "PlayStation", verify: bool = False,
     return info
 
 
+@router.get("/diag/ra-v2")
+async def diag_ra_v2(event: int = 0, achievement: int = 0):
+    """Probe the RetroAchievements **V2** API (api.retroachievements.org/v2) to confirm
+    it's reachable + authenticates with our web API key, and to capture the real shape
+    of an event (award tiers via `awards`) and an achievement (source game via `games`,
+    `points`/`pointsWeighted`). Pass `?event=<id>` and/or `?achievement=<id>`. Read-only,
+    one call each. Run this in a deployment that has the key + RA network access; share
+    the output to wire the event header tiers/points + per-achievement source game."""
+    from app.services.ra_client_v2 import RAClientV2, RA_V2_BASE
+
+    with Session(engine) as s:
+        username = _get_setting(s, "ra_username")
+        api_key = _get_setting(s, "ra_api_key")
+    out: dict = {"base": RA_V2_BASE, "auth": "Authorization: Bearer <api_key>",
+                 "has_credentials": bool(api_key)}
+    if not api_key:
+        out["error"] = "No RA API key configured (Settings → RetroAchievements)."
+        return out
+
+    cli = RAClientV2(api_key, username)
+
+    async def probe(path: str, params: dict) -> dict:
+        try:
+            r = await cli.get(path, params=params)
+        except Exception as exc:
+            return {"error": str(exc)}
+        res: dict = {"status": r.status_code, "content_type": r.headers.get("content-type", "")}
+        try:
+            j = r.json()
+        except Exception:
+            res["body_snippet"] = r.text[:400]   # e.g. a Cloudflare challenge page
+            return res
+        res["top_keys"] = list(j.keys()) if isinstance(j, dict) else type(j).__name__
+        data = j.get("data") if isinstance(j, dict) else None
+        if isinstance(data, dict):
+            res["attributes"] = data.get("attributes")
+            res["relationships"] = list((data.get("relationships") or {}).keys())
+        if isinstance(j, dict) and isinstance(j.get("included"), list):
+            res["included_types"] = sorted({i.get("type") for i in j["included"]})
+            res["included_sample"] = j["included"][:3]
+        return res
+
+    if event:
+        out["event"] = await probe(f"/events/{event}", {"include": "awards"})
+    if achievement:
+        out["achievement"] = await probe(f"/achievements/{achievement}", {"include": "games"})
+    if not event and not achievement:
+        out["hint"] = "Pass ?event=<id> (e.g. the AotW event) and/or ?achievement=<id> to probe."
+    return out
+
+
 @router.get("/diag/hash-lookup")
 async def diag_hash_lookup(q: str = "Pokemon Blue Version", system_id: int = 4, game_id: int = 586, session: Session = Depends(get_session)):
     """Diagnostic: search RA for a game, fetch its known hashes, test API_GetGameInfoByMD5.

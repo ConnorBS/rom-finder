@@ -206,6 +206,28 @@
             </div>
         </section>
 
+        <!-- Documentation & API references -->
+        <section>
+            <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">Documentation &amp; API references</h2>
+            <div class="space-y-2.5 text-sm">
+                <div>
+                    <a href="https://api.docs.retroachievements.org/" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:underline">RetroAchievements Web API (V1) ↗</a>
+                    <p class="text-gray-600 text-xs mt-0.5">The V1 API ROM Finder uses today (<code class="text-gray-500">retroachievements.org/API</code>) — game lists, hashes, completion progress, achievement sets.</p>
+                </div>
+                <div>
+                    <a href="https://github.com/Chew/RA-api-docs/tree/feat/v2-docs/docs/v2" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:underline">RetroAchievements API V2 docs (source) ↗</a>
+                    <p class="text-gray-600 text-xs mt-0.5">
+                        V2 (<code class="text-gray-500">api.retroachievements.org/v2</code>, JSON:API) exposes event <strong>award tiers</strong> (event → <code class="text-gray-500">awards</code>), per-achievement <code class="text-gray-500">points</code>/<code class="text-gray-500">pointsWeighted</code>, and an achievement's <strong>source game</strong> (achievement → <code class="text-gray-500">games</code>) — the data needed for the Goals event header tiers/points + per-achievement game/console.
+                        Verify reachability/auth in your environment with <a href="/api/diag/ra-v2?event=196" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:underline"><code>/api/diag/ra-v2?event=&lt;id&gt;</code></a>.
+                    </p>
+                </div>
+                <div>
+                    <a href="https://github.com/RetroAchievements/rcheevos/blob/develop/src/rhash/hash.c" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:underline">rcheevos rc_hash ↗</a>
+                    <p class="text-gray-600 text-xs mt-0.5">Canonical source for each console's hashing algorithm (the basis for ROM Finder's RA hash matching).</p>
+                </div>
+            </div>
+        </section>
+
         <!-- System Folder Mapping -->
         <section>
             <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">System Folder Mapping</h2>
