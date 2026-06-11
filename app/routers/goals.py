@@ -288,9 +288,10 @@ async def import_event(
         return HTMLResponse('<span class="text-yellow-500 text-xs">Add RA credentials in Settings first.</span>')
     if res.get("error"):
         return HTMLResponse(f'<span class="text-red-400 text-xs">Import failed: {res["error"]}</span>')
-    msg = (f'✓ Imported {res["created"]} achievement goal(s) for “{res["event"]}”'
+    msg = (f'✓ Imported {res["created"]} of {res["total_achievements"]} achievement(s) for “{res["event"]}”'
            f' — {res["skipped_existing"]} already tracked, {res["skipped_done"]} already done,'
-           f' {res["skipped_placeholder"]} placeholder tiles skipped.')
+           f' {res["skipped_placeholder"]} unpublished/placeholder tiles skipped'
+           f' (these are upcoming weeks — the nightly sync adds them once RA publishes a badge).')
     return HTMLResponse(
         f'<span class="text-green-400 text-xs">{msg}</span>'
         '<a href="/goals" class="text-blue-400 text-xs hover:underline ml-2">View ↗</a>'

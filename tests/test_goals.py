@@ -650,3 +650,15 @@ def test_delete_whole_event(client):
     with Session(engine) as s:
         assert s.exec(select(Goal).where(Goal.event_name == "Doomed Event")).all() == []
         assert s.exec(select(GoalEvent).where(GoalEvent.name == "Doomed Event")).first() is None
+
+
+def test_incomplete_card_greyscale_is_persistent_not_hover(client):
+    # Regression: greyscale must NOT clear on hover/tap (looked unlocked on mobile).
+    with Session(engine) as s:
+        s.add(Goal(game_title="Locked", system="NES", ra_game_id=1, achievement_id=9,
+                   objective=GoalObjective.achievement, custom_text="Do it",
+                   cover_path="https://media/x.png"))
+        s.commit()
+    html = client.get("/goals").text
+    assert "grayscale" in html
+    assert "group-hover:grayscale-0" not in html   # no hover/tap reveal

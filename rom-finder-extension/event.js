@@ -157,9 +157,9 @@
       if (data.status === 'error') throw new Error(data.error || 'rejected');
       importBtn.textContent = '✓ Imported';
       importBtn.style.background = '#14532d';
-      statusEl.textContent = `Imported ${data.created} goal(s) for “${data.event}” — `
+      statusEl.textContent = `Imported ${data.created} of ${data.total_achievements} for “${data.event}” — `
         + `${data.skipped_existing} already tracked, ${data.skipped_done} already done, `
-        + `${data.skipped_placeholder} placeholder tiles skipped.`;
+        + `${data.skipped_placeholder} unpublished/placeholder skipped (nightly sync adds upcoming weeks).`;
       statusEl.style.color = '#4ade80';
     } catch (err) {
       importBtn.disabled = false;
