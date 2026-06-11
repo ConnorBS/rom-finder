@@ -120,6 +120,53 @@ def test_evaluate_achievement_goal_hardcore_only(fresh_engine):
         assert g.status == GoalStatus.completed and g.auto is True
 
 
+def test_evaluate_event_clone_completes_via_badge(fresh_engine):
+    """An AotW/Roulette event goal carries the event-hub CLONE achievement_id (which the
+    user never directly unlocks), but the clone reuses the SOURCE achievement's badge. The
+    user earns the source (a different id) in hardcore → the goal completes via the badge
+    fallback. Scoped to event-grouped goals."""
+    badge = "https://media.retroachievements.org/Badge/193454.png"
+    with Session(engine) as s:
+        # User earned the SOURCE achievement (real id 9001, in the real game) in hardcore,
+        # same badge as the event clone. The clone id (571351) is NOT in the mirror.
+        s.add(RAAchievement(achievement_id=9001, game_id=219, badge_url=badge,
+                            earned_at=datetime.utcnow(), hardcore=True))
+        s.commit()
+        clone = Goal(game_title="AotW 2026", ra_game_id=37650, achievement_id=571351,
+                     objective=GoalObjective.achievement, custom_text="Troll Face",
+                     cover_path=badge, event_name="Achievement of the Week 2026")
+        # Same clone shape but UNGROUPED (no event_name) → badge fallback must NOT apply.
+        ungrouped = Goal(game_title="AotW 2026", ra_game_id=37650, achievement_id=571352,
+                         objective=GoalObjective.achievement, custom_text="Other",
+                         cover_path=badge, event_name="")
+        s.add(clone); s.add(ungrouped); s.commit()
+        s.refresh(clone); s.refresh(ungrouped)
+        clone_id, ungrouped_id = clone.id, ungrouped.id
+
+    with Session(engine) as s:
+        assert evaluate_goals(s)["completed"] == 1
+        assert s.get(Goal, clone_id).status == GoalStatus.completed
+        assert s.get(Goal, ungrouped_id).status == GoalStatus.active  # no event_name → no badge fallback
+
+
+def test_evaluate_event_clone_softcore_badge_does_not_complete(fresh_engine):
+    """The badge fallback stays hardcore-only: a softcore unlock of the source badge
+    must not complete the event goal."""
+    badge = "https://media.retroachievements.org/Badge/193454.png"
+    with Session(engine) as s:
+        s.add(RAAchievement(achievement_id=9001, game_id=219, badge_url=badge,
+                            earned_at=datetime.utcnow(), hardcore=False))  # softcore
+        s.commit()
+        g = Goal(game_title="AotW 2026", ra_game_id=37650, achievement_id=571351,
+                 objective=GoalObjective.achievement, custom_text="Troll Face",
+                 cover_path=badge, event_name="Achievement of the Week 2026")
+        s.add(g); s.commit(); s.refresh(g)
+        gid = g.id
+    with Session(engine) as s:
+        assert evaluate_goals(s)["completed"] == 0
+        assert s.get(Goal, gid).status == GoalStatus.active
+
+
 # --- extension API ---------------------------------------------------------
 
 def test_api_goal_achievement_add_dedup_and_status(client):

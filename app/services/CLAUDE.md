@@ -103,6 +103,15 @@ mirror satisfies it — zero RA calls. **Hardcore-only** across the board: `mast
 `ra_game_progress` via `award_satisfies`), and `achievement` ⇐ a **hardcore** `ra_achievement`
 row exists for the goal's `achievement_id`. Softcore awards/unlocks never count; `custom` never
 auto-completes.
+**Event-clone badge fallback:** RA's **AotW / RA Roulette** event tiles are *clones* — each has its
+OWN `achievement_id` under the event hub (console 101) that the user **never directly unlocks**
+(they unlock the SOURCE achievement in the real game, a different id), but the clone **reuses the
+source achievement's badge image**. So id-only matching left every imported AotW/Roulette goal
+stuck active even after the user earned it. Fix: for an achievement goal **with an `event_name`**,
+if the id doesn't match, evaluate_goals falls back to a **hardcore badge match** — `_badge_key`
+(last badge path segment, placeholder `0`/`00000` excluded) of the goal's `cover_path` vs the
+hardcore mirror's `badge_url` keys. Scoped to event goals so a standalone achievement goal can't
+false-match on a reused badge. Confirm against a live mirror with **`GET /api/diag/goal-mirror?event_game_id=<hub id>`** (reports `match_by_id_hardcore` vs `match_by_badge_only_hardcore` vs `no_match`).
 Stamps `auto=True` + `completed_at`; idempotent (already-completed goals aren't re-flipped).
 Called from `ra_dashboard.refresh()` (after `sync_library_awards`/`recompute_subset_flags`) and
 on every `/goals` page load — the only two moments the mirror can change. Deliberately NOT a

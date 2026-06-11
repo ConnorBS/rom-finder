@@ -173,6 +173,54 @@ async def diag_ra_v2(event: int = 0, achievement: int = 0):
     return out
 
 
+@router.get("/diag/goal-mirror")
+async def diag_goal_mirror(event_game_id: int = 0):
+    """Diagnose why event achievement goals aren't auto-completing: cross-reference each
+    achievement Goal against the local RA mirror by achievement_id AND by badge. RA's
+    AotW / RA Roulette event tiles are CLONES with a hub-specific achievement_id (which the
+    user never directly unlocks) that reuse the SOURCE achievement's badge, so id-matching
+    alone never completes them. Read-only. Pass ?event_game_id=<hub id> to scope to one event."""
+    from app.db.models import Goal, GoalObjective, RAAchievement
+    from app.services.goals import _badge_key
+
+    with Session(engine) as s:
+        hc_ids: set[int] = set()
+        hc_badges: set[str] = set()
+        for a in s.exec(select(RAAchievement).where(RAAchievement.hardcore == True)).all():  # noqa: E712
+            hc_ids.add(a.achievement_id)
+            bk = _badge_key(a.badge_url)
+            if bk:
+                hc_badges.add(bk)
+        q = select(Goal).where(
+            Goal.objective == GoalObjective.achievement,
+            Goal.achievement_id != None,  # noqa: E711
+        )
+        if event_game_id:
+            q = q.where(Goal.ra_game_id == event_game_id)
+        goals = s.exec(q).all()
+        ev_console = _count(s, RAAchievement, RAAchievement.console_id == 101)
+        game_rows = _count(s, RAAchievement, RAAchievement.game_id == event_game_id) if event_game_id else None
+
+    by_id = sum(1 for g in goals if g.achievement_id in hc_ids)
+    id_absent = [g for g in goals if g.achievement_id not in hc_ids]
+    by_badge = sum(1 for g in id_absent if _badge_key(g.cover_path) in hc_badges)
+    return {
+        "event_game_id": event_game_id,
+        "mirror_hardcore_ids": len(hc_ids),
+        "mirror_events_console_rows": ev_console,
+        "mirror_rows_for_event_game": game_rows,
+        "goals": len(goals),
+        "match_by_id_hardcore": by_id,
+        "match_by_badge_only_hardcore": by_badge,   # what the new badge fallback recovers
+        "no_match": len(id_absent) - by_badge,
+        "sample_id_absent": [
+            {"aid": g.achievement_id, "title": g.custom_text, "badge": _badge_key(g.cover_path),
+             "badge_in_mirror_hc": _badge_key(g.cover_path) in hc_badges}
+            for g in id_absent[:12]
+        ],
+    }
+
+
 @router.get("/diag/hash-lookup")
 async def diag_hash_lookup(q: str = "Pokemon Blue Version", system_id: int = 4, game_id: int = 586, session: Session = Depends(get_session)):
     """Diagnostic: search RA for a game, fetch its known hashes, test API_GetGameInfoByMD5.
