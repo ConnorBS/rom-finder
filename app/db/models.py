@@ -328,3 +328,23 @@ class RASubsetHash(SQLModel, table=True):
     subset_title: str = ""
     console_id: int = 0
     md5: str = Field(default="", index=True)
+
+
+class RAGameSet(SQLModel, table=True):
+    """RA **V2** multiset awareness (alongside the V1 RASubsetHash model): an owned
+    game's achievement SETS within its one game id, selected by `?set=`. Refreshed by
+    services/game_sets.py::refresh_game_sets (one V2 /games/{id}?include=achievementSets,hashes
+    call per owned game). `compatibility` = "compatible" (base ROM plays it) or
+    "patch-required" (needs RA's compatibility patch — `patch_url`), derived from the set
+    `set_type` (bonus/challenge = compatible; specialty/exclusive = patch-required) + the
+    game's V2 hashes. Display-only (collection detail); created by create_all (no migration)."""
+    __tablename__ = "ra_game_set"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    game_id: int = Field(default=0, index=True)   # the owned game's RA id
+    set_id: int = Field(default=0)                # achievement set id (= ?set=N)
+    title: str = ""
+    set_type: str = ""                            # core | bonus | challenge | specialty | exclusive
+    compatibility: str = ""                       # compatible | patch-required
+    patch_url: str = ""
+    points_total: int = 0
+    updated_at: datetime = Field(default_factory=datetime.utcnow)

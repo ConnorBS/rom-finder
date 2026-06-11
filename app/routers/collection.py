@@ -802,7 +802,9 @@ async def sync_subsets_endpoint(background_tasks: BackgroundTasks, session: Sess
     if not username or not api_key:
         return HTMLResponse('<span class="text-yellow-400 text-xs">Add RetroAchievements credentials in Settings to detect subsets.</span>')
     from app.services.subsets import refresh_subset_cache
-    background_tasks.add_task(refresh_subset_cache)
+    from app.services.game_sets import refresh_game_sets
+    background_tasks.add_task(refresh_subset_cache)              # V1 hash-match subsets
+    background_tasks.add_task(refresh_game_sets)                 # V2 set-aware (compatibility + patch links)
     return HTMLResponse('<span class="text-blue-400 text-xs">&#8635; Detecting subsets from RetroAchievements… reload when the activity tray clears.</span>')
 
 

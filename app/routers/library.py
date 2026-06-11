@@ -165,11 +165,15 @@ async def library_detail(
         subsets = json.loads(entry.subset_info) if entry.subset_info else []
     except ValueError:
         subsets = []
+    # V2 set-aware multiset data (alongside the V1 hash-match `subsets`): all of the
+    # game's achievement sets, each base-compatible or patch-required (+ patch link).
+    from app.services.game_sets import game_sets_for
+    game_sets = game_sets_for(session, entry.ra_game_id) if entry.ra_game_id else []
     return templates.TemplateResponse(
         request, "partials/library_detail.html",
         {"entry": entry, "downloads": downloads,
          "dup_group": dup_group, "canonical_id": canonical_id, "mixed_dump": mixed_dump,
-         "saves": saves, "subsets": subsets},
+         "saves": saves, "subsets": subsets, "game_sets": game_sets},
     )
 
 

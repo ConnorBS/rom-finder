@@ -73,6 +73,46 @@ class RAClientV2:
         return out
 
     @staticmethod
+    def _types_set(types) -> set:
+        t = types if isinstance(types, list) else [types]
+        return {str(x).lower() for x in t if x}
+
+    @staticmethod
+    def sets_from_game(payload: dict) -> list[dict]:
+        """Multiset achievement sets from /games/{id}?include=achievementSets,hashes →
+        [{set_id, title, set_type, compatibility, patch_url, points_total}], EXCLUDING the
+        core set. compatibility: specialty/exclusive sets need a patch (patch-required,
+        with the game's patch_url); bonus/challenge play on the base ROM (compatible)."""
+        inc = payload.get("included") or []
+        patch_url = ""
+        for i in inc:
+            if i.get("type") == "game-hashes":
+                a = i.get("attributes", {}) or {}
+                comp = (a.get("compatibility") or "").lower().replace("_", "-")
+                if comp == "patch-required" and a.get("patchUrl"):
+                    patch_url = a["patchUrl"]
+                    break
+        out = []
+        for i in inc:
+            if i.get("type") != "achievement-sets":
+                continue
+            a = i.get("attributes", {}) or {}
+            types = RAClientV2._types_set(a.get("types"))
+            if "core" in types:
+                continue   # the base set, not a subset
+            patch_required = bool(types & {"specialty", "exclusive"})
+            sid = i.get("id")
+            out.append({
+                "set_id": int(sid) if str(sid).isdigit() else 0,
+                "title": a.get("title", ""),
+                "set_type": ",".join(sorted(types)),
+                "compatibility": "patch-required" if patch_required else "compatible",
+                "patch_url": patch_url if patch_required else "",
+                "points_total": a.get("pointsTotal", 0) or 0,
+            })
+        return out
+
+    @staticmethod
     def source_game_from_achievement(payload: dict) -> dict | None:
         """The achievement's SOURCE game + console from
         /achievements/{id}?include=games.system → {game_id, title, console}."""

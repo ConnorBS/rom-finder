@@ -112,6 +112,30 @@
 <p class="text-gray-600 text-xs mb-5">"Available" subsets are extra achievement sets your ROM's hash can play but you haven't mastered yet.</p>
 {% endif %}
 
+<!-- Achievement sets (RA V2 multiset: base-compatible vs patch-required) -->
+{% if game_sets %}
+<h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+  Achievement sets <span class="text-gray-500 normal-case font-normal">(RA V2)</span>
+</h3>
+<div class="bg-gray-900 border border-gray-800 rounded-lg p-3 mb-2 space-y-2 text-xs">
+  {% for s in game_sets %}
+  <div class="flex items-center justify-between gap-2">
+    <a href="https://retroachievements.org/game/{{ entry.ra_game_id }}?set={{ s.set_id }}" target="_blank" rel="noopener"
+       class="text-gray-300 hover:text-blue-300 break-all">{{ s.title or 'Set ' ~ s.set_id }} ↗</a>
+    <div class="flex items-center gap-1.5 flex-shrink-0">
+      {% if s.compatibility == 'patch-required' %}
+      <span class="border px-1.5 py-0.5 rounded-full bg-orange-900/40 border-orange-700 text-orange-200">patch-required</span>
+      {% if s.patch_url %}<a href="{{ s.patch_url }}" target="_blank" rel="noopener" class="text-blue-400 hover:underline">patch ↗</a>{% endif %}
+      {% else %}
+      <span class="border px-1.5 py-0.5 rounded-full bg-emerald-900/40 border-emerald-700 text-emerald-200">base-compatible</span>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+<p class="text-gray-600 text-xs mb-5"><strong>base-compatible</strong> sets play on your base ROM; <strong>patch-required</strong> sets need RA's compatibility patch applied yourself.</p>
+{% endif %}
+
 <!-- Duplicates -->
 {% if dup_group %}
 <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
