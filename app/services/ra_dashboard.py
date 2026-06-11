@@ -17,7 +17,7 @@ from math import ceil
 from sqlmodel import Session, select, text
 
 from app.db.database import engine
-from app.db.models import RAAchievement, RAGameProgress, RAProfile, LibraryEntry
+from app.db.models import RAAchievement, RAGameProgress, RAProfile, LibraryEntry, GoalEvent
 from app.services import settings as app_settings
 from app.services import logger as applog
 from app.services import activity as activity_store
@@ -100,6 +100,42 @@ async def refresh() -> dict:
                 key = (_int(a.get("AchievementID")), bool(_int(a.get("HardcoreMode"))))
                 earned.setdefault(key, a)
             cur = nxt
+
+        # 2b. Event-hub achievements (AotW / RA Roulette / …). The windowed
+        #     API_GetAchievementsEarnedBetween UNDER-REPORTS event "games" (it returned only
+        #     14 of the user's 28 earned AotW unlocks), so pull each tracked event hub's
+        #     per-achievement user progress directly and merge in any earned unlock the
+        #     windowed pass missed — otherwise event goals never auto-complete. setdefault
+        #     keeps the richer windowed entry where it already exists.
+        with Session(engine) as s:
+            hub_ids = sorted({
+                e.ra_game_id for e in s.exec(
+                    select(GoalEvent).where(GoalEvent.ra_game_id != None)  # noqa: E711
+                ).all() if e.ra_game_id
+            })
+        for gid in hub_ids:
+            activity_store.update_label(_SYNC_ID, f"Syncing event hub {gid}…")
+            try:
+                gp = await ra.get_game_user_progress(gid)
+            except Exception as exc:
+                applog.warning("system", f"Event-hub progress pull failed (game {gid}): {exc}")
+                continue
+            g_title, g_cid, g_cname = gp.get("Title", "") or "", _int(gp.get("ConsoleID")), gp.get("ConsoleName", "") or ""
+            for a in (gp.get("Achievements") or {}).values():
+                aid = _int(a.get("ID"))
+                if not aid:
+                    continue
+                for hc, date_field in ((True, "DateEarnedHardcore"), (False, "DateEarned")):
+                    if not a.get(date_field):
+                        continue
+                    earned.setdefault((aid, hc), {
+                        "AchievementID": aid, "Date": a.get(date_field), "HardcoreMode": 1 if hc else 0,
+                        "Title": a.get("Title", ""), "Description": a.get("Description", ""),
+                        "Points": a.get("Points", 0), "TrueRatio": a.get("TrueRatio", 0),
+                        "Type": a.get("Type") or "", "GameID": gid, "GameTitle": g_title,
+                        "ConsoleID": g_cid, "ConsoleName": g_cname,
+                        "BadgeURL": RAClient.badge_url(str(a.get("BadgeName", "") or "")),
+                    })
 
         # 3. Per-game completion (paginated).
         activity_store.update_label(_SYNC_ID, "Syncing game completion…")

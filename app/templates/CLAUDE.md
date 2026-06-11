@@ -91,6 +91,14 @@ row (absent when not started), and a three-state deadline line (green ✓ Comple
 all → "✎ Edit" (toggles an inline event/deadline[/custom_text] form posting `/goals/{id}/edit`)
 and a hover delete.
 
+**Cover / locked state (per objective):** an **achievement** goal shows the achievement BADGE and
+swaps the **locked vs unlocked** image by completion — RA appends `_lock` before `.png`, so an
+active card renders `…/Badge/{n}_lock.png` and a done card `…/Badge/{n}.png` (NO greyscale).
+A **game** goal (master/beaten/custom) keeps the cover with **greyscale+dimmed until done**.
+Titles link to the **source**: the achievement title → `retroachievements.org/achievement/{achievement_id}`,
+and the game name (the "from {game}" line on achievement cards, or the title on game cards) →
+`retroachievements.org/game/{ra_game_id}` (plain text when the id is absent).
+
 ## Cover Refresh Button
 
 Per-card "↻" hover button on collection and wanted cards.

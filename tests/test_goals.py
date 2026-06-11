@@ -691,13 +691,37 @@ def test_delete_whole_event(client):
         assert s.exec(select(GoalEvent).where(GoalEvent.name == "Doomed Event")).first() is None
 
 
-def test_incomplete_card_greyscale_is_persistent_not_hover(client):
-    # Regression: greyscale must NOT clear on hover/tap (looked unlocked on mobile).
+def test_game_goal_greyscale_is_persistent_not_hover(client):
+    # Game goals greyscale the cover until done; must NOT clear on hover/tap (mobile bug).
     with Session(engine) as s:
-        s.add(Goal(game_title="Locked", system="NES", ra_game_id=1, achievement_id=9,
-                   objective=GoalObjective.achievement, custom_text="Do it",
-                   cover_path="https://media/x.png"))
+        s.add(Goal(game_title="Locked", system="NES", ra_game_id=1,
+                   objective=GoalObjective.master, cover_path="covers/1.png"))
         s.commit()
     html = client.get("/goals").text
     assert "grayscale" in html
     assert "group-hover:grayscale-0" not in html   # no hover/tap reveal
+
+
+def test_active_achievement_goal_uses_locked_badge_and_links(client):
+    # Achievement goals swap to the LOCKED badge (no greyscale) while active, and link to source.
+    with Session(engine) as s:
+        s.add(Goal(game_title="Final Fantasy", system="NES", ra_game_id=219, achievement_id=571351,
+                   objective=GoalObjective.achievement, custom_text="Troll Face",
+                   cover_path="https://media.retroachievements.org/Badge/193454.png"))
+        s.commit()
+    html = client.get("/goals").text
+    assert "Badge/193454_lock.png" in html                       # locked image while active
+    assert "retroachievements.org/achievement/571351" in html    # achievement title → source
+    assert "retroachievements.org/game/219" in html              # game name → source
+
+
+def test_completed_achievement_goal_uses_unlocked_badge(client):
+    with Session(engine) as s:
+        s.add(Goal(game_title="FF", system="NES", ra_game_id=219, achievement_id=571351,
+                   objective=GoalObjective.achievement, custom_text="Troll Face",
+                   cover_path="https://media.retroachievements.org/Badge/193454.png",
+                   status=GoalStatus.completed))
+        s.commit()
+    html = client.get("/goals").text
+    assert "Badge/193454.png" in html
+    assert "Badge/193454_lock.png" not in html   # unlocked image when done
