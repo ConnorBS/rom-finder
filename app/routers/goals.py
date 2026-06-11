@@ -479,6 +479,11 @@ async def _refresh_goal_art() -> None:
 
     activity_store.finish(task_id)
 
+    # Resolve real source game · console for each event's achievement goals (V2).
+    # Backfills goals imported before source-game enrichment existed.
+    for gid in ach_games:
+        await events_service.enrich_source_games(gid)
+
 
 async def _enrich_achievement_goal(goal_id: int, game_id: int, achievement_id: int) -> None:
     """Fill an achievement goal's title, description, and badge image from the RA
