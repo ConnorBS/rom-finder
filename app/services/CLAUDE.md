@@ -31,9 +31,10 @@ NB: per-achievement deadlines are confirmed **absent** from V2 (only `events.act
 ### RA V2 client (`ra_client_v2.py`) — historical note
 `RAClientV2(api_key)` hits the JSON:API V2 service at **`https://api.retroachievements.org/v2`**
 (separate host from V1's `retroachievements.org/API`), Bearer-auth, sharing the global 2 req/s
-`_limiter`. `get_event(id)` / `get_achievement(id)` exist to back the **`/api/diag/ra-v2`** probe,
-which confirms reachability/auth + captures the real payload (event `awards` tiers; achievement
-`points`/`pointsWeighted` + source `games`). Not yet wired into the UI — verify with the probe in a
+`_limiter`. `get_event(id)` / `get_achievement(id)` / `get_game(id)` back the **`/api/diag/ra-v2`**
+probe (`?event=` / `?achievement=` / `?game=`, optional `&include=` override), which confirms
+reachability/auth + captures the real payload (event `awards` tiers; achievement
+`points`/`pointsWeighted` + source `games`; game `achievementSets`/`hashes`). Not yet wired into the UI — verify with the probe in a
 deployment that has the key + RA network first (see root CLAUDE.md → V2 roadmap). Docs source:
 `github.com/Chew/RA-api-docs/tree/feat/v2-docs/docs/v2`.
 **V2 is JSON:API — it ONLY produces `application/vnd.api+json`**; `_headers()` MUST send that as
@@ -114,7 +115,11 @@ earned it, the cause is the **mirror missing that clone unlock**, not the match 
 **`GET /api/diag/user-game-progress?game_id=<hub id>`** (RA's per-achievement truth →
 `ra_earned_hardcore`, `earned_but_missing_from_mirror` >0 = mirror PULL GAP) and
 **`GET /api/diag/goal-mirror?event_game_id=<hub id>`** (goal ids vs mirror).
-Stamps `auto=True` + `completed_at`; idempotent (already-completed goals aren't re-flipped).
+Stamps `auto=True` + `completed_at` = **the REAL RA date** (the achievement's hardcore `earned_at`,
+or the game's `highest_award_date`/`most_recent_date` for master/beaten) — NOT the evaluator's run
+time (`updated_at` stays now so the live fingerprint still advances). A second pass **self-heals** the
+`completed_at` of already-auto-completed goals whose date predates this (re-stamps from the mirror when
+it differs; idempotent). Returns `{completed, corrected}`.
 Called from `ra_dashboard.refresh()` (after `sync_library_awards`/`recompute_subset_flags`) and
 on every `/goals` page load — the only two moments the mirror can change. Deliberately NOT a
 scheduler task (the mirror is manual-refresh only).

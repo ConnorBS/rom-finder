@@ -94,6 +94,36 @@ def test_evaluate_is_idempotent(fresh_engine):
         assert evaluate_goals(s)["completed"] == 0  # already done, nothing new to flip
 
 
+def test_completed_at_is_real_unlock_date_and_self_heals(fresh_engine):
+    """completed_at must be the RA unlock/beat date, not the evaluator's run time — and an
+    already-completed auto goal carrying the wrong (sync) date is self-healed."""
+    unlock = datetime(2026, 3, 14, 9, 30, 0)
+    with Session(engine) as s:
+        s.add(RAAchievement(achievement_id=553117, game_id=35105, earned_at=unlock, hardcore=True))
+        s.add(RAGameProgress(game_id=100, title="G", max_possible=10, num_awarded=10,
+                             pct_complete=100.0, highest_award_kind="mastered",
+                             highest_award_date=unlock))
+        s.commit()
+        ach = Goal(game_title="Mr Bean", ra_game_id=35105, achievement_id=553117,
+                   objective=GoalObjective.achievement, custom_text="Golden Retriever")
+        master = Goal(game_title="G", ra_game_id=100, objective=GoalObjective.master)
+        s.add(ach); s.add(master); s.commit()
+        s.refresh(ach); s.refresh(master)
+        agid, mgid = ach.id, master.id
+
+    with Session(engine) as s:
+        evaluate_goals(s)
+        assert s.get(Goal, agid).completed_at == unlock   # the achievement's hardcore date
+        assert s.get(Goal, mgid).completed_at == unlock   # the game's mastery date
+
+    # Simulate the pre-fix wrong date, then confirm a re-run corrects it.
+    with Session(engine) as s:
+        g = s.get(Goal, agid); g.completed_at = datetime(2026, 6, 11, 20, 0, 0); s.add(g); s.commit()
+    with Session(engine) as s:
+        assert evaluate_goals(s)["corrected"] >= 1
+        assert s.get(Goal, agid).completed_at == unlock
+
+
 def test_evaluate_achievement_goal_hardcore_only(fresh_engine):
     with Session(engine) as s:
         # achievement 555 earned in SOFTCORE only — must NOT satisfy the goal

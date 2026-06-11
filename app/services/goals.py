@@ -39,38 +39,62 @@ def evaluate_goals(session: Session) -> dict:
     """Flip active, auto-trackable goals to completed when the local RA mirror satisfies
     them — LOCAL (no RA calls). master/beaten read the per-game award tier; achievement
     goals are done once the achievement is unlocked in HARDCORE. Custom never auto-flips.
-    Returns {"completed": N} newly flipped."""
+    `completed_at` is the REAL RA date (the achievement's hardcore unlock, or the game's
+    beat/mastery date), NOT when this evaluator happened to run. Also self-heals the
+    completed_at of already-auto-completed goals (which predate this). Returns counts."""
     rows = {r.game_id: r for r in session.exec(select(RAGameProgress)).all()}
-    # Hardcore-earned achievement ids (the mirror dedupes on (achievement_id, hardcore)).
-    # Event-clone achievements (AotW/Roulette) are their OWN distinct hardcore unlocks in the
-    # mirror with their own id (NOT the source-game id), so a plain id match is correct — the
-    # import stores that same event-clone id. (Confirmed via the user's timeline: an event
-    # achievement shows as two rows, source + event clone, each a different id.)
-    earned_hc = {
-        a.achievement_id
-        for a in session.exec(select(RAAchievement).where(RAAchievement.hardcore == True)).all()  # noqa: E712
-    }
-    goals = session.exec(
-        select(Goal).where(
-            Goal.status == GoalStatus.active,
-            Goal.objective != GoalObjective.custom,
-        )
-    ).all()
-    flipped = 0
-    for g in goals:
-        done = False
+    # Hardcore-earned achievement id → EARLIEST hardcore earn date. Event-clone achievements
+    # (AotW/Roulette) are their OWN distinct hardcore unlocks with their own id (NOT the
+    # source-game id), so a plain id match is correct — the import stores that same clone id.
+    ach_date: dict[int, datetime] = {}
+    for a in session.exec(select(RAAchievement).where(RAAchievement.hardcore == True)).all():  # noqa: E712
+        cur = ach_date.get(a.achievement_id)
+        if cur is None or (a.earned_at and a.earned_at < cur):
+            ach_date[a.achievement_id] = a.earned_at
+
+    def _unlock_date(g: Goal) -> datetime | None:
+        """The real RA date the goal was satisfied — the achievement's hardcore unlock, or the
+        game's beat/mastery date — NOT the evaluator's run time."""
         if g.objective == GoalObjective.achievement:
-            done = g.achievement_id is not None and g.achievement_id in earned_hc
-        elif g.ra_game_id is not None:
-            row = rows.get(g.ra_game_id)
+            return ach_date.get(g.achievement_id)
+        row = rows.get(g.ra_game_id) if g.ra_game_id is not None else None
+        return (row.highest_award_date or row.most_recent_date) if row else None
+
+    now = datetime.utcnow()
+    flipped = 0
+    # 1) Flip newly-satisfied active goals, stamping the REAL unlock/beat date.
+    for g in session.exec(select(Goal).where(
+            Goal.status == GoalStatus.active, Goal.objective != GoalObjective.custom)).all():
+        if g.objective == GoalObjective.achievement:
+            done = g.achievement_id is not None and g.achievement_id in ach_date
+        else:
+            row = rows.get(g.ra_game_id) if g.ra_game_id is not None else None
             done = bool(row and award_satisfies(g.objective, row.highest_award_kind))
         if done:
             g.status = GoalStatus.completed
             g.auto = True
-            g.completed_at = g.updated_at = datetime.utcnow()
+            g.completed_at = _unlock_date(g) or now
+            g.updated_at = now
             session.add(g)
             flipped += 1
-    if flipped:
+
+    # 2) Self-heal already-auto-completed goals whose completed_at was stamped with the sync
+    #    time (pre-fix). Re-stamp from the mirror's real date when it differs; idempotent.
+    corrected = 0
+    for g in session.exec(select(Goal).where(
+            Goal.status == GoalStatus.completed, Goal.auto == True,  # noqa: E712
+            Goal.objective != GoalObjective.custom)).all():
+        real = _unlock_date(g)
+        if real and g.completed_at != real:
+            g.completed_at = real
+            g.updated_at = now
+            session.add(g)
+            corrected += 1
+
+    if flipped or corrected:
         session.commit()
-        applog.info("system", "Goals auto-completed", {"completed": flipped})
-    return {"completed": flipped}
+        if flipped:
+            applog.info("system", "Goals auto-completed", {"completed": flipped})
+        if corrected:
+            applog.info("system", "Goal completion dates corrected to RA unlock date", {"corrected": corrected})
+    return {"completed": flipped, "corrected": corrected}

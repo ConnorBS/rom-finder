@@ -121,7 +121,7 @@ async def diag_rahasher(system: str = "PlayStation", verify: bool = False,
 
 
 @router.get("/diag/ra-v2")
-async def diag_ra_v2(event: int = 0, achievement: int = 0):
+async def diag_ra_v2(event: int = 0, achievement: int = 0, game: int = 0, include: str = ""):
     """Probe the RetroAchievements **V2** API (api.retroachievements.org/v2) to confirm
     it's reachable + authenticates with our web API key, and to capture the real shape
     of an event (award tiers via `awards`) and an achievement (source game via `games`,
@@ -165,11 +165,13 @@ async def diag_ra_v2(event: int = 0, achievement: int = 0):
         return res
 
     if event:
-        out["event"] = await probe(f"/events/{event}", {"include": "awards"})
+        out["event"] = await probe(f"/events/{event}", {"include": include or "awards"})
     if achievement:
-        out["achievement"] = await probe(f"/achievements/{achievement}", {"include": "games"})
-    if not event and not achievement:
-        out["hint"] = "Pass ?event=<id> (e.g. the AotW event) and/or ?achievement=<id> to probe."
+        out["achievement"] = await probe(f"/achievements/{achievement}", {"include": include or "games.system"})
+    if game:
+        out["game"] = await probe(f"/games/{game}", {"include": include or "achievementSets,hashes"})
+    if not (event or achievement or game):
+        out["hint"] = "Pass ?event=, ?achievement=, and/or ?game= (optional &include=) to probe."
     return out
 
 
