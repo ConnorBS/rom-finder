@@ -68,6 +68,41 @@ class WantedGame(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class GoalObjective(str, Enum):
+    master = "master"    # satisfied when RAGameProgress.highest_award_kind == "mastered"
+    beaten = "beaten"    # satisfied when highest_award_kind in ("beaten", "mastered") — hardcore only
+    achievement = "achievement"  # satisfied when achievement_id is unlocked in hardcore (ra_achievement)
+    custom = "custom"    # freeform objective (e.g. "finish level 5"); marked done by hand
+
+
+class GoalStatus(str, Enum):
+    active = "active"
+    completed = "completed"
+
+
+class Goal(SQLModel, table=True):
+    """A user objective for a game, optionally grouped under an event, with a deadline.
+    master/beaten goals auto-complete from the LOCAL RA mirror (ra_game_progress) via
+    services/goals.py::evaluate_goals; custom goals are marked done manually. New table →
+    created by SQLModel.metadata.create_all at startup; no migration needed."""
+    __tablename__ = "goal"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    game_title: str
+    system: str = ""
+    ra_game_id: Optional[int] = Field(default=None, index=True)  # None for custom/non-RA goals
+    achievement_id: Optional[int] = Field(default=None, index=True)  # set for objective=achievement
+    cover_path: str = ""             # "covers/{ra_game_id}.png" (reuses any cover already on disk)
+    objective: str = GoalObjective.beaten
+    custom_text: str = ""            # custom: freeform label ("finish level 5"); achievement: the achievement's title
+    event_name: str = Field(default="", index=True)   # "" = ungrouped
+    deadline: Optional[datetime] = None   # midnight UTC of target day; None = no deadline
+    status: str = GoalStatus.active
+    auto: bool = False               # True once the RA evaluator (not the user) flipped it done
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    completed_at: Optional[datetime] = None
+
+
 class HuntAttempt(SQLModel, table=True):
     """Records each auto-hunt download attempt so failures are not retried."""
     __tablename__ = "hunt_attempts"

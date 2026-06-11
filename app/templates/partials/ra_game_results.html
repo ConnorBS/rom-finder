@@ -21,7 +21,16 @@
                 </div>
             </div>
 
-            {% if mode == 'add' %}
+            {% if mode == 'goal' %}
+            <!-- Goal mode: pick this game into the goal add-form -->
+            <button
+                type="button"
+                onclick="selectGoalGame({{ game.ID }}, this.dataset.title, this.dataset.system)"
+                data-title="{{ game.Title }}"
+                data-system="{{ system_name }}"
+                class="flex-shrink-0 bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1.5 rounded-md transition-colors"
+            >Select →</button>
+            {% elif mode == 'add' %}
             <!-- Add to Wanted mode -->
             <form
                 id="add-form-{{ game.ID }}"

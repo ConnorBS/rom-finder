@@ -10,11 +10,11 @@ from app.db.database import engine
 from app.db.migrations import run_migrations
 from app.db.models import (  # noqa: F401 — registers tables for create_all
     AppSetting, WantedGame, AppLog, HuntAttempt, InstalledExtension,
-    RAAchievement, RAGameProgress, RAProfile,
+    RAAchievement, RAGameProgress, RAProfile, Goal,
 )
 from app.services import settings as app_settings
 from app.services.settings import DEFAULT_SETTINGS
-from app.routers import games, downloads, library, settings_router, wanted, api, logs, collection, activity, scheduler, export, dashboard, extensions as extensions_router
+from app.routers import games, downloads, library, settings_router, wanted, api, logs, collection, activity, scheduler, export, dashboard, goals, extensions as extensions_router
 
 
 @asynccontextmanager
@@ -78,6 +78,7 @@ app.include_router(downloads.router)
 app.include_router(library.router)
 app.include_router(settings_router.router)
 app.include_router(wanted.router)
+app.include_router(goals.router)
 app.include_router(collection.router)
 app.include_router(api.router)
 app.include_router(logs.router)
