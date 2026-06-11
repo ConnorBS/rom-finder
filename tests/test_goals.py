@@ -187,6 +187,24 @@ def test_resolve_event_source_game_ambiguous_leaves_blank(fresh_engine):
         assert s.get(Goal, gid).system == "Events"   # left unresolved
 
 
+def test_event_cards_sorted_achievements_first(fresh_engine):
+    from app.routers.goals import _build_group, _card_ctx
+    now = datetime.utcnow()
+    g_master = Goal(game_title="A Game", system="Wii", ra_game_id=1,
+                    objective=GoalObjective.master, event_name="E")
+    g_ach = Goal(game_title="B Game", system="PS1", ra_game_id=2, achievement_id=9,
+                 objective=GoalObjective.achievement, custom_text="Do it", event_name="E")
+    g_custom = Goal(game_title="C Game", system="NES", ra_game_id=3,
+                    objective=GoalObjective.custom, custom_text="finish", event_name="E")
+    all_goals = [g_master, g_ach, g_custom]
+    cards = [_card_ctx(g, {}, now) for g in all_goals]    # input order: master, ach, custom
+    grp = _build_group("E", cards, all_goals, None)
+    objs = [c["goal"].objective for c in grp["cards"]]
+    assert objs[0] == GoalObjective.achievement           # achievements at the top
+    assert GoalObjective.achievement not in objs[1:]      # full games (master/custom) at the bottom
+    assert "subgroups" not in grp                         # no per-game column subdivision
+
+
 def test_looks_like_image():
     from app.routers.goals import _looks_like_image
     assert _looks_like_image("https://i.imgur.com/abc.png")

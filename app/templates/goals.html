@@ -298,21 +298,8 @@
                 {% endif %}
             </div>
 
-            {% if group.multi_game %}
-            <!-- Subdivide by game · console -->
-            {% for sub in group.subgroups %}
-            <div class="mb-4">
-                <p class="text-gray-500 text-xs font-medium mb-2">{{ sub.game_title or 'Other' }}{% if sub.system %} <span class="text-gray-600">· {{ sub.system }}</span>{% endif %}</p>
-                <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-                    {% for card in sub.cards %}
-                    {% with goal=card.goal, progress=card.progress, overdue=card.overdue, days_left=card.days_left %}
-                    {% include "partials/goal_card.html" %}
-                    {% endwith %}
-                    {% endfor %}
-                </div>
-            </div>
-            {% endfor %}
-            {% elif group.cards %}
+            {% if group.cards %}
+            <!-- All event cards in one flowing grid: achievements first, full games last -->
             <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
                 {% for card in group.cards %}
                 {% with goal=card.goal, progress=card.progress, overdue=card.overdue, days_left=card.days_left %}

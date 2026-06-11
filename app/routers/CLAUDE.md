@@ -176,7 +176,7 @@ backgrounds a rate-limited re-pull of badges (one call per distinct game) + box 
 by event with a header showing the event link **(rendered as an inline `<img>` when the url is an image —
 `_looks_like_image`, surfaced as `group.event_image`)**, the event **deadline** badge (3-state: green done /
 red overdue / amber upcoming), an ⟳ auto-sync badge, a done/total progress bar, and the achievement/points
-tally; multi-game events **subdivide by game · console**. **Add-as-goal from search:** the RA game-search
+tally; all of an event's cards render in **one flowing grid sorted achievements-first, full-games-last** (`_build_group` stable-sorts by objective — no per-game·console column subdivision; the game·console is on each card). **Add-as-goal from search:** the RA game-search
 results partial (`ra_game_results.html`, `mode='add'`) now offers a **🎯 Goal** action (Beat/Master select →
 `POST /goals/add`) beside **+ Add to Wanted**, so a discovered game can be tracked as a goal, not only hunted. Nightly growth is the scheduler `eventsync`
 task (`POST /scheduler/run/eventsync` to run now). Goal `points` (migration 0021) and `achievement_desc`
