@@ -105,6 +105,7 @@
         <form id="goal-edit-{{ goal.id }}" class="hidden mt-1 space-y-1.5 border-t border-gray-800 pt-2"
               hx-post="/goals/{{ goal.id }}/edit" hx-target="#goal-{{ goal.id }}" hx-swap="outerHTML">
             <input type="text" name="event_name" value="{{ goal.event_name }}" placeholder="Event"
+                   list="event-names" autocomplete="off"
                    class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500">
             <input type="date" name="deadline" value="{{ goal.deadline.strftime('%Y-%m-%d') if goal.deadline else '' }}"
                    class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500">
