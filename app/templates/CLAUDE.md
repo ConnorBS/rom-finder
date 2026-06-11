@@ -63,6 +63,18 @@ Each card/list row also shows **base achievements earned/total** (`🏆 {item.ac
 
 Multi-select is minimal JS (sanctioned, like the card-states poller): `.sel-check[data-lib-id]` checkboxes (card info area — kept off the cover so they don't trigger the detail slide-over; list view first column), a `#selection-bar` shown when the `window._sel` Set is non-empty, and `selectAllFiltered()` using `window.allFilteredLibIds`. **`window._sel` is initialised in `base.html`** (not the page's inline script) so it **survives a live in-place morph**; it still **resets on a real full render** (filter/paginate/HX-Refresh) via base.html's `htmx:afterSwap` handler that clears it when the swap target is `document.body`. The collection page re-applies it to checkboxes (`bindSelChecks()`) both at load and on the `live:updated` event after each morph. Action buttons post `library_ids` via `hx-vals` (body, not URL). `#col-perpage` (50–1000) is wired like `#col-system`; every nav link threads `&per_page`.
 
+## Goals page filters/sort + delete-event
+
+The Goals header has a toolbar (plain query-param controls, navigate via `goalsApplyFilters()`):
+**Sort** (`?sort=event|due|added|title`), **Show completed** (`?show_completed=0/1`, default on),
+**Show past-deadline** (`?show_past=0/1`, default OFF — overdue+incomplete goals are hidden, with a
+"N past-deadline hidden" note). Filtering/sorting is server-side in `goals_page`; params survive the
+live morph because the poller re-fetches the current URL. `due` orders cards by deadline (nulls last)
+and event groups by their earliest deadline. **Un-completed goal cards render greyscale+dimmed**
+(`goal_card.html`, `grayscale opacity-60`, color on hover); completed = full color. Each event header
+has a **🗑 Delete event** button → `POST /goals/event/delete` (Form `name`) which deletes every goal
+under it + its `GoalEvent` and returns `HX-Refresh`.
+
 ## Goals page (`goals.html`, `partials/goal_card.html`)
 
 `/goals` lists event objectives grouped by `event_name` ("No event" last) with a "N of M done"

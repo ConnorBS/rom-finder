@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request, Form, Depends, BackgroundTasks
+from fastapi import APIRouter, Request, Form, Depends, BackgroundTasks, Query
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select
@@ -44,31 +44,84 @@ def _card_ctx(goal: Goal, progress_by_id: dict, now: datetime) -> dict:
 # ---------------------------------------------------------------------------
 
 @router.get("", response_class=HTMLResponse)
-async def goals_page(request: Request, session: Session = Depends(get_session)):
+async def goals_page(
+    request: Request,
+    show_completed: str = Query(default="1"),
+    show_past: str = Query(default="0"),
+    sort: str = Query(default="event"),
+    session: Session = Depends(get_session),
+):
     evaluate_goals(session)  # LOCAL — fold in any RA progress since last visit
 
-    goals = session.exec(select(Goal).order_by(Goal.created_at.desc())).all()
+    show_completed_on = show_completed != "0"
+    show_past_on = show_past == "1"
+    if sort not in ("event", "due", "added", "title"):
+        sort = "event"
+
+    all_goals = session.exec(select(Goal)).all()
     progress_by_id = {r.game_id: r for r in session.exec(select(RAGameProgress)).all()}
     event_rows = {ev.name: ev for ev in session.exec(select(GoalEvent)).all()}
     now = datetime.utcnow()
 
-    # Group by event ("" = ungrouped, rendered last); preserve first-seen order.
+    # Filters (counts of what's hidden surface in the header).
+    hidden_completed = hidden_past = 0
+    visible: list[Goal] = []
+    for g in all_goals:
+        is_done = g.status == GoalStatus.completed
+        is_past = bool(not is_done and g.deadline and g.deadline < now)  # overdue, unreachable
+        if is_done and not show_completed_on:
+            hidden_completed += 1
+            continue
+        if is_past and not show_past_on:
+            hidden_past += 1
+            continue
+        visible.append(g)
+
+    # Per-card sort key (applied within each event group).
+    _far = datetime.max
+    def _card_key(g: Goal):
+        if sort == "due":
+            return (g.deadline or _far, g.game_title or "", g.id)
+        if sort == "title":
+            return ((g.custom_text or g.game_title or "").lower(), g.id)
+        if sort == "added":
+            return (g.created_at or _far, g.id)
+        return (g.created_at or _far, g.id)  # 'event' → stable by creation within the group
+    visible.sort(key=_card_key)
+
     grouped: dict[str, list] = {}
-    for g in goals:
+    for g in visible:
         grouped.setdefault(g.event_name or "", []).append(_card_ctx(g, progress_by_id, now))
-    # Custom/RA events with no goals yet still show (their link is the point).
     empty_events = [name for name in event_rows if name and name not in grouped]
-    ordered_events = [e for e in grouped if e] + sorted(empty_events) + ([""] if "" in grouped else [])
+    event_keys = [e for e in grouped if e] + sorted(empty_events)
+
+    # Event-group ordering.
+    def _event_min_due(name: str):
+        cards = grouped.get(name, [])
+        ds = [c["goal"].deadline for c in cards if c["goal"].deadline]
+        return min(ds) if ds else _far
+    if sort == "due":
+        event_keys.sort(key=_event_min_due)
+    elif sort == "title":
+        event_keys.sort(key=lambda n: n.lower())
+    # 'event'/'added' keep first-seen order.
+    ordered_events = event_keys + ([""] if "" in grouped else [])
 
     groups = [_build_group(e, grouped.get(e, []), event_rows.get(e)) for e in ordered_events]
-    event_names = sorted(set([g.event_name for g in goals if g.event_name]) | set(event_rows))
+    event_names = sorted(set([g.event_name for g in all_goals if g.event_name]) | set(event_rows))
 
-    applog.log_navigation("goals", {"goal_count": len(goals), "events": len(event_rows)})
+    applog.log_navigation("goals", {"goal_count": len(all_goals), "events": len(event_rows)})
     return templates.TemplateResponse(
         request, "goals.html",
         {
             "groups": groups,
-            "count": len(goals),
+            "count": len(all_goals),
+            "visible_count": len(visible),
+            "hidden_completed": hidden_completed,
+            "hidden_past": hidden_past,
+            "show_completed_on": show_completed_on,
+            "show_past_on": show_past_on,
+            "sort": sort,
             "event_names": event_names,
             "systems": sorted(SYSTEMS.items(), key=lambda x: x[1]),
             "ra_configured": _ra_configured(session),
@@ -81,7 +134,7 @@ def _build_group(name: str, cards: list, event: GoalEvent | None) -> dict:
     """Assemble one event group: per-game subdivisions + achievement/points tallies +
     its GoalEvent metadata (url, auto-sync, last sync)."""
     ach = [c for c in cards if c["goal"].objective == GoalObjective.achievement]
-    # Subdivide by (game, console), preserving first-seen order.
+    # Subdivide by (game, console), preserving the (already-sorted) card order.
     subs: dict[tuple, list] = {}
     for c in cards:
         subs.setdefault((c["goal"].game_title or "", c["goal"].system or ""), []).append(c)
@@ -238,6 +291,21 @@ async def upsert_custom_event(
         f'<span class="text-green-400 text-xs">✓ Event “{name}” saved.</span>'
         '<a href="/goals" class="text-blue-400 text-xs hover:underline ml-2">View ↗</a>'
     )
+
+
+@router.post("/event/delete", response_class=HTMLResponse)
+async def delete_event(name: str = Form(...), session: Session = Depends(get_session)):
+    """Delete a whole event: every goal under it + its GoalEvent record."""
+    name = name.strip()
+    goals = session.exec(select(Goal).where(Goal.event_name == name)).all()
+    for g in goals:
+        session.delete(g)
+    ev = session.exec(select(GoalEvent).where(GoalEvent.name == name)).first()
+    if ev:
+        session.delete(ev)
+    session.commit()
+    applog.log_action("delete_event", {"name": name, "goals_deleted": len(goals)})
+    return HTMLResponse("", headers={"HX-Refresh": "true"})
 
 
 @router.post("/refresh-art", response_class=HTMLResponse)

@@ -8,7 +8,11 @@
     <div class="flex items-center justify-between mb-6">
         <div>
             <h1 class="text-xl font-semibold text-white">Goals</h1>
-            <p class="text-gray-500 text-sm mt-0.5">{{ count }} goal{{ 's' if count != 1 }} tracked</p>
+            <p class="text-gray-500 text-sm mt-0.5">
+                Showing {{ visible_count }} of {{ count }} goal{{ 's' if count != 1 }}
+                {% if hidden_completed or hidden_past %}<span class="text-gray-600">·
+                    {% if hidden_completed %}{{ hidden_completed }} completed{% endif %}{% if hidden_completed and hidden_past %}, {% endif %}{% if hidden_past %}{{ hidden_past }} past-deadline{% endif %} hidden</span>{% endif %}
+            </p>
         </div>
         <div class="flex items-center gap-2">
             {% if ra_configured %}
@@ -19,6 +23,28 @@
             <button id="goal-add-toggle" onclick="toggleGoalPanel()"
                     class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">+ Add Goal</button>
         </div>
+    </div>
+
+    <!-- Filter / sort toolbar -->
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-2 mb-5 text-sm">
+        <label class="flex items-center gap-1.5 text-gray-400">
+            <span class="text-gray-500 text-xs">Sort</span>
+            <select id="goals-sort" onchange="goalsApplyFilters()"
+                    class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500">
+                <option value="event" {{ 'selected' if sort == 'event' }}>Event</option>
+                <option value="due" {{ 'selected' if sort == 'due' }}>Due date</option>
+                <option value="added" {{ 'selected' if sort == 'added' }}>Recently added</option>
+                <option value="title" {{ 'selected' if sort == 'title' }}>Title</option>
+            </select>
+        </label>
+        <label class="flex items-center gap-1.5 text-gray-400 text-xs cursor-pointer">
+            <input type="checkbox" id="goals-show-completed" onchange="goalsApplyFilters()" {{ 'checked' if show_completed_on }}
+                   class="rounded border-gray-600 bg-gray-800"> Show completed
+        </label>
+        <label class="flex items-center gap-1.5 text-gray-400 text-xs cursor-pointer">
+            <input type="checkbox" id="goals-show-past" onchange="goalsApplyFilters()" {{ 'checked' if show_past_on }}
+                   class="rounded border-gray-600 bg-gray-800"> Show past-deadline
+        </label>
     </div>
     <div id="goal-feedback-top" class="text-sm mb-3"></div>
 
@@ -203,6 +229,13 @@
                     <span class="text-gray-600 text-xs">· 🎯 {{ group.ach_done }}/{{ group.ach_total }}{% if group.points_total %} · {{ group.points_done }}/{{ group.points_total }} pts{% endif %}</span>
                     {% endif %}
                     <div class="flex-1 border-t border-gray-800 min-w-[2rem]"></div>
+                    {% if group.name %}
+                    <button type="button"
+                            hx-post="/goals/event/delete" hx-vals='{"name": {{ group.name | tojson }}}'
+                            hx-confirm="Delete the entire “{{ group.name }}” event and all {{ group.total }} of its goals?"
+                            class="text-gray-600 hover:text-red-400 text-xs transition-colors flex-shrink-0"
+                            title="Delete this event and all its goals">🗑 Delete event</button>
+                    {% endif %}
                 </div>
                 {% if group.total %}
                 <div class="w-full bg-gray-800 rounded-full h-1 overflow-hidden mt-1.5">
@@ -248,6 +281,13 @@
 </div>
 
 <script>
+function goalsApplyFilters() {
+    var u = new URL(window.location.href);
+    u.searchParams.set('sort', document.getElementById('goals-sort').value);
+    u.searchParams.set('show_completed', document.getElementById('goals-show-completed').checked ? '1' : '0');
+    u.searchParams.set('show_past', document.getElementById('goals-show-past').checked ? '1' : '0');
+    window.location = u.pathname + '?' + u.searchParams.toString();
+}
 function toggleGoalPanel() {
     var p = document.getElementById('goal-panel');
     p.classList.toggle('hidden');

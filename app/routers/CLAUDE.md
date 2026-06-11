@@ -173,6 +173,8 @@ tally; multi-game events **subdivide by game · console**. Nightly growth is the
 task (`POST /scheduler/run/eventsync` to run now). Goal `points` (migration 0021) and `achievement_desc`
 (0020) are the new columns. `/api/events` lists distinct event names for the datalists.
 
+The list page (`GET ""`) takes `show_completed` (default `1`), `show_past` (default `0` — overdue+incomplete hidden), and `sort` (`event|due|added|title`) query params; it filters/sorts server-side and surfaces hidden counts. **`POST /goals/event/delete`** (Form `name`) deletes a whole event (all its goals + the `GoalEvent`) and returns `HX-Refresh`.
+
 ## Agent-Observable Diagnostics (`api.py`)
 
 These JSON endpoints let any agent confirm the running app's state over HTTP — no browser, no Docker socket, no human checking the site. They are the agent-facing twins of the UI; the verifier agents (`deploy-verifier`, `prod-health-monitor`) consume them instead of scraping HTML.
