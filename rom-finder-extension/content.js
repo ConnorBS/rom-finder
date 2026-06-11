@@ -311,32 +311,117 @@
 
   const addStatus = el('div', '', { fontSize: '11px', minHeight: '16px', marginBottom: '10px', color: '#94a3b8' });
 
-  // Add as Goal row (Beat / Master) — track the game as a goal, not only a ROM hunt.
-  const goalRow = document.createElement('div');
-  applyStyles(goalRow, { display: 'flex', gap: '6px', marginBottom: '10px' });
+  // Set Goal — its OWN floating button (🎯), stacked ABOVE the ROM Finder button, for a
+  // GAME-level master/beat goal. Game pages only: on an /achievement/ page achievement.js
+  // owns the Set Goal button (for the achievement), so content.js doesn't add a second one.
+  if (!onAchPage) buildGameGoalWidget();
 
-  const goalSelect = document.createElement('select');
-  [['beaten', 'Beat'], ['master', 'Master']].forEach(([v, label]) => {
-    const o = document.createElement('option');
-    o.value = v; o.textContent = label; goalSelect.appendChild(o);
-  });
-  applyStyles(goalSelect, {
-    padding: '6px 8px', background: '#1e293b', border: '1px solid #334155',
-    borderRadius: '5px', color: '#e2e8f0', fontSize: '12px', outline: 'none',
-  });
+  function buildGameGoalWidget() {
+    const goalRoot = document.createElement('div');
+    applyStyles(goalRoot, {
+      position: 'fixed', bottom: '68px', right: '20px', zIndex: '2147483647',
+      fontFamily: 'system-ui, -apple-system, sans-serif', fontSize: '13px', lineHeight: '1.4',
+    });
 
-  const goalBtn = document.createElement('button');
-  goalBtn.textContent = '🎯 Add as Goal';
-  applyStyles(goalBtn, {
-    flex: '1', padding: '8px', background: '#334155', color: '#e2e8f0',
-    border: '1px solid #475569', borderRadius: '6px', fontWeight: '600',
-    fontSize: '12px', cursor: 'pointer', transition: 'background 0.15s',
-  });
-  goalBtn.addEventListener('mouseenter', () => { if (!goalBtn.disabled) goalBtn.style.background = '#475569'; });
-  goalBtn.addEventListener('mouseleave', () => { if (!goalBtn.disabled) goalBtn.style.background = '#334155'; });
+    const gPanel = document.createElement('div');
+    applyStyles(gPanel, {
+      display: 'none', width: '300px', background: '#0f172a', border: '1px solid #1e293b',
+      borderRadius: '10px', boxShadow: '0 8px 32px rgba(0,0,0,0.6)', overflow: 'hidden',
+      marginBottom: '8px', color: '#e2e8f0',
+    });
+    const gHead = document.createElement('div');
+    applyStyles(gHead, { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: '#1e293b', borderBottom: '1px solid #334155' });
+    gHead.appendChild(el('span', '🎯 ROM Finder — Goal', { fontWeight: '700', fontSize: '13px', color: '#f1f5f9' }));
+    const gClose = el('button', '×', { background: 'none', border: 'none', color: '#64748b', fontSize: '18px', cursor: 'pointer', lineHeight: '1', padding: '0' });
+    gHead.appendChild(gClose);
 
-  goalRow.appendChild(goalSelect);
-  goalRow.appendChild(goalBtn);
+    const gBody = document.createElement('div');
+    applyStyles(gBody, { padding: '14px' });
+
+    const field = (label) => { gBody.appendChild(el('div', label, { fontSize: '11px', color: '#64748b', marginBottom: '3px' })); };
+    const inStyle = { width: '100%', padding: '6px 9px', background: '#1e293b', border: '1px solid #334155', borderRadius: '5px', color: '#e2e8f0', fontSize: '12px', outline: 'none', marginBottom: '8px', boxSizing: 'border-box' };
+
+    field('Objective');
+    const gObj = document.createElement('select');
+    [['beaten', '🏆 Beat'], ['master', '🏅 Master']].forEach(([v, label]) => { const o = document.createElement('option'); o.value = v; o.textContent = label; gObj.appendChild(o); });
+    applyStyles(gObj, inStyle);
+    gBody.appendChild(gObj);
+
+    field('Event (optional)');
+    const gEvent = document.createElement('input');
+    gEvent.type = 'text'; gEvent.placeholder = 'e.g. Backlog'; gEvent.setAttribute('list', 'rf-game-events'); gEvent.setAttribute('autocomplete', 'off');
+    applyStyles(gEvent, inStyle);
+    const gEventList = document.createElement('datalist'); gEventList.id = 'rf-game-events';
+    gBody.appendChild(gEvent); gBody.appendChild(gEventList);
+
+    field('Deadline (optional)');
+    const gDate = document.createElement('input'); gDate.type = 'date';
+    applyStyles(gDate, Object.assign({}, inStyle, { marginBottom: '4px' }));
+    gBody.appendChild(gDate);
+
+    const gAdd = el('button', '🎯 Add as Goal', { width: '100%', padding: '8px', background: '#db2777', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: '600', fontSize: '12px', cursor: 'pointer', marginTop: '4px' });
+    gAdd.addEventListener('mouseenter', () => { if (!gAdd.disabled) gAdd.style.background = '#be185d'; });
+    gAdd.addEventListener('mouseleave', () => { if (!gAdd.disabled) gAdd.style.background = '#db2777'; });
+    gBody.appendChild(gAdd);
+    const gStatus = el('div', '', { fontSize: '11px', minHeight: '16px', marginTop: '8px', color: '#94a3b8' });
+    gBody.appendChild(gStatus);
+
+    gPanel.appendChild(gHead); gPanel.appendChild(gBody);
+
+    const gToggle = el('button', '🎯 Set Goal', {
+      display: 'block', marginLeft: 'auto', padding: '7px 14px', background: '#db2777',
+      color: '#fff', border: 'none', borderRadius: '20px', fontSize: '12px', fontWeight: '600',
+      cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.35)', whiteSpace: 'nowrap',
+    });
+    gToggle.addEventListener('mouseenter', () => gToggle.style.background = '#be185d');
+    gToggle.addEventListener('mouseleave', () => gToggle.style.background = '#db2777');
+
+    goalRoot.appendChild(gPanel);
+    goalRoot.appendChild(gToggle);
+    document.body.appendChild(goalRoot);
+
+    let gOpen = false;
+    const setGoalOpen = (v) => { gOpen = v; gPanel.style.display = v ? 'block' : 'none'; gToggle.textContent = v ? '✕ Close' : '🎯 Set Goal'; };
+    gToggle.addEventListener('click', () => setGoalOpen(!gOpen));
+    gClose.addEventListener('click', () => setGoalOpen(false));
+
+    // Populate the event datalist so a game goal can join an existing event group.
+    (async () => {
+      try {
+        const items = await storageGet({ romFinderUrl: 'http://127.0.0.1:8080' });
+        const resp = await apiFetch(`${items.romFinderUrl.replace(/\/$/, '')}/api/events`);
+        if (!resp.ok) return;
+        const data = await resp.json();
+        for (const name of (data.events || [])) { const o = document.createElement('option'); o.value = name; gEventList.appendChild(o); }
+      } catch (_) { /* server unreachable — free-text still works */ }
+    })();
+
+    gAdd.addEventListener('click', async () => {
+      const items = await storageGet({ romFinderUrl: 'http://127.0.0.1:8080' });
+      const base = items.romFinderUrl.replace(/\/$/, '');
+      gAdd.disabled = true; const prev = gAdd.textContent; gAdd.textContent = 'Adding…'; gStatus.textContent = '';
+      try {
+        const resp = await apiFetch(`${base}/api/goal`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ra_game_id: gameId, game_title: effectiveTitle(), system: systemName, system_id: systemId,
+            objective: gObj.value, event_name: gEvent.value.trim(), deadline: gDate.value,
+          }),
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        if (data.status === 'error') throw new Error(data.error || 'rejected');
+        gAdd.textContent = data.status === 'exists' ? '★ Already a goal' : '✓ Goal added';
+        gAdd.style.background = '#14532d';
+        gStatus.textContent = data.status === 'exists' ? 'Already a goal for that objective.' : 'Tracking — completes from your RA progress.';
+        gStatus.style.color = '#4ade80';
+      } catch (err) {
+        gAdd.disabled = false; gAdd.textContent = prev;
+        gStatus.textContent = `Error: ${err.message}. Is ROM Finder running?`;
+        gStatus.style.color = '#f87171';
+      }
+    });
+  }
 
   // Subset advisory — shown only on a subset page. Explains that ROM Finder tracks
   // the BASE game and that patch-required subsets are the user's responsibility.
@@ -413,7 +498,6 @@
   body.appendChild(subsetNote);
   body.appendChild(addBtn);
   body.appendChild(addStatus);
-  body.appendChild(goalRow);
   body.appendChild(divider);
   body.appendChild(searchLabel);
   body.appendChild(searchRow);
@@ -549,43 +633,6 @@
       addBtn.textContent = '+ Add to Wanted';
       addBtn.style.background = '#2563eb';
       addStatus.textContent = `Error: ${err.message}. Is ROM Finder running?`;
-      addStatus.style.color = '#f87171';
-    }
-  });
-
-  // -------------------------------------------------------------------------
-  // Add as Goal (game-level master/beat objective — separate from the ROM hunt)
-  // -------------------------------------------------------------------------
-
-  goalBtn.addEventListener('click', async () => {
-    const items = await storageGet({ romFinderUrl: 'http://127.0.0.1:8080' });
-    const base = items.romFinderUrl.replace(/\/$/, '');
-
-    goalBtn.disabled = true;
-    const prevText = goalBtn.textContent;
-    goalBtn.textContent = 'Adding…';
-
-    try {
-      const resp = await apiFetch(`${base}/api/goal`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ra_game_id: gameId,
-          game_title: effectiveTitle(),
-          system: systemName,
-          system_id: systemId,
-          objective: goalSelect.value,   // 'beaten' | 'master'
-        }),
-      });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = await resp.json();
-      goalBtn.textContent = data.status === 'exists' ? '✓ Goal already set' : '✓ Goal added';
-      goalBtn.style.background = '#14532d';
-      goalBtn.style.borderColor = '#166534';
-    } catch (err) {
-      goalBtn.disabled = false;
-      goalBtn.textContent = prevText;
-      addStatus.textContent = `Goal error: ${err.message}. Is ROM Finder running?`;
       addStatus.style.color = '#f87171';
     }
   });
