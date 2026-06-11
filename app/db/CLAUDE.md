@@ -81,6 +81,23 @@ load). **Progress/award are NOT cached on the row** — the page joins live to `
 by `ra_game_id` at render time (the mirror is replaced wholesale on refresh, so a cached copy
 would drift). Deadline parsed from an `<input type="date">` (`YYYY-MM-DD`); empty → None.
 
+### `GoalEvent` (table: `goal_events`)
+A named event that groups goals (`Goal.event_name == GoalEvent.name` is the join — by string, not FK).
+```
+id, name (indexed)        — the grouping label
+url                       — optional link (e.g. a Google Sheet) shown in the event header
+ra_game_id                — set for an RA event/game hub (events are special "event games")
+auto_sync                 — nightly re-check the RA hub for newly-added achievements
+include_completed         — remembered import option (whether to import already-earned achievements)
+deadline                  — default deadline stamped on newly-synced achievement goals
+last_synced_at, created_at, updated_at
+```
+Two kinds: **custom** (user-made, `auto_sync=False`, just a name + link) and **RA-sourced**
+(`auto_sync=True`, `ra_game_id` set — imported via `services/events.py::sync_event`, one
+`API_GetGameExtended` call; the nightly scheduler `eventsync` task re-syncs to grow AotW/random-
+roll events). New table → `create_all` (no migration). **Table is `goal_events` (plural)** so its
+auto-named index `ix_goal_events_name` doesn't collide with `goal.event_name`'s `ix_goal_event_name`.
+
 ### `Download` (table: `download`)
 Active/completed download queue entries.
 ```

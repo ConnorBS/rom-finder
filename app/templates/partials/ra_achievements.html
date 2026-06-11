@@ -3,7 +3,14 @@
     Couldn't load achievements: {{ error }}
 </div>
 {% elif achievements %}
-<div class="mt-2 border border-gray-800 rounded-lg divide-y divide-gray-800 max-h-72 overflow-y-auto">
+<div class="flex items-center justify-between mt-2 mb-1">
+    <span class="text-gray-500 text-xs">{{ achievements | length }} achievement{{ 's' if achievements | length != 1 }}</span>
+    <button type="button"
+            data-gid="{{ game_id }}" data-gtitle="{{ game_title }}"
+            onclick="prepImportEvent(this.dataset.gid, this.dataset.gtitle)"
+            class="bg-pink-700 hover:bg-pink-600 text-white text-xs px-2.5 py-1 rounded-md transition-colors">⇊ Import all as event</button>
+</div>
+<div class="border border-gray-800 rounded-lg divide-y divide-gray-800 max-h-72 overflow-y-auto">
     {% for ach in achievements %}
     <div class="flex items-center gap-3 px-3 py-2">
         {% if ach.badge_url %}

@@ -663,12 +663,14 @@ async def api_changes(session: Session = Depends(get_session)):
     # edit/auto-complete all bump updated_at; a background cover write only sets
     # cover_path, hence the length sum, mirroring the wanted scope).
     try:
-        from app.db.models import Goal, GoalStatus
+        from app.db.models import Goal, GoalStatus, GoalEvent
         total = _count(session, Goal)
         completed = _count(session, Goal, Goal.status == GoalStatus.completed)
         cover_len = session.scalar(sa_select(func.coalesce(func.sum(func.length(Goal.cover_path)), 0)))
         last_touch = session.scalar(sa_select(func.max(Goal.updated_at)))
-        changes["goals"] = f"{total}:{completed}:{cover_len}:{last_touch}"
+        ev_total = _count(session, GoalEvent)
+        ev_touch = session.scalar(sa_select(func.max(GoalEvent.updated_at)))
+        changes["goals"] = f"{total}:{completed}:{cover_len}:{last_touch}:{ev_total}:{ev_touch}"
     except Exception as e:
         changes["goals"] = f"err:{e}"
 

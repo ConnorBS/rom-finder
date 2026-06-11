@@ -10,20 +10,32 @@
             <h1 class="text-xl font-semibold text-white">Goals</h1>
             <p class="text-gray-500 text-sm mt-0.5">{{ count }} goal{{ 's' if count != 1 }} tracked</p>
         </div>
-        <button id="goal-add-toggle" onclick="toggleGoalPanel()"
-                class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">+ Add Goal</button>
+        <div class="flex items-center gap-2">
+            {% if ra_configured %}
+            <button hx-post="/goals/refresh-art" hx-target="#goal-feedback-top" hx-swap="innerHTML"
+                    class="bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 hover:text-white text-sm font-medium px-3 py-2 rounded-lg transition-colors"
+                    title="Re-pull box art + achievement badges (rate-limited, deduped by game)">↻ Refresh art</button>
+            {% endif %}
+            <button id="goal-add-toggle" onclick="toggleGoalPanel()"
+                    class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">+ Add Goal</button>
+        </div>
     </div>
+    <div id="goal-feedback-top" class="text-sm mb-3"></div>
 
     <datalist id="event-names">{% for e in event_names %}<option value="{{ e }}">{% endfor %}</datalist>
 
     <!-- Add Goal panel -->
     <div id="goal-panel" class="hidden mb-6 bg-gray-900 border border-gray-800 rounded-lg p-5">
         <!-- Tabs -->
-        <div class="flex gap-1 mb-4">
+        <div class="flex flex-wrap gap-1 mb-4">
             <button id="goal-tab-ra" onclick="switchGoalTab('ra')"
-                    class="px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-700 bg-gray-700 text-white transition-colors">RA game</button>
+                    class="goal-tab px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-700 bg-gray-700 text-white transition-colors">RA game</button>
+            <button id="goal-tab-event" onclick="switchGoalTab('event')"
+                    class="goal-tab px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-700 bg-gray-800 text-gray-400 hover:text-white transition-colors">Import event</button>
+            <button id="goal-tab-newevent" onclick="switchGoalTab('newevent')"
+                    class="goal-tab px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-700 bg-gray-800 text-gray-400 hover:text-white transition-colors">Custom event</button>
             <button id="goal-tab-custom" onclick="switchGoalTab('custom')"
-                    class="px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-700 bg-gray-800 text-gray-400 hover:text-white transition-colors">Custom objective</button>
+                    class="goal-tab px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-700 bg-gray-800 text-gray-400 hover:text-white transition-colors">Custom objective</button>
         </div>
 
         <!-- RA game mode -->
@@ -77,6 +89,57 @@
             {% endif %}
         </div>
 
+        <!-- Import event mode -->
+        <div id="goal-mode-event" class="hidden">
+            {% if ra_configured %}
+            <p class="text-gray-500 text-xs mb-3">Paste an RA event (or game) URL or ID — every achievement is imported as a goal in <strong>one</strong> request. Placeholder tiles are skipped. The event re-checks nightly for newly-added achievements.</p>
+            <form hx-post="/goals/import-event" hx-target="#goal-feedback" hx-swap="innerHTML"
+                  class="flex flex-col sm:flex-row sm:items-end gap-3 flex-wrap">
+                <div class="flex-1 min-w-[14rem]">
+                    <label class="block text-gray-500 text-xs mb-1">Event URL or RA ID</label>
+                    <input type="text" id="event-ref" name="event_ref" required placeholder="retroachievements.org/event/196-… or 196"
+                           class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
+                </div>
+                <div>
+                    <label class="block text-gray-500 text-xs mb-1">Event name (optional)</label>
+                    <input type="text" id="event-name-in" name="event_name" list="event-names" placeholder="defaults to the RA title"
+                           class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 w-52">
+                </div>
+                <div>
+                    <label class="block text-gray-500 text-xs mb-1">Deadline (optional)</label>
+                    <input type="date" name="deadline" class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
+                </div>
+                <label class="flex items-center gap-2 text-gray-400 text-xs pb-2">
+                    <input type="checkbox" name="include_completed" value="true" checked class="rounded border-gray-600 bg-gray-800">
+                    Include ones I've already earned
+                </label>
+                <button type="submit" class="bg-pink-700 hover:bg-pink-600 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">Import all</button>
+            </form>
+            {% else %}
+            <p class="text-yellow-500 text-sm">Add your <a href="/settings" class="underline">RetroAchievements credentials</a> to import an event.</p>
+            {% endif %}
+        </div>
+
+        <!-- Custom event mode (named group + link, e.g. a Google Sheet) -->
+        <div id="goal-mode-newevent" class="hidden">
+            <p class="text-gray-500 text-xs mb-3">Make a named event with a link (e.g. a Google Sheet) so you can jump to it from the group header. Then add goals under this event name.</p>
+            <form hx-post="/goals/event" hx-target="#goal-feedback" hx-swap="innerHTML"
+                  class="flex flex-col sm:flex-row sm:items-end gap-3 flex-wrap"
+                  hx-on::after-request="if(event.detail.successful) this.reset()">
+                <div class="flex-1 min-w-[12rem]">
+                    <label class="block text-gray-500 text-xs mb-1">Event name</label>
+                    <input type="text" name="name" required placeholder="e.g. Summer Backlog"
+                           class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
+                </div>
+                <div class="flex-1 min-w-[14rem]">
+                    <label class="block text-gray-500 text-xs mb-1">Link (optional)</label>
+                    <input type="url" name="url" placeholder="https://docs.google.com/…"
+                           class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
+                </div>
+                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">Save event</button>
+            </form>
+        </div>
+
         <!-- Custom mode -->
         <div id="goal-mode-custom" class="hidden">
             <form hx-post="/goals/add-custom" hx-target="#goal-feedback" hx-swap="innerHTML"
@@ -118,11 +181,45 @@
     <div class="space-y-8">
         {% for group in groups %}
         <section>
-            <div class="flex items-center gap-3 mb-3">
-                <h2 class="text-sm font-semibold {% if group.name %}text-gray-300{% else %}text-gray-500{% endif %}">{{ group.name or 'No event' }}</h2>
-                <span class="text-gray-600 text-xs">{{ group.done }} of {{ group.total }} done</span>
-                <div class="flex-1 border-t border-gray-800"></div>
+            <!-- Event header -->
+            <div class="mb-3">
+                <div class="flex items-center flex-wrap gap-x-3 gap-y-1">
+                    <h2 class="text-sm font-semibold {% if group.name %}text-gray-200{% else %}text-gray-500{% endif %}">{{ group.name or 'No event' }}</h2>
+                    {% if group.event and group.event.url %}
+                    <a href="{{ group.event.url }}" target="_blank" rel="noopener noreferrer"
+                       class="text-blue-400 hover:underline text-xs">↗ link</a>
+                    {% endif %}
+                    {% if group.event and group.event.auto_sync %}
+                    <span class="text-emerald-500/80 text-xs" title="Re-checked nightly for new achievements{% if group.event.last_synced_at %} — last {{ group.event.last_synced_at.strftime('%b %d') }}{% endif %}">⟳ auto-sync</span>
+                    {% endif %}
+                    <span class="text-gray-600 text-xs">{{ group.done }} of {{ group.total }} done</span>
+                    {% if group.ach_total %}
+                    <span class="text-gray-600 text-xs">· 🎯 {{ group.ach_done }}/{{ group.ach_total }}{% if group.points_total %} · {{ group.points_done }}/{{ group.points_total }} pts{% endif %}</span>
+                    {% endif %}
+                    <div class="flex-1 border-t border-gray-800 min-w-[2rem]"></div>
+                </div>
+                {% if group.total %}
+                <div class="w-full bg-gray-800 rounded-full h-1 overflow-hidden mt-1.5">
+                    <div class="h-full bg-emerald-500" style="width: {{ (100 * group.done / group.total) | round(0, 'floor') }}%"></div>
+                </div>
+                {% endif %}
             </div>
+
+            {% if group.multi_game %}
+            <!-- Subdivide by game · console -->
+            {% for sub in group.subgroups %}
+            <div class="mb-4">
+                <p class="text-gray-500 text-xs font-medium mb-2">{{ sub.game_title or 'Other' }}{% if sub.system %} <span class="text-gray-600">· {{ sub.system }}</span>{% endif %}</p>
+                <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+                    {% for card in sub.cards %}
+                    {% with goal=card.goal, progress=card.progress, overdue=card.overdue, days_left=card.days_left %}
+                    {% include "partials/goal_card.html" %}
+                    {% endwith %}
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+            {% elif group.cards %}
             <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
                 {% for card in group.cards %}
                 {% with goal=card.goal, progress=card.progress, overdue=card.overdue, days_left=card.days_left %}
@@ -130,6 +227,9 @@
                 {% endwith %}
                 {% endfor %}
             </div>
+            {% else %}
+            <p class="text-gray-600 text-xs">No goals under this event yet.</p>
+            {% endif %}
         </section>
         {% endfor %}
     </div>
@@ -146,19 +246,28 @@ function toggleGoalPanel() {
     var p = document.getElementById('goal-panel');
     p.classList.toggle('hidden');
 }
+var GOAL_TABS = ['ra', 'event', 'newevent', 'custom'];
 function switchGoalTab(which) {
-    var ra = document.getElementById('goal-mode-ra'), custom = document.getElementById('goal-mode-custom');
-    var tRa = document.getElementById('goal-tab-ra'), tCustom = document.getElementById('goal-tab-custom');
     var on = ['bg-gray-700', 'text-white'], off = ['bg-gray-800', 'text-gray-400'];
-    if (which === 'ra') {
-        ra.classList.remove('hidden'); custom.classList.add('hidden');
-        tRa.classList.add.apply(tRa.classList, on);   tRa.classList.remove.apply(tRa.classList, off);
-        tCustom.classList.add.apply(tCustom.classList, off); tCustom.classList.remove.apply(tCustom.classList, on);
-    } else {
-        custom.classList.remove('hidden'); ra.classList.add('hidden');
-        tCustom.classList.add.apply(tCustom.classList, on);  tCustom.classList.remove.apply(tCustom.classList, off);
-        tRa.classList.add.apply(tRa.classList, off); tRa.classList.remove.apply(tRa.classList, on);
-    }
+    GOAL_TABS.forEach(function (t) {
+        var mode = document.getElementById('goal-mode-' + t);
+        var tab = document.getElementById('goal-tab-' + t);
+        if (!mode || !tab) return;
+        var active = (t === which);
+        mode.classList.toggle('hidden', !active);
+        tab.classList.toggle('bg-gray-700', active);
+        tab.classList.toggle('text-white', active);
+        tab.classList.toggle('bg-gray-800', !active);
+        tab.classList.toggle('text-gray-400', !active);
+    });
+}
+// Bridge: "Import all" on a search result's achievement list → fill the Import-event tab.
+function prepImportEvent(gameId, gameTitle) {
+    document.getElementById('goal-panel').classList.remove('hidden');
+    switchGoalTab('event');
+    document.getElementById('event-ref').value = gameId;
+    document.getElementById('event-name-in').value = gameTitle || '';
+    document.getElementById('event-ref').scrollIntoView({behavior: 'smooth', block: 'center'});
 }
 function selectGoalGame(id, title, system) {
     document.getElementById('goal-ra-id').value = id;

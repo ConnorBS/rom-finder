@@ -71,6 +71,10 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "sched_verify_enabled": "true",
     "sched_verify_time": "05:00",
     "sched_verify_last_run": "",
+    # Nightly event sync — re-check auto-sync RA events for newly-added achievements
+    "sched_eventsync_enabled": "true",
+    "sched_eventsync_time": "05:30",
+    "sched_eventsync_last_run": "",
     # Torrent/usenet last-resort downloads (qBittorrent/SABnzbd via Prowlarr). The
     # poller runs every scheduler tick while jobs are in flight (not a daily slot).
     "sched_poll_external_enabled": "true",

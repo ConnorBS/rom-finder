@@ -12,7 +12,7 @@ from sqlmodel import Session, select
 from datetime import datetime
 
 from app.db.database import engine
-from app.db.models import Goal, GoalObjective, GoalStatus, RAAchievement, RAGameProgress
+from app.db.models import Goal, GoalEvent, GoalObjective, GoalStatus, RAAchievement, RAGameProgress
 from app.services.goals import evaluate_goals, award_satisfies
 
 
@@ -293,3 +293,103 @@ def test_changes_goals_token_moves(client):
     client.post(f"/goals/{gid}/complete")
     after_complete = client.get("/api/changes").json()["goals"]
     assert after_complete != after_add
+
+
+# --- event import / nightly sync / custom events ---------------------------
+
+def _ach(aid, title, desc="desc", points=5, badge="12345"):
+    return {"ID": aid, "Title": title, "Description": desc, "Points": points,
+            "BadgeName": badge, "DisplayOrder": aid}
+
+
+def _extended(title="Test Event", console="Events", achs=None):
+    achs = achs or []
+    return {"ID": 196, "Title": title, "ConsoleName": console,
+            "Achievements": {str(a["ID"]): a for a in achs}}
+
+
+def _seed_creds():
+    from app.services import settings as app_settings
+    with Session(engine) as s:
+        app_settings.set(s, "ra_username", "u")
+        app_settings.set(s, "ra_api_key", "k")
+
+
+def test_build_event_goals_skips_placeholders_and_dedup(fresh_engine):
+    from app.services.events import build_event_goals
+    achs = [
+        {"id": 1, "title": "A", "description": "da", "points": 5, "badge_url": "u1"},
+        {"id": 2, "title": "B", "description": "db", "points": 10, "badge_url": ""},  # placeholder
+        {"id": 3, "title": "C", "description": "dc", "points": 7, "badge_url": "u3"},
+    ]
+    with Session(engine) as s:
+        s.add(Goal(game_title="E", ra_game_id=196, achievement_id=1, objective=GoalObjective.achievement))
+        s.commit()
+        stats = build_event_goals(s, ra_game_id=196, event_name="E", game_title="E", system="Events",
+                                  achievements=achs, include_completed=True, deadline=None)
+        s.commit()
+    assert stats == {"created": 1, "skipped_existing": 1, "skipped_placeholder": 1, "skipped_done": 0}
+    with Session(engine) as s:
+        g = s.exec(select(Goal).where(Goal.achievement_id == 3)).first()
+        assert g.points == 7 and g.cover_path == "u3" and g.objective == "achievement"
+
+
+def test_build_event_goals_excludes_already_earned_when_unchecked(fresh_engine):
+    from app.services.events import build_event_goals
+    achs = [{"id": 10, "title": "X", "description": "", "points": 1, "badge_url": "u"}]
+    with Session(engine) as s:
+        s.add(RAAchievement(achievement_id=10, game_id=196, earned_at=datetime.utcnow(), hardcore=True))
+        s.commit()
+        stats = build_event_goals(s, ra_game_id=196, event_name="E", game_title="E", system="",
+                                  achievements=achs, include_completed=False, deadline=None)
+        s.commit()
+    assert stats["created"] == 0 and stats["skipped_done"] == 1
+
+
+def test_import_event_endpoint(client, monkeypatch):
+    from app.services.ra_client import RAClient
+    payload = _extended(achs=[_ach(1, "A"), _ach(2, "B", badge="00000"), _ach(3, "C")])
+
+    async def fake(self, gid):
+        return payload
+    monkeypatch.setattr(RAClient, "get_game_extended", fake)
+    _seed_creds()
+
+    r = client.post("/goals/import-event",
+                    data={"event_ref": "https://retroachievements.org/event/196-x", "include_completed": "true"})
+    assert r.status_code == 200 and "Imported 2" in r.text   # ach 2 is a placeholder tile, skipped
+    with Session(engine) as s:
+        goals = s.exec(select(Goal).where(Goal.ra_game_id == 196)).all()
+        assert len(goals) == 2
+        assert all(g.objective == "achievement" for g in goals)
+        ev = s.exec(select(GoalEvent).where(GoalEvent.ra_game_id == 196)).first()
+        assert ev.auto_sync is True and ev.name == "Test Event"
+
+
+def test_custom_event_with_link(client):
+    r = client.post("/goals/event", data={"name": "Summer Backlog", "url": "https://docs.google.com/sheet"})
+    assert r.status_code == 200
+    with Session(engine) as s:
+        ev = s.exec(select(GoalEvent).where(GoalEvent.name == "Summer Backlog")).first()
+        assert ev.url == "https://docs.google.com/sheet" and ev.auto_sync is False and ev.ra_game_id is None
+
+
+def test_event_nightly_sync_adds_new_achievements(client, monkeypatch):
+    from app.services.ra_client import RAClient
+    _seed_creds()
+    state = {"achs": [_ach(1, "A")]}
+
+    async def fake(self, gid):
+        return _extended(achs=state["achs"])
+    monkeypatch.setattr(RAClient, "get_game_extended", fake)
+
+    client.post("/goals/import-event", data={"event_ref": "196", "include_completed": "true"})
+    with Session(engine) as s:
+        assert len(s.exec(select(Goal).where(Goal.ra_game_id == 196)).all()) == 1
+
+    # The event grows (AotW/random rolls) — nightly sync picks up the new achievement.
+    state["achs"] = [_ach(1, "A"), _ach(2, "B")]
+    r = client.post("/scheduler/run/eventsync")
+    assert r.status_code == 200
+    with Session(engine) as s:
+        assert len(s.exec(select(Goal).where(Goal.ra_game_id == 196)).all()) == 2

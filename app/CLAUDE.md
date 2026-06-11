@@ -30,6 +30,7 @@ app/
     scheduler.py       # Scheduled task runners + scheduler_loop()
     logger.py          # Structured app logging to app_logs table
     goals.py           # Goal auto-completion from the RA mirror (LOCAL) — evaluate_goals
+    events.py          # Event import (one API call) + nightly auto-sync of growing RA events
     settings.py        # Canonical settings accessors + DEFAULT_SETTINGS (leaf: imports only app.db)
     title_utils.py     # Search query generation + result relevance (search == hunt)
     sources/           # ROM download sources

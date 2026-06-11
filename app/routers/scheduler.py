@@ -57,6 +57,14 @@ def _task_list(session: Session) -> list[dict]:
             "time": _get(session, "sched_verify_time", "05:00"),
             "last_run": _get(session, "sched_verify_last_run", ""),
         },
+        {
+            "id": "eventsync",
+            "name": "Event sync",
+            "description": "Re-check each imported auto-sync RA event (AotW, random rolls, etc.) for newly-added achievements and import them as goals. One RA request per event.",
+            "enabled": _get(session, "sched_eventsync_enabled", "true"),
+            "time": _get(session, "sched_eventsync_time", "05:30"),
+            "last_run": _get(session, "sched_eventsync_last_run", ""),
+        },
     ]
 
 
@@ -71,7 +79,7 @@ async def scheduler_page(request: Request, session: Session = Depends(get_sessio
 @router.post("/save", response_class=HTMLResponse)
 async def save_schedule(request: Request, session: Session = Depends(get_session)):
     form = await request.form()
-    for tid in ("scan", "hash", "autodiscover", "verify"):
+    for tid in ("scan", "hash", "autodiscover", "verify", "eventsync"):
         _set(session, f"sched_{tid}_enabled", "true" if form.get(f"sched_{tid}_enabled") == "true" else "false")
         time_val = str(form.get(f"sched_{tid}_time", "04:00")).strip() or "04:00"
         _set(session, f"sched_{tid}_time", time_val)
@@ -92,9 +100,10 @@ def _oob_last_run(task_id: str) -> str:
 
 @router.post("/run/{task_id}", response_class=HTMLResponse)
 async def run_task_now(task_id: str):
-    from app.services.scheduler import run_scan, run_hash_check, run_autodiscover, run_verify
+    from app.services.scheduler import run_scan, run_hash_check, run_autodiscover, run_verify, run_event_sync
     runners = {"scan": run_scan, "hash": run_hash_check,
-               "autodiscover": run_autodiscover, "verify": run_verify}
+               "autodiscover": run_autodiscover, "verify": run_verify,
+               "eventsync": run_event_sync}
     fn = runners.get(task_id)
     if not fn:
         return HTMLResponse('<span class="text-red-400 text-xs">Unknown task.</span>')
@@ -148,6 +157,15 @@ async def run_task_now(task_id: str):
             if checked == 0 and rem == 0:
                 return HTMLResponse(f'<span class="text-gray-400 text-xs">Nothing to verify — all hashed ROMs checked.</span>{oob}')
             return HTMLResponse(f'<span class="text-green-400 text-xs">&#10003; Checked {checked}, {mat} newly matched, {rem} still pending{note}.</span>{oob}')
+
+        if task_id == "eventsync":
+            events_n = result.get("events", 0)
+            created = result.get("created", 0)
+            if not events_n:
+                return HTMLResponse(f'<span class="text-gray-400 text-xs">No auto-sync events to check.</span>{oob}')
+            if created:
+                return HTMLResponse(f'<span class="text-green-400 text-xs">&#10003; {created} new achievement goal{"s" if created != 1 else ""} added across {events_n} event{"s" if events_n != 1 else ""}.</span>{oob}')
+            return HTMLResponse(f'<span class="text-gray-400 text-xs">Checked {events_n} event{"s" if events_n != 1 else ""} — no new achievements.</span>{oob}')
 
         return HTMLResponse(f'<span class="text-green-400 text-xs">&#10003; Done.</span>{oob}')
     except Exception as exc:

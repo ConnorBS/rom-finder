@@ -341,25 +341,35 @@ class RAClient:
 
     @staticmethod
     def badge_url(badge_name: str) -> str:
-        """Absolute URL for an achievement badge image (BadgeName from the API)."""
-        return f"https://media.retroachievements.org/Badge/{badge_name}.png" if badge_name else ""
+        """Absolute URL for an achievement badge image (BadgeName from the API).
+        BadgeName "00000"/"0" is RA's placeholder tile → no real image."""
+        if not badge_name or badge_name in ("0", "00000"):
+            return ""
+        return f"https://media.retroachievements.org/Badge/{badge_name}.png"
 
-    async def get_achievements(self, game_id: int) -> list[dict]:
-        """Flat, sorted achievement list for a game: [{id, title, description,
-        points, badge_url}]. Built from get_game_extended."""
-        data = await self.get_game_extended(game_id)
+    @staticmethod
+    def achievements_from_extended(data: dict) -> list[dict]:
+        """Flat, sorted achievement list from an API_GetGameExtended payload:
+        [{id, title, description, points, badge_name, badge_url, display_order}].
+        `badge_name` is kept so callers can skip placeholder tiles (BadgeName 00000)."""
         out = []
         for a in (data.get("Achievements") or {}).values():
+            badge_name = str(a.get("BadgeName", "") or "")
             out.append({
                 "id": a.get("ID"),
                 "title": a.get("Title", ""),
                 "description": a.get("Description", ""),
                 "points": a.get("Points", 0),
-                "badge_url": self.badge_url(a.get("BadgeName", "")),
+                "badge_name": badge_name,
+                "badge_url": RAClient.badge_url(badge_name),
                 "display_order": a.get("DisplayOrder", 0),
             })
         out.sort(key=lambda x: (x["display_order"], x["id"] or 0))
         return out
+
+    async def get_achievements(self, game_id: int) -> list[dict]:
+        """Flat, sorted achievement list for a game. Built from get_game_extended."""
+        return self.achievements_from_extended(await self.get_game_extended(game_id))
 
     # --- User dashboard data (the configured account; all rate-limited) -----
 

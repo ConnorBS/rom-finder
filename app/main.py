@@ -10,7 +10,7 @@ from app.db.database import engine
 from app.db.migrations import run_migrations
 from app.db.models import (  # noqa: F401 — registers tables for create_all
     AppSetting, WantedGame, AppLog, HuntAttempt, InstalledExtension,
-    RAAchievement, RAGameProgress, RAProfile, Goal,
+    RAAchievement, RAGameProgress, RAProfile, Goal, GoalEvent,
 )
 from app.services import settings as app_settings
 from app.services.settings import DEFAULT_SETTINGS

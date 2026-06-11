@@ -6,9 +6,10 @@ from pathlib import Path
 from datetime import datetime
 
 from app.db.database import get_session, engine
-from app.db.models import Goal, GoalObjective, GoalStatus, RAGameProgress
+from app.db.models import Goal, GoalEvent, GoalObjective, GoalStatus, RAGameProgress
 from app.services import settings as app_settings
 from app.services import logger as applog
+from app.services import events as events_service
 from app.services.goals import evaluate_goals
 from app.services.ra_client import SYSTEMS, RAClient
 
@@ -48,26 +49,21 @@ async def goals_page(request: Request, session: Session = Depends(get_session)):
 
     goals = session.exec(select(Goal).order_by(Goal.created_at.desc())).all()
     progress_by_id = {r.game_id: r for r in session.exec(select(RAGameProgress)).all()}
+    event_rows = {ev.name: ev for ev in session.exec(select(GoalEvent)).all()}
     now = datetime.utcnow()
 
-    # Group by event ("" = ungrouped, rendered last). Preserve first-seen order
-    # of event names so the layout is stable between visits.
+    # Group by event ("" = ungrouped, rendered last); preserve first-seen order.
     grouped: dict[str, list] = {}
     for g in goals:
         grouped.setdefault(g.event_name or "", []).append(_card_ctx(g, progress_by_id, now))
-    ordered_events = [e for e in grouped if e] + ([""] if "" in grouped else [])
-    groups = [
-        {
-            "name": e,
-            "cards": grouped[e],
-            "done": sum(1 for c in grouped[e] if c["goal"].status == GoalStatus.completed),
-            "total": len(grouped[e]),
-        }
-        for e in ordered_events
-    ]
-    event_names = sorted({g.event_name for g in goals if g.event_name})
+    # Custom/RA events with no goals yet still show (their link is the point).
+    empty_events = [name for name in event_rows if name and name not in grouped]
+    ordered_events = [e for e in grouped if e] + sorted(empty_events) + ([""] if "" in grouped else [])
 
-    applog.log_navigation("goals", {"goal_count": len(goals)})
+    groups = [_build_group(e, grouped.get(e, []), event_rows.get(e)) for e in ordered_events]
+    event_names = sorted(set([g.event_name for g in goals if g.event_name]) | set(event_rows))
+
+    applog.log_navigation("goals", {"goal_count": len(goals), "events": len(event_rows)})
     return templates.TemplateResponse(
         request, "goals.html",
         {
@@ -79,6 +75,30 @@ async def goals_page(request: Request, session: Session = Depends(get_session)):
             "now": now,
         },
     )
+
+
+def _build_group(name: str, cards: list, event: GoalEvent | None) -> dict:
+    """Assemble one event group: per-game subdivisions + achievement/points tallies +
+    its GoalEvent metadata (url, auto-sync, last sync)."""
+    ach = [c for c in cards if c["goal"].objective == GoalObjective.achievement]
+    # Subdivide by (game, console), preserving first-seen order.
+    subs: dict[tuple, list] = {}
+    for c in cards:
+        subs.setdefault((c["goal"].game_title or "", c["goal"].system or ""), []).append(c)
+    subgroups = [{"game_title": k[0], "system": k[1], "cards": v} for k, v in subs.items()]
+    return {
+        "name": name,
+        "cards": cards,
+        "subgroups": subgroups,
+        "multi_game": len(subgroups) > 1,
+        "done": sum(1 for c in cards if c["goal"].status == GoalStatus.completed),
+        "total": len(cards),
+        "ach_total": len(ach),
+        "ach_done": sum(1 for c in ach if c["goal"].status == GoalStatus.completed),
+        "points_total": sum(c["goal"].points for c in ach),
+        "points_done": sum(c["goal"].points for c in ach if c["goal"].status == GoalStatus.completed),
+        "event": event,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -168,6 +188,68 @@ async def add_custom_goal(
     )
 
 
+@router.post("/import-event", response_class=HTMLResponse)
+async def import_event(
+    event_ref: str = Form(...),
+    event_name: str = Form(default=""),
+    deadline: str = Form(default=""),
+    include_completed: str = Form(default="false"),
+):
+    """Bulk-import every achievement of an RA event/game hub as goals — ONE RA API
+    call. Async with NO Depends(get_session): events.sync_event manages its own
+    sessions around the RA await. Records a GoalEvent (auto-sync on) so the nightly
+    task grows it as new achievements land."""
+    game_id = events_service.parse_event_ref(event_ref)
+    if not game_id:
+        return HTMLResponse('<span class="text-red-400 text-xs">Couldn\'t read an RA game/event id from that.</span>')
+    inc = include_completed in ("true", "on", "1")
+    res = await events_service.sync_event(
+        game_id, event_name=(event_name.strip() or None),
+        deadline=_parse_deadline(deadline), include_completed=inc, auto_sync=True,
+    )
+    if res.get("error") == "no_credentials":
+        return HTMLResponse('<span class="text-yellow-500 text-xs">Add RA credentials in Settings first.</span>')
+    if res.get("error"):
+        return HTMLResponse(f'<span class="text-red-400 text-xs">Import failed: {res["error"]}</span>')
+    msg = (f'✓ Imported {res["created"]} achievement goal(s) for “{res["event"]}”'
+           f' — {res["skipped_existing"]} already tracked, {res["skipped_done"]} already done,'
+           f' {res["skipped_placeholder"]} placeholder tiles skipped.')
+    return HTMLResponse(
+        f'<span class="text-green-400 text-xs">{msg}</span>'
+        '<a href="/goals" class="text-blue-400 text-xs hover:underline ml-2">View ↗</a>'
+    )
+
+
+@router.post("/event", response_class=HTMLResponse)
+async def upsert_custom_event(
+    name: str = Form(...),
+    url: str = Form(default=""),
+    session: Session = Depends(get_session),
+):
+    """Create or update a CUSTOM event — a named group with an optional link
+    (e.g. a Google Sheet) for navigation. No RA involvement."""
+    name = name.strip()
+    if not name:
+        return HTMLResponse('<span class="text-red-400 text-xs">Event name required.</span>')
+    events_service.upsert_event(session, name, url=url.strip(), auto_sync=False)
+    session.commit()
+    applog.log_action("upsert_event", {"name": name, "url": url.strip()})
+    return HTMLResponse(
+        f'<span class="text-green-400 text-xs">✓ Event “{name}” saved.</span>'
+        '<a href="/goals" class="text-blue-400 text-xs hover:underline ml-2">View ↗</a>'
+    )
+
+
+@router.post("/refresh-art", response_class=HTMLResponse)
+async def refresh_art(background_tasks: BackgroundTasks, session: Session = Depends(get_session)):
+    """Re-pull achievement badges + game box art for all goals. Deduped by game and
+    throttled by the global 2 req/s RA limiter, so it never floods the server."""
+    if not _ra_configured(session):
+        return HTMLResponse('<span class="text-yellow-500 text-xs">Add RA credentials in Settings first.</span>')
+    background_tasks.add_task(_refresh_goal_art)
+    return HTMLResponse('<span class="text-blue-400 text-xs">↻ Refreshing art in the background — watch the activity tray.</span>')
+
+
 @router.post("/{goal_id}/complete", response_class=HTMLResponse)
 async def complete_goal(request: Request, goal_id: int, session: Session = Depends(get_session)):
     goal = session.get(Goal, goal_id)
@@ -251,6 +333,60 @@ def _render_card(request: Request, goal: Goal, session: Session) -> HTMLResponse
 # Background tasks
 # ---------------------------------------------------------------------------
 
+async def _refresh_goal_art() -> None:
+    """Re-pull achievement badges (one GetGameExtended per distinct game, rate-limited)
+    and re-fetch game box art. Deduped by game so a big goal list ≠ a request flood."""
+    from sqlmodel import Session as SyncSession
+    from app.services import activity as activity_store
+
+    with SyncSession(engine) as s:
+        username = app_settings.get(s, "ra_username")
+        api_key = app_settings.get(s, "ra_api_key")
+        ach_games = sorted({g.ra_game_id for g in s.exec(
+            select(Goal).where(Goal.objective == GoalObjective.achievement, Goal.ra_game_id != None)  # noqa: E711
+        ).all()})
+        cover_jobs = {}
+        for g in s.exec(select(Goal).where(
+            Goal.objective.in_([GoalObjective.master, GoalObjective.beaten]),
+            Goal.ra_game_id != None,  # noqa: E711
+        )).all():
+            cover_jobs.setdefault(g.ra_game_id, (g.id, g.game_title, g.system))
+
+    task_id = "goal-art-refresh"
+    activity_store.start_batch(task_id, "Refreshing goal art", len(ach_games) + len(cover_jobs), task_type="cover")
+
+    if username and api_key:
+        ra = RAClient(username, api_key)
+        for gid in ach_games:
+            try:
+                achievements = {a["id"]: a for a in await ra.get_achievements(gid)}  # rate-limited
+            except Exception as exc:
+                applog.warning("system", f"Art refresh failed for game {gid}: {exc}")
+                activity_store.increment(task_id)
+                continue
+            with SyncSession(engine) as s:
+                for g in s.exec(select(Goal).where(
+                    Goal.objective == GoalObjective.achievement, Goal.ra_game_id == gid
+                )).all():
+                    a = achievements.get(g.achievement_id)
+                    if a:
+                        g.cover_path = a["badge_url"]
+                        g.custom_text = a["title"] or g.custom_text
+                        g.achievement_desc = a["description"]
+                        g.points = a.get("points", 0) or 0
+                        g.updated_at = datetime.utcnow()
+                        s.add(g)
+                s.commit()
+            activity_store.increment(task_id)
+
+    # Box art for master/beat goals — one cover fetch per distinct game.
+    for gid, (goal_id, title, system) in cover_jobs.items():
+        await _fetch_cover_goal(goal_id, gid, title, system)
+        activity_store.increment(task_id)
+
+    activity_store.finish(task_id)
+
+
 async def _enrich_achievement_goal(goal_id: int, game_id: int, achievement_id: int) -> None:
     """Fill an achievement goal's title, description, and badge image from the RA
     API (API_GetGameExtended). The badge URL is stored as an absolute cover_path —
@@ -276,6 +412,7 @@ async def _enrich_achievement_goal(goal_id: int, game_id: int, achievement_id: i
             if match["title"]:
                 goal.custom_text = match["title"]
             goal.achievement_desc = match["description"]
+            goal.points = match.get("points", 0) or 0
             if match["badge_url"]:
                 goal.cover_path = match["badge_url"]   # absolute URL
             goal.updated_at = datetime.utcnow()

@@ -180,6 +180,12 @@ def _m_0020_goal_achievement_desc(s: Session) -> None:
     _add_column(s, "goal", "achievement_desc", "VARCHAR", "''")
 
 
+def _m_0021_goal_points(s: Session) -> None:
+    # Achievement goals cache the achievement's RA point value; the Goals page sums
+    # these per event for the event header's point total.
+    _add_column(s, "goal", "points", "INTEGER", "0")
+
+
 # (version_id, apply_fn) — applied in order, recorded once.
 MIGRATIONS: list[tuple[str, "callable"]] = [
     ("0001_download_source_id", _m_0001),
