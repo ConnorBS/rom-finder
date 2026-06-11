@@ -186,6 +186,13 @@ def _m_0021_goal_points(s: Session) -> None:
     _add_column(s, "goal", "points", "INTEGER", "0")
 
 
+def _m_0022_goalevent_tiers(s: Session) -> None:
+    # Cache an event's RA V2 award tiers (Bronze/Silver/Gold/Champion + pointsRequired
+    # + badge) as JSON on the GoalEvent. goal_events was created by create_all in an
+    # earlier deploy, so the column-add is needed for existing DBs.
+    _add_column(s, "goal_events", "tiers_json", "VARCHAR", "''")
+
+
 # (version_id, apply_fn) — applied in order, recorded once.
 MIGRATIONS: list[tuple[str, "callable"]] = [
     ("0001_download_source_id", _m_0001),
@@ -209,6 +216,7 @@ MIGRATIONS: list[tuple[str, "callable"]] = [
     ("0019_download_hunt_task_id", _m_0019_download_hunt_task_id),
     ("0020_goal_achievement_desc", _m_0020_goal_achievement_desc),
     ("0021_goal_points", _m_0021_goal_points),
+    ("0022_goalevent_tiers", _m_0022_goalevent_tiers),
 ]
 
 

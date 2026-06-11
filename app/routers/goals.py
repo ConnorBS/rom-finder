@@ -1,3 +1,4 @@
+import json
 from fastapi import APIRouter, Request, Form, Depends, BackgroundTasks, Query
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -139,6 +140,23 @@ def _build_group(name: str, cards: list, event: GoalEvent | None) -> dict:
     for c in cards:
         subs.setdefault((c["goal"].game_title or "", c["goal"].system or ""), []).append(c)
     subgroups = [{"game_title": k[0], "system": k[1], "cards": v} for k, v in subs.items()]
+    points_done = sum(c["goal"].points for c in ach if c["goal"].status == GoalStatus.completed)
+
+    # RA V2 award tiers (Bronze→Champion): parse the cached JSON + mark the current tier
+    # = highest whose pointsRequired the user's earned event points have reached.
+    tiers = []
+    current_tier = None
+    if event and event.tiers_json:
+        try:
+            tiers = json.loads(event.tiers_json) or []
+        except (ValueError, TypeError):
+            tiers = []
+        for t in tiers:
+            pr = t.get("points_required")
+            t["reached"] = bool(pr is not None and points_done >= pr)
+            if t["reached"]:
+                current_tier = t
+
     return {
         "name": name,
         "cards": cards,
@@ -149,7 +167,9 @@ def _build_group(name: str, cards: list, event: GoalEvent | None) -> dict:
         "ach_total": len(ach),
         "ach_done": sum(1 for c in ach if c["goal"].status == GoalStatus.completed),
         "points_total": sum(c["goal"].points for c in ach),
-        "points_done": sum(c["goal"].points for c in ach if c["goal"].status == GoalStatus.completed),
+        "points_done": points_done,
+        "tiers": tiers,
+        "current_tier": current_tier,
         "event": event,
     }
 
@@ -243,6 +263,7 @@ async def add_custom_goal(
 
 @router.post("/import-event", response_class=HTMLResponse)
 async def import_event(
+    background_tasks: BackgroundTasks,
     event_ref: str = Form(...),
     event_name: str = Form(default=""),
     deadline: str = Form(default=""),
@@ -260,6 +281,9 @@ async def import_event(
         game_id, event_name=(event_name.strip() or None),
         deadline=_parse_deadline(deadline), include_completed=inc, auto_sync=True,
     )
+    # Resolve each imported achievement's real source game/console in the background (V2).
+    if not res.get("error"):
+        background_tasks.add_task(events_service.enrich_source_games, game_id)
     if res.get("error") == "no_credentials":
         return HTMLResponse('<span class="text-yellow-500 text-xs">Add RA credentials in Settings first.</span>')
     if res.get("error"):
@@ -474,6 +498,10 @@ async def _enrich_achievement_goal(goal_id: int, game_id: int, achievement_id: i
     match = next((a for a in achievements if a["id"] == achievement_id), None)
     if not match:
         return
+    # Best-effort RA V2: the achievement's real SOURCE game + console (an event
+    # achievement is sourced from a normal game, e.g. "from Metal Arms (GC)").
+    src = await events_service.fetch_source_game(api_key, achievement_id)
+
     with SyncSession(engine) as s:
         goal = s.get(Goal, goal_id)
         if goal:
@@ -483,6 +511,10 @@ async def _enrich_achievement_goal(goal_id: int, game_id: int, achievement_id: i
             goal.points = match.get("points", 0) or 0
             if match["badge_url"]:
                 goal.cover_path = match["badge_url"]   # absolute URL
+            if src and src.get("title"):
+                goal.game_title = src["title"]
+                if src.get("console"):
+                    goal.system = src["console"]
             goal.updated_at = datetime.utcnow()
             s.add(goal)
             s.commit()

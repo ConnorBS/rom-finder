@@ -39,7 +39,48 @@ class RAClientV2:
         resp.raise_for_status()
         return resp.json()
 
-    async def get_achievement(self, achievement_id: int, include: str = "games") -> dict:
+    async def get_achievement(self, achievement_id: int, include: str = "games.system") -> dict:
         resp = await self.get(f"/achievements/{achievement_id}", params={"include": include} if include else None)
         resp.raise_for_status()
         return resp.json()
+
+    # --- JSON:API payload parsers (static; tolerant of missing fields) ---------
+
+    @staticmethod
+    def tiers_from_event(payload: dict) -> list[dict]:
+        """Award tiers from an /events/{id}?include=awards payload →
+        [{title, kind, points_required, badge_url}] sorted by threshold."""
+        out = []
+        for inc in (payload.get("included") or []):
+            if inc.get("type") not in ("user-awards", "awards", "event-awards"):
+                continue
+            a = inc.get("attributes", {}) or {}
+            pr = a.get("pointsRequired", a.get("points_required"))
+            out.append({
+                "title": a.get("title", ""),
+                "kind": a.get("kind", ""),
+                "points_required": pr if isinstance(pr, int) else None,
+                "badge_url": a.get("badgeUrl", a.get("badge_url", "")),
+            })
+        out.sort(key=lambda t: (t["points_required"] is None, t["points_required"] or 0))
+        return out
+
+    @staticmethod
+    def source_game_from_achievement(payload: dict) -> dict | None:
+        """The achievement's SOURCE game + console from
+        /achievements/{id}?include=games.system → {game_id, title, console}."""
+        inc = payload.get("included") or []
+        games = [i for i in inc if i.get("type") == "games"]
+        if not games:
+            return None
+        g = games[0]
+        ga = g.get("attributes", {}) or {}
+        # console: the game's system, resolved from the included systems (nested include)
+        console = ""
+        sys_id = (((g.get("relationships") or {}).get("system") or {}).get("data") or {}).get("id")
+        if sys_id:
+            for i in inc:
+                if i.get("type") == "systems" and str(i.get("id")) == str(sys_id):
+                    console = (i.get("attributes") or {}).get("name", "")
+                    break
+        return {"game_id": g.get("id"), "title": ga.get("title", ""), "console": console}

@@ -421,7 +421,7 @@ class EventImportRequest(BaseModel):
 
 
 @router.post("/import-event")
-async def api_import_event(req: EventImportRequest):
+async def api_import_event(req: EventImportRequest, background_tasks: BackgroundTasks):
     """JSON twin of POST /goals/import-event for the browser extension's event-page
     panel. Imports every (non-placeholder) achievement of an RA event as goals in ONE
     API_GetGameExtended call and records an auto-sync GoalEvent. Async, no
@@ -436,6 +436,8 @@ async def api_import_event(req: EventImportRequest):
         deadline=_parse_goal_deadline(req.deadline),
         include_completed=req.include_completed, auto_sync=True,
     )
+    if not res.get("error"):
+        background_tasks.add_task(events_service.enrich_source_games, game_id)
     if res.get("error") == "no_credentials":
         return {"status": "error", "error": "no RA credentials"}
     if res.get("error"):

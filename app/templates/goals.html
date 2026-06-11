@@ -242,6 +242,23 @@
                     <div class="h-full bg-emerald-500" style="width: {{ (100 * group.done / group.total) | round(0, 'floor') }}%"></div>
                 </div>
                 {% endif %}
+                {% if group.tiers %}
+                <!-- RA award tiers (Bronze→Champion); current tier highlighted -->
+                <div class="flex flex-wrap items-center gap-2 mt-2">
+                    {% if group.current_tier %}
+                    <span class="text-xs text-amber-300 font-medium">🏅 {{ group.current_tier.title }}</span>
+                    {% else %}
+                    <span class="text-xs text-gray-600">No tier yet</span>
+                    {% endif %}
+                    <span class="text-gray-700 text-xs">·</span>
+                    {% for t in group.tiers %}
+                    <span class="flex items-center gap-1 text-xs {% if t.reached %}text-gray-300{% else %}text-gray-600{% endif %}"
+                          title="{{ t.title }}{% if t.points_required is not none %} — {{ t.points_required }} pts{% endif %}">
+                        {% if t.badge_url %}<img src="{{ t.badge_url }}" alt="" class="w-4 h-4 rounded {% if not t.reached %}grayscale opacity-60{% endif %}">{% endif %}{{ t.title }}{% if t.points_required is not none %} <span class="text-gray-600">{{ t.points_required }}</span>{% endif %}
+                    </span>
+                    {% endfor %}
+                </div>
+                {% endif %}
             </div>
 
             {% if group.multi_game %}

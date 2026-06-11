@@ -121,6 +121,7 @@ class GoalEvent(SQLModel, table=True):
     auto_sync: bool = False                # nightly re-check the RA hub for new achievements
     include_completed: bool = True         # remembered import option for nightly adds
     deadline: Optional[datetime] = None    # default deadline stamped on newly-synced achievement goals
+    tiers_json: str = ""                   # JSON [{title,kind,points_required,badge_url}] award tiers (RA V2)
     last_synced_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)

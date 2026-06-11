@@ -21,7 +21,14 @@ Key methods:
 
 **System name normalization (`title_utils.canonical_system(name, system_id)`)**: the RA console id is authoritative — resolve `SYSTEMS[id]` when present. Otherwise collapse an exact-doubled scraped name (`"WiiWii"` → `"Wii"`). It deliberately does NOT use an endswith/abbrev heuristic ("Super Nintendo Entertainment System" ends with NES's full name). Used by `api.py` (add-wanted + search) so corruption is fixed at the source regardless of what the Chrome extension posts; migration `0010` fixed existing rows, so the old every-startup WiiWii `UPDATE` is gone from `main.py` lifespan.
 
-### RA V2 client (`ra_client_v2.py`) — probe-only for now
+### RA V2 — wired (`ra_client_v2.py`, `events.py`)
+**Live + Bearer-authed.** Two things V1 can't give, both pulled best-effort (failure never breaks import):
+- **Event award tiers** — `get_event(id, include="awards")` → `tiers_from_event` → `[{title,kind,points_required,badge_url}]`, cached on `GoalEvent.tiers_json` (migration 0022). `events.fetch_event_meta` pulls tiers + `activeThrough` deadline in ONE call (used by `sync_event`). `_build_group` marks the current tier = highest whose `points_required ≤` the event's earned points; the event header renders the Bronze→Champion ladder.
+- **Achievement source game · console** — `get_achievement(id, include="games.system")` → `source_game_from_achievement` → `{game_id,title,console}`. `events.fetch_source_game` + `events.enrich_source_games(event_game_id)` (background, one call per achievement, rate-limited) update each event achievement goal's `game_title`/`system` to the real source game, so the page subdivides by true game. Kicked after import + on nightly eventsync; the single-add path (`_enrich_achievement_goal`) also resolves it.
+
+NB: per-achievement deadlines are confirmed **absent** from V2 (only `events.activeFrom/activeThrough` exist).
+
+### RA V2 client (`ra_client_v2.py`) — historical note
 `RAClientV2(api_key)` hits the JSON:API V2 service at **`https://api.retroachievements.org/v2`**
 (separate host from V1's `retroachievements.org/API`), Bearer-auth, sharing the global 2 req/s
 `_limiter`. `get_event(id)` / `get_achievement(id)` exist to back the **`/api/diag/ra-v2`** probe,

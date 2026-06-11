@@ -484,26 +484,93 @@ def test_import_event_pulls_deadline_from_v2(client, monkeypatch):
         assert ev.deadline.year == 2027   # stored on the event for nightly-added goals
 
 
-def test_import_event_explicit_deadline_skips_v2(client, monkeypatch):
+def test_import_event_explicit_deadline_wins(client, monkeypatch):
+    # V2 is still consulted (for award tiers), but an explicit deadline is NOT overridden.
     from app.services.ra_client import RAClient
     from app.services.ra_client_v2 import RAClientV2
     _seed_creds()
-    calls = []
 
     async def fake_ext(self, gid):
         return _extended(achs=[_ach(1, "A")])
 
-    async def rec_event(self, event_id, include="awards"):
-        calls.append(event_id)
-        return {"data": {"attributes": {"activeThrough": "2027-01-03"}}}
+    async def fake_event(self, event_id, include="awards"):
+        return {"data": {"attributes": {"activeThrough": "2027-01-03"}}}  # would-be deadline
     monkeypatch.setattr(RAClient, "get_game_extended", fake_ext)
-    monkeypatch.setattr(RAClientV2, "get_event", rec_event)
+    monkeypatch.setattr(RAClientV2, "get_event", fake_event)
 
     client.post("/api/import-event", json={"ra_game_id": 196, "deadline": "2026-09-18"})
-    assert calls == []   # V2 not consulted when the user provided a deadline
     with Session(engine) as s:
         g = s.exec(select(Goal).where(Goal.ra_game_id == 196)).first()
-        assert (g.deadline.month, g.deadline.day) == (9, 18)
+        assert (g.deadline.month, g.deadline.day) == (9, 18)   # explicit wins over V2's activeThrough
+
+
+def test_v2_parsers_tiers_and_source_game():
+    from app.services.ra_client_v2 import RAClientV2
+    ev_payload = {"data": {"attributes": {"title": "AotW"}},
+                  "included": [
+                      {"type": "user-awards", "attributes": {"title": "Bronze", "kind": "bronze", "pointsRequired": 12, "badgeUrl": "b"}},
+                      {"type": "user-awards", "attributes": {"title": "Champion", "kind": "champion", "pointsRequired": 64, "badgeUrl": "c"}},
+                  ]}
+    tiers = RAClientV2.tiers_from_event(ev_payload)
+    assert [t["title"] for t in tiers] == ["Bronze", "Champion"]   # sorted by threshold
+    assert tiers[0]["points_required"] == 12 and tiers[1]["badge_url"] == "c"
+
+    ach_payload = {"data": {"relationships": {"games": {"data": [{"type": "games", "id": "777"}]}}},
+                   "included": [
+                       {"type": "games", "id": "777", "attributes": {"title": "Metal Arms"},
+                        "relationships": {"system": {"data": {"type": "systems", "id": "16"}}}},
+                       {"type": "systems", "id": "16", "attributes": {"name": "GameCube"}},
+                   ]}
+    src = RAClientV2.source_game_from_achievement(ach_payload)
+    assert src == {"game_id": "777", "title": "Metal Arms", "console": "GameCube"}
+
+
+def test_import_event_stores_tiers(client, monkeypatch):
+    from app.services.ra_client import RAClient
+    from app.services.ra_client_v2 import RAClientV2
+    _seed_creds()
+
+    async def fake_ext(self, gid):
+        return _extended(achs=[_ach(1, "A")])
+
+    async def fake_event(self, event_id, include="awards"):
+        return {"data": {"attributes": {"activeThrough": "2027-01-03"}},
+                "included": [{"type": "user-awards", "attributes": {"title": "Bronze", "pointsRequired": 12, "badgeUrl": "b"}}]}
+    monkeypatch.setattr(RAClient, "get_game_extended", fake_ext)
+    monkeypatch.setattr(RAClientV2, "get_event", fake_event)
+
+    client.post("/api/import-event", json={"ra_game_id": 196})
+    with Session(engine) as s:
+        ev = s.exec(select(GoalEvent).where(GoalEvent.ra_game_id == 196)).first()
+        import json as _json
+        tiers = _json.loads(ev.tiers_json)
+        assert tiers[0]["title"] == "Bronze" and tiers[0]["points_required"] == 12
+
+
+def test_enrich_source_games_updates_goals(client, monkeypatch):
+    import asyncio
+    from app.services.ra_client_v2 import RAClientV2
+    from app.services import events as events_service
+    _seed_creds()
+    with Session(engine) as s:
+        s.add(GoalEvent(name="Ev", ra_game_id=196, auto_sync=True))
+        s.add(Goal(game_title="Ev", system="Events", ra_game_id=196, achievement_id=5,
+                   objective=GoalObjective.achievement, custom_text="Do thing"))
+        s.commit()
+
+    async def fake_ach(self, achievement_id, include="games.system"):
+        return {"data": {"relationships": {"games": {"data": [{"type": "games", "id": "777"}]}}},
+                "included": [
+                    {"type": "games", "id": "777", "attributes": {"title": "Metal Arms"},
+                     "relationships": {"system": {"data": {"type": "systems", "id": "16"}}}},
+                    {"type": "systems", "id": "16", "attributes": {"name": "GameCube"}},
+                ]}
+    monkeypatch.setattr(RAClientV2, "get_achievement", fake_ach)
+
+    asyncio.run(events_service.enrich_source_games(196))
+    with Session(engine) as s:
+        g = s.exec(select(Goal).where(Goal.achievement_id == 5)).first()
+        assert g.game_title == "Metal Arms" and g.system == "GameCube"
 
 
 def test_import_event_v2_unreachable_is_graceful(client, monkeypatch):
