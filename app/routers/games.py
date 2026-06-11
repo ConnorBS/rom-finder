@@ -212,6 +212,37 @@ async def ra_search(
     )
 
 
+@router.get("/ra/games/{game_id}/achievements", response_class=HTMLResponse)
+async def ra_game_achievements(
+    request: Request,
+    game_id: int,
+    game_title: str = Query(default=""),
+    system_name: str = Query(default=""),
+):
+    """HTMX: list a game's achievements so the Goals page can set a goal for a
+    specific one. Reads creds in a short session, then releases it before the RA call."""
+    with Session(engine) as session:
+        ra = _get_ra_client(session)
+    if not ra:
+        return HTMLResponse('<p class="text-yellow-500 text-xs">Add RA credentials in Settings to list achievements.</p>')
+
+    achievements: list[dict] = []
+    error = None
+    try:
+        achievements = await ra.get_achievements(game_id)
+    except Exception as exc:
+        error = str(exc)
+
+    applog.verbose("navigation", f"Achievements listed: {game_title} → {len(achievements)}", {
+        "game_id": game_id, "count": len(achievements), "error": error,
+    })
+    return templates.TemplateResponse(
+        request, "partials/ra_achievements.html",
+        {"achievements": achievements, "game_id": game_id, "game_title": game_title,
+         "system_name": system_name, "error": error},
+    )
+
+
 @router.get("/ra/games/{game_id}/sources", response_class=HTMLResponse)
 async def ra_game_sources(
     request: Request,

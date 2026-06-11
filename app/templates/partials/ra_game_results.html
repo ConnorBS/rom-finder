@@ -13,12 +13,23 @@
                 <div class="flex items-center gap-3 mt-0.5">
                     <span class="text-gray-500 text-xs">{{ system_name }}</span>
                     {% if game.NumAchievements %}
-                    <span class="text-yellow-600 text-xs">{{ game.NumAchievements }} achievements</span>
+                        {% if mode == 'goal' %}
+                        <button type="button" class="text-yellow-600 hover:text-yellow-400 text-xs underline decoration-dotted"
+                                hx-get="/ra/games/{{ game.ID }}/achievements?game_title={{ game.Title | urlencode }}&system_name={{ system_name | urlencode }}"
+                                hx-target="#ra-ach-{{ game.ID }}" hx-swap="innerHTML" hx-indicator="this"
+                                title="Pick a specific achievement to set as a goal">
+                            <span class="htmx-label">{{ game.NumAchievements }} achievements ▾</span>
+                            <span class="htmx-indicator">loading…</span>
+                        </button>
+                        {% else %}
+                        <span class="text-yellow-600 text-xs">{{ game.NumAchievements }} achievements</span>
+                        {% endif %}
                     {% endif %}
                     {% if game.HashedRomCount %}
                     <span class="text-gray-600 text-xs">{{ game.HashedRomCount }} ROM{{ 's' if game.HashedRomCount != 1 }}</span>
                     {% endif %}
                 </div>
+                {% if mode == 'goal' %}<div id="ra-ach-{{ game.ID }}"></div>{% endif %}
             </div>
 
             {% if mode == 'goal' %}

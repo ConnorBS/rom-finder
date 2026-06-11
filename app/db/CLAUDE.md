@@ -55,9 +55,12 @@ Per-game event objectives the user tracks.
 id, game_title, system
 ra_game_id       — RA game ID; None for custom/non-RA goals
 achievement_id   — RA achievement ID; set only for objective=achievement
-cover_path       — "covers/{ra_game_id}.png" (reuses any cover already on disk)
+cover_path       — game cover "covers/{ra_game_id}.png", OR an ABSOLUTE badge URL
+                   (media.retroachievements.org/Badge/…) for an achievement goal — the
+                   card uses it directly (an HTTP page may load an HTTPS image)
 objective        — GoalObjective: master | beaten | achievement | custom
 custom_text      — custom: freeform label ("finish level 5"); achievement: the achievement's title
+achievement_desc — achievement goals: the achievement's description (migration 0020), from the RA API
 event_name       — free-text grouping label ("" = ungrouped); indexed
 deadline         — midnight-UTC datetime of the target day; None = no deadline
 status           — GoalStatus: active | completed
@@ -68,8 +71,11 @@ created_at, updated_at, completed_at
 ALTER/index on existing tables). **All auto-tracked objectives are HARDCORE-only** — `master`
 needs `highest_award_kind == "mastered"`, `beaten` needs `in ("beaten","mastered")`, and
 `achievement` needs a hardcore `ra_achievement` row for `achievement_id`; softcore awards/unlocks
-never satisfy a goal. `achievement` goals are added from the browser extension's achievement-page
-panel (`POST /api/goal`). Auto-completion is LOCAL
+never satisfy a goal. `achievement` goals are added two ways: the browser extension's achievement-page
+panel, or the `/goals` page (click a search result's achievement count → pick one) — both `POST` paths
+**enrich** the goal in the background (`goals._enrich_achievement_goal` → RA `API_GetGameExtended`),
+filling the canonical title (`custom_text`), `achievement_desc`, and the badge image (`cover_path`).
+Auto-completion is LOCAL
 (`services/goals.py::evaluate_goals`, run after a dashboard refresh + on every Goals page
 load). **Progress/award are NOT cached on the row** — the page joins live to `RAGameProgress`
 by `ra_game_id` at render time (the mirror is replaced wholesale on refresh, so a cached copy

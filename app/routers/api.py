@@ -249,7 +249,7 @@ class GoalAddRequest(BaseModel):
     system_id: Optional[int] = None
     objective: str = "beaten"        # master | beaten | achievement
     achievement_id: Optional[int] = None
-    achievement_title: str = ""
+    achievement_title: str = ""      # hint for instant display; the server re-fetches authoritative data
     event_name: str = ""
     deadline: str = ""               # YYYY-MM-DD; "" = no deadline
 
@@ -302,11 +302,27 @@ async def api_add_goal(
         "achievement_id": req.achievement_id, "id": goal.id,
     })
 
-    if not goal.cover_path and _get_setting(session, "ra_username") and _get_setting(session, "ra_api_key"):
+    ra_ready = bool(_get_setting(session, "ra_username") and _get_setting(session, "ra_api_key"))
+    if objective == GoalObjective.achievement and ra_ready:
+        # Pull the achievement's title/description/badge from the RA API for a rich card.
+        from app.routers.goals import _enrich_achievement_goal
+        background_tasks.add_task(_enrich_achievement_goal, goal.id, req.ra_game_id, req.achievement_id)
+    elif not goal.cover_path and ra_ready:
         from app.routers.goals import _fetch_cover_goal
         background_tasks.add_task(_fetch_cover_goal, goal.id, req.ra_game_id, goal.game_title, system)
 
     return {"status": "added", "id": goal.id, "objective": objective}
+
+
+@router.get("/events")
+async def api_events(session: Session = Depends(get_session)):
+    """Distinct non-empty event names across all goals — powers the extension's
+    event datalist so achievement + game goals can be tied to the SAME event."""
+    from app.db.models import Goal
+    rows = session.exec(
+        select(Goal.event_name).where(Goal.event_name != "").distinct()
+    ).all()
+    return {"events": sorted({r for r in rows if r})}
 
 
 @router.get("/goal-status")

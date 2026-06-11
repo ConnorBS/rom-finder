@@ -173,6 +173,13 @@ def _m_0019_download_hunt_task_id(s: Session) -> None:
     _add_column(s, "download", "hunt_task_id", "VARCHAR", None)
 
 
+def _m_0020_goal_achievement_desc(s: Session) -> None:
+    # Achievement goals cache the achievement's description (fetched from the RA API)
+    # so the goal card explains what the achievement is. The `goal` table was created
+    # by create_all, so this column-add is needed for already-deployed DBs.
+    _add_column(s, "goal", "achievement_desc", "VARCHAR", "''")
+
+
 # (version_id, apply_fn) — applied in order, recorded once.
 MIGRATIONS: list[tuple[str, "callable"]] = [
     ("0001_download_source_id", _m_0001),
@@ -194,6 +201,7 @@ MIGRATIONS: list[tuple[str, "callable"]] = [
     ("0017_library_awards_subsets", _m_0017_library_awards_subsets),
     ("0018_library_file_size", _m_0018_library_file_size),
     ("0019_download_hunt_task_id", _m_0019_download_hunt_task_id),
+    ("0020_goal_achievement_desc", _m_0020_goal_achievement_desc),
 ]
 
 

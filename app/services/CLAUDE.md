@@ -9,7 +9,8 @@ Key methods:
 - `get_game_list(system_id)` → list of `{ID, Title, NumAchievements, DateModified}`
 - `get_game_hashes_full(game_id)` → list of `{MD5, Name, Labels}`
 - `lookup_hash(md5)` → game info dict if matched, else `None`. **Wrong-game guard:** a hash can match a *different* RA game than intended (a Solaris ROM downloaded during a Kirby hunt hashes to Solaris). BOTH verify paths must check the matched id equals the expected `ra_game_id` before marking verified — `downloads.py` (approval) and `hunter.py` (`_match_is_correct_game`, auto-hunt). A mismatch is recorded as `bad_hash` and the hunt continues.
-- `get_game_info(game_id)` → full game detail
+- `get_game_info(game_id)` → full game detail (no achievement set)
+- `get_game_extended(game_id)` → game detail **including the achievement set** (`API_GetGameExtended`); `get_achievements(game_id)` flattens it to `[{id,title,description,points,badge_url}]` (badge = `media.retroachievements.org/Badge/{BadgeName}.png`). Used to list a game's achievements for goal-setting + to enrich an achievement goal's card. Events are special "event games", so this also returns an event hub's achievement list given its game id.
 - `test_credentials()` → `(bool, message)`
 
 `SYSTEMS` dict maps RA numeric console IDs → display names (authoritative list).  
@@ -81,6 +82,13 @@ Stamps `auto=True` + `completed_at`; idempotent (already-completed goals aren't 
 Called from `ra_dashboard.refresh()` (after `sync_library_awards`/`recompute_subset_flags`) and
 on every `/goals` page load — the only two moments the mirror can change. Deliberately NOT a
 scheduler task (the mirror is manual-refresh only).
+
+**Achievement-goal enrichment** (`routers/goals._enrich_achievement_goal`, background): on add, an
+achievement goal is enriched from `RAClient.get_achievements(game_id)` — canonical title
+(`custom_text`), `achievement_desc`, and the **badge image** stored as an absolute `cover_path`
+(`media.retroachievements.org/Badge/…`; the card uses it directly — an HTTP page may load an HTTPS
+image, so no download). Same task backs both `POST /api/goal` (extension) and `POST /goals/add` with
+an `achievement_id` (the page's achievement-count picker).
 
 ### Hash-aware subsets (`subsets.py`)
 Two layers. `refresh_subset_cache(game_ids=None)` is the **only RA-calling** part: for each owned game it enumerates subsets from the per-console `get_game_list` (same call autodiscover makes — so newly-published subsets are picked up on re-run) and pulls each subset's `get_game_hashes_full`, replacing `ra_subset_hash` wholesale (`game_ids=None`) or per-parent (scoped). `recompute_subset_flags(session)` is **LOCAL**: joins each ROM's hash against the cache + the mirror's subset mastery and writes `is_subset_rom` + `subset_info`. **Matching is by hash only** — a subset needing a patched ROM the user lacks never matches. Subset discovery rides the recurring RA passes: **autodiscover** runs the full owned sweep (catches new subsets on owned titles); **bulk verify** / `ra_verify.run_pass` / single `/library/{id}/verify-ra` run scoped refreshes for the games they matched; plus the manual **Detect subsets** button (`POST /collection/sync-subsets`). `sync-awards` (`POST /collection/sync-awards`) re-derives awards + flags locally.

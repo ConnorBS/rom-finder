@@ -324,6 +324,43 @@ class RAClient:
             resp.raise_for_status()
             return resp.json()
 
+    async def get_game_extended(self, game_id: int) -> dict:
+        """API_GetGameExtended.php — full game detail INCLUDING the achievement set
+        (`Achievements` = {id: {ID, Title, Description, Points, BadgeName, ...}}).
+        Events are modelled as special 'event games', so this also returns an event
+        hub's achievement list when given its game id."""
+        await _limiter.wait()
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"{RA_BASE_URL}/API_GetGameExtended.php",
+                params=self._params({"i": game_id}),
+                timeout=20,
+            )
+            resp.raise_for_status()
+            return resp.json()
+
+    @staticmethod
+    def badge_url(badge_name: str) -> str:
+        """Absolute URL for an achievement badge image (BadgeName from the API)."""
+        return f"https://media.retroachievements.org/Badge/{badge_name}.png" if badge_name else ""
+
+    async def get_achievements(self, game_id: int) -> list[dict]:
+        """Flat, sorted achievement list for a game: [{id, title, description,
+        points, badge_url}]. Built from get_game_extended."""
+        data = await self.get_game_extended(game_id)
+        out = []
+        for a in (data.get("Achievements") or {}).values():
+            out.append({
+                "id": a.get("ID"),
+                "title": a.get("Title", ""),
+                "description": a.get("Description", ""),
+                "points": a.get("Points", 0),
+                "badge_url": self.badge_url(a.get("BadgeName", "")),
+                "display_order": a.get("DisplayOrder", 0),
+            })
+        out.sort(key=lambda x: (x["display_order"], x["id"] or 0))
+        return out
+
     # --- User dashboard data (the configured account; all rate-limited) -----
 
     async def get_user_profile(self, user: str | None = None) -> dict:
