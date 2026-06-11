@@ -8,7 +8,9 @@
     <!-- Cover -->
     <div class="relative bg-gray-800 aspect-[3/4] overflow-hidden">
         {% if goal.cover_path %}
-        <img src="/static/{{ goal.cover_path }}" alt="{{ goal.game_title }}" class="w-full h-full object-cover {% if done %}opacity-70{% endif %}">
+        <img src="{% if goal.cover_path.startswith('http') %}{{ goal.cover_path }}{% else %}/static/{{ goal.cover_path }}{% endif %}"
+             alt="{{ goal.game_title }}"
+             class="w-full h-full {% if goal.objective == 'achievement' %}object-contain p-3 bg-gray-900{% else %}object-cover{% endif %} {% if done %}opacity-70{% endif %}">
         {% else %}
         <div class="w-full h-full flex items-center justify-center">
             <span class="text-gray-600 text-3xl font-bold select-none">{{ goal.game_title[0] | upper }}</span>
@@ -51,8 +53,11 @@
         <p class="text-gray-600 text-xs truncate">{{ goal.system or '—' }}</p>
 
         {% if goal.objective in ('custom', 'achievement') and goal.custom_text %}
-        <p class="text-gray-400 text-xs italic leading-tight" title="{{ goal.custom_text }}">
+        <p class="text-gray-300 text-xs italic leading-tight" title="{{ goal.custom_text }}">
             {% if goal.objective == 'achievement' %}🎯 {% endif %}“{{ goal.custom_text }}”</p>
+        {% endif %}
+        {% if goal.objective == 'achievement' and goal.achievement_desc %}
+        <p class="text-gray-500 text-xs leading-tight line-clamp-2" title="{{ goal.achievement_desc }}">{{ goal.achievement_desc }}</p>
         {% endif %}
 
         <!-- Progress (master/beaten goals, from the game's mirror row) -->
@@ -100,6 +105,7 @@
         <form id="goal-edit-{{ goal.id }}" class="hidden mt-1 space-y-1.5 border-t border-gray-800 pt-2"
               hx-post="/goals/{{ goal.id }}/edit" hx-target="#goal-{{ goal.id }}" hx-swap="outerHTML">
             <input type="text" name="event_name" value="{{ goal.event_name }}" placeholder="Event"
+                   list="event-names" autocomplete="off"
                    class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500">
             <input type="date" name="deadline" value="{{ goal.deadline.strftime('%Y-%m-%d') if goal.deadline else '' }}"
                    class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500">

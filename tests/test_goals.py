@@ -171,6 +171,43 @@ def test_api_goal_game_level(client):
         assert g.objective == "master" and g.achievement_id is None
 
 
+def test_api_events_distinct(client):
+    client.post("/api/goal", json={"ra_game_id": 1, "game_title": "A", "objective": "master",
+                                    "event_name": "Collectathon"})
+    client.post("/api/goal", json={"ra_game_id": 2, "game_title": "B", "objective": "beaten",
+                                    "event_name": "Collectathon"})  # same event, different game
+    client.post("/api/goal", json={"ra_game_id": 3, "game_title": "C", "objective": "master",
+                                    "event_name": "Wii rollout"})
+    client.post("/api/goal", json={"ra_game_id": 4, "game_title": "D", "objective": "master"})  # no event
+    events = client.get("/api/events").json()["events"]
+    assert events == ["Collectathon", "Wii rollout"]  # distinct, sorted, no blank
+
+
+def test_add_achievement_goal_from_page(client):
+    # The /goals page flow: achievement_id present → objective forced to achievement,
+    # achievement_title stored as the card label (desc/badge fill in via background enrich).
+    r = client.post("/goals/add", data={
+        "ra_game_id": "42", "game_title": "Some Game", "system": "PlayStation",
+        "objective": "beaten",  # ignored because an achievement_id is supplied
+        "achievement_id": "555", "achievement_title": "Beat the boss",
+        "event_name": "Collectathon", "deadline": "2026-07-18",
+    })
+    assert r.status_code == 200
+    with Session(engine) as s:
+        g = s.exec(select(Goal).where(Goal.ra_game_id == 42)).first()
+        assert g.objective == "achievement"
+        assert g.achievement_id == 555
+        assert g.custom_text == "Beat the boss"
+        assert g.event_name == "Collectathon"
+
+
+def test_achievements_endpoint_without_creds(client):
+    # No RA creds seeded in the test app → endpoint returns a friendly notice, not a 500.
+    r = client.get("/ra/games/42/achievements")
+    assert r.status_code == 200
+    assert "credentials" in r.text.lower()
+
+
 # --- router CRUD -----------------------------------------------------------
 
 def test_add_ra_and_custom_goal(client):

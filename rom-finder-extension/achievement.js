@@ -98,6 +98,12 @@
   const idEl = el('div', `Achievement ID: ${achievementId}`, { fontSize: '11px', color: '#334155', marginTop: '2px', marginBottom: '12px' });
 
   const eventInput = inputField('Event (optional)', 'text', 'e.g. Collectathon');
+  // Datalist of existing event names so an achievement goal lands in the SAME event
+  // group as the game's master/beat goals (avoids near-miss typos splitting a group).
+  const eventList = document.createElement('datalist');
+  eventList.id = 'rf-ach-events';
+  eventInput.input.setAttribute('list', 'rf-ach-events');
+  eventInput.input.setAttribute('autocomplete', 'off');
   const dateInput = inputField('Deadline (optional)', 'date', '');
 
   const addBtn = document.createElement('button');
@@ -115,6 +121,7 @@
   bodyEl.appendChild(gameEl);
   bodyEl.appendChild(idEl);
   bodyEl.appendChild(eventInput.wrap);
+  bodyEl.appendChild(eventList);
   bodyEl.appendChild(dateInput.wrap);
   bodyEl.appendChild(addBtn);
   bodyEl.appendChild(statusEl);
@@ -138,6 +145,21 @@
     if (s) systemId = s;
     if (!achTitle || !game.id) setTimeout(() => waitForContent(attempts - 1), 200);
   })(20);
+
+  // Populate the event datalist from existing goals so the user can reuse an event name.
+  (async function loadEvents() {
+    try {
+      const base = await baseUrl();
+      const resp = await apiFetch(`${base}/api/events`);
+      if (!resp.ok) return;
+      const data = await resp.json();
+      for (const name of (data.events || [])) {
+        const opt = document.createElement('option');
+        opt.value = name;
+        eventList.appendChild(opt);
+      }
+    } catch (_) { /* server unreachable — free-text entry still works */ }
+  })();
 
   // Pre-check: already a goal?
   (async function checkGoalStatus() {

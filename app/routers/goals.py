@@ -10,7 +10,7 @@ from app.db.models import Goal, GoalObjective, GoalStatus, RAGameProgress
 from app.services import settings as app_settings
 from app.services import logger as applog
 from app.services.goals import evaluate_goals
-from app.services.ra_client import SYSTEMS
+from app.services.ra_client import SYSTEMS, RAClient
 
 router = APIRouter(prefix="/goals")
 templates = Jinja2Templates(directory="app/templates")
@@ -93,32 +93,45 @@ async def add_goal(
     game_title: str = Form(...),
     system: str = Form(...),
     objective: str = Form(default=GoalObjective.beaten),
+    achievement_id: str = Form(default=""),
+    achievement_title: str = Form(default=""),
     event_name: str = Form(default=""),
     deadline: str = Form(default=""),
     session: Session = Depends(get_session),
 ):
-    if objective not in (GoalObjective.master, GoalObjective.beaten):
+    # An achievement_id (set when the user picked a specific achievement off the
+    # game's list) makes this an achievement goal regardless of the objective select.
+    ach_id = int(achievement_id) if achievement_id.strip().isdigit() else None
+    if ach_id is not None:
+        objective = GoalObjective.achievement
+    elif objective not in (GoalObjective.master, GoalObjective.beaten):
         objective = GoalObjective.beaten
+
     goal = Goal(
         game_title=game_title,
         system=system,
         ra_game_id=ra_game_id,
+        achievement_id=ach_id,
         objective=objective,
+        custom_text=achievement_title.strip() if ach_id is not None else "",
         event_name=event_name.strip(),
         deadline=_parse_deadline(deadline),
     )
     # Reuse a cover already on disk for this RA id (fetched by wanted/library).
     cover_file = Path(app_settings.get(session, "covers_dir", "static/covers")) / f"{ra_game_id}.png"
-    if cover_file.exists():
+    if cover_file.exists() and ach_id is None:
         goal.cover_path = f"covers/{ra_game_id}.png"
     session.add(goal)
     session.commit()
     session.refresh(goal)
     applog.log_action("add_goal", {
         "game": game_title, "system": system, "ra_game_id": ra_game_id,
-        "objective": objective, "event": goal.event_name, "id": goal.id,
+        "objective": objective, "achievement_id": ach_id, "event": goal.event_name, "id": goal.id,
     })
-    if not goal.cover_path:
+    if ach_id is not None:
+        # Pull the achievement's title/description/badge from the RA API for a rich card.
+        background_tasks.add_task(_enrich_achievement_goal, goal.id, ra_game_id, ach_id)
+    elif not goal.cover_path:
         background_tasks.add_task(_fetch_cover_goal, goal.id, ra_game_id, game_title, system)
     return HTMLResponse(
         '<span class="text-green-400 text-xs">✓ Goal added.</span>'
@@ -237,6 +250,38 @@ def _render_card(request: Request, goal: Goal, session: Session) -> HTMLResponse
 # ---------------------------------------------------------------------------
 # Background tasks
 # ---------------------------------------------------------------------------
+
+async def _enrich_achievement_goal(goal_id: int, game_id: int, achievement_id: int) -> None:
+    """Fill an achievement goal's title, description, and badge image from the RA
+    API (API_GetGameExtended). The badge URL is stored as an absolute cover_path —
+    the goal card uses it directly (no download; an HTTP page may load an HTTPS img)."""
+    from sqlmodel import Session as SyncSession
+
+    with SyncSession(engine) as s:
+        username = app_settings.get(s, "ra_username")
+        api_key = app_settings.get(s, "ra_api_key")
+    if not (username and api_key):
+        return
+    try:
+        achievements = await RAClient(username, api_key).get_achievements(game_id)
+    except Exception as exc:
+        applog.warning("system", f"Achievement goal enrich failed (game {game_id}): {exc}")
+        return
+    match = next((a for a in achievements if a["id"] == achievement_id), None)
+    if not match:
+        return
+    with SyncSession(engine) as s:
+        goal = s.get(Goal, goal_id)
+        if goal:
+            if match["title"]:
+                goal.custom_text = match["title"]
+            goal.achievement_desc = match["description"]
+            if match["badge_url"]:
+                goal.cover_path = match["badge_url"]   # absolute URL
+            goal.updated_at = datetime.utcnow()
+            s.add(goal)
+            s.commit()
+
 
 async def _fetch_cover_goal(goal_id: int, ra_game_id: int, game_title: str, system: str) -> None:
     """Fetch cover art for a goal's game (first enabled source wins), reusing the

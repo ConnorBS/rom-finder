@@ -94,6 +94,7 @@ class Goal(SQLModel, table=True):
     cover_path: str = ""             # "covers/{ra_game_id}.png" (reuses any cover already on disk)
     objective: str = GoalObjective.beaten
     custom_text: str = ""            # custom: freeform label ("finish level 5"); achievement: the achievement's title
+    achievement_desc: str = ""       # achievement goals: the achievement's description (from the RA API)
     event_name: str = Field(default="", index=True)   # "" = ungrouped
     deadline: Optional[datetime] = None   # midnight UTC of target day; None = no deadline
     status: str = GoalStatus.active

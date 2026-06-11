@@ -40,20 +40,22 @@
                        class="flex-1 bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 placeholder-gray-600"
                        hx-get="/ra/search" hx-target="#goal-add-results" hx-trigger="input changed delay:400ms, search" hx-include="#goal-system-select" hx-vals='{"mode": "goal"}'>
             </div>
-            <div id="goal-add-results" class="mb-3"><p class="text-gray-600 text-sm">Search for a game, then click Select.</p></div>
+            <div id="goal-add-results" class="mb-3"><p class="text-gray-600 text-sm">Search for a game, then click Select — or click its achievement count to target a single achievement.</p></div>
 
             <form hx-post="/goals/add" hx-target="#goal-feedback" hx-swap="innerHTML"
                   class="border-t border-gray-800 pt-3 flex flex-col sm:flex-row sm:items-end gap-3 flex-wrap">
                 <input type="hidden" id="goal-ra-id" name="ra_game_id" value="">
                 <input type="hidden" id="goal-ra-title" name="game_title" value="">
                 <input type="hidden" id="goal-ra-system" name="system" value="">
+                <input type="hidden" id="goal-ach-id" name="achievement_id" value="">
+                <input type="hidden" id="goal-ach-title" name="achievement_title" value="">
                 <div class="flex-1 min-w-[12rem]">
-                    <label class="block text-gray-500 text-xs mb-1">Selected game</label>
+                    <label class="block text-gray-500 text-xs mb-1">Selected</label>
                     <p id="goal-selected" class="text-gray-300 text-sm truncate">None selected yet</p>
                 </div>
-                <div>
+                <div id="goal-objective-wrap">
                     <label class="block text-gray-500 text-xs mb-1">Objective</label>
-                    <select name="objective" class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
+                    <select id="goal-objective" name="objective" class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
                         <option value="beaten">Beat (hardcore)</option>
                         <option value="master">Master (100% hardcore)</option>
                     </select>
@@ -162,7 +164,22 @@ function selectGoalGame(id, title, system) {
     document.getElementById('goal-ra-id').value = id;
     document.getElementById('goal-ra-title').value = title;
     document.getElementById('goal-ra-system').value = system;
+    // Clear any prior achievement selection — this is a game-level (master/beat) goal.
+    document.getElementById('goal-ach-id').value = '';
+    document.getElementById('goal-ach-title').value = '';
+    document.getElementById('goal-objective-wrap').style.display = '';
     document.getElementById('goal-selected').textContent = title + ' · ' + system;
+    document.getElementById('goal-ra-submit').disabled = false;
+}
+function selectGoalAchievement(gameId, gameTitle, system, achId, achTitle) {
+    document.getElementById('goal-ra-id').value = gameId;
+    document.getElementById('goal-ra-title').value = gameTitle;
+    document.getElementById('goal-ra-system').value = system;
+    document.getElementById('goal-ach-id').value = achId;
+    document.getElementById('goal-ach-title').value = achTitle;
+    // Achievement goals ignore the master/beat objective — hide it to avoid confusion.
+    document.getElementById('goal-objective-wrap').style.display = 'none';
+    document.getElementById('goal-selected').textContent = '🎯 ' + achTitle + ' · ' + gameTitle;
     document.getElementById('goal-ra-submit').disabled = false;
 }
 </script>

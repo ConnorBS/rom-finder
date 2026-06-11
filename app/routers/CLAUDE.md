@@ -126,8 +126,9 @@ The `rom-finder-extension/` Chrome extension (floating panel on `retroachievemen
 - **`POST /api/wanted`** (`WantedAddRequest{ra_game_id, game_title, system, system_id}`) — adds to Wanted; returns `{status: "added"|"exists", id, game_title}`. System is resolved server-side via `canonical_system(system, system_id)` (the RA console id wins), so a wrong/empty scraped name is fixed at the source. **Cover gotcha:** the cover BackgroundTask is `_fetch_cover(game.id, ra_game_id, game.game_title, system)` — pass the **title + canonical system**, never the RA creds. Passing `username` as `game_title` made title-based cover sources (SteamGridDB) fetch one identical image for *every* extension-added game (regression fixed; `tests/test_api_extension.py` guards it).
 - **`GET /api/game-status?ra_game_id=N`** → `{ra_game_id, wanted: bool, wanted_status, owned: bool}`. The panel calls this on load to advise before you click Add (badges the floating icon, disables/relabels the button). `owned` = a `LibraryEntry` matched to that id exists — RA files many ROMs under one id and an unverified dump has no `ra_game_id`, so it's the "verified copy on hand" signal, not raw file presence.
 - **`GET /api/search?q=&system=`** — runs enabled sources (same relevance rules as the hunt); one source's failure is logged, not fatal.
-- **`POST /api/goal`** (`GoalAddRequest{ra_game_id, game_title, system, system_id, objective, achievement_id, achievement_title, event_name, deadline}`) — creates a `Goal` from the extension. `objective` ∈ `master|beaten|achievement`; **`achievement` requires `achievement_id`** and auto-completes on a HARDCORE unlock. System resolved via `canonical_system`, title via `clean_title`, `deadline` parsed `YYYY-MM-DD` (""→None). De-dups on (`ra_game_id`,`objective`,`achievement_id`) → `{status:"exists"}`; else `{status:"added", id, objective}`. Reuses `covers/{ra_game_id}.png` on disk, else backgrounds `goals._fetch_cover_goal`. The achievement-page content script (`rom-finder-extension/achievement.js`, match `/achievement/*`) posts here.
+- **`POST /api/goal`** (`GoalAddRequest{ra_game_id, game_title, system, system_id, objective, achievement_id, achievement_title, event_name, deadline}`) — creates a `Goal` from the extension. `objective` ∈ `master|beaten|achievement`; **`achievement` requires `achievement_id`** and auto-completes on a HARDCORE unlock. System resolved via `canonical_system`, title via `clean_title`, `deadline` parsed `YYYY-MM-DD` (""→None). De-dups on (`ra_game_id`,`objective`,`achievement_id`) → `{status:"exists"}`; else `{status:"added", id, objective}`. For an **achievement** goal it backgrounds `goals._enrich_achievement_goal` (RA `API_GetGameExtended` → canonical title + description + **badge image** stored as an absolute `cover_path`); for master/beat it reuses `covers/{ra_game_id}.png` or backgrounds `goals._fetch_cover_goal`. The achievement-page content script (`rom-finder-extension/achievement.js`, match `/achievement/*`) posts here.
 - **`GET /api/goal-status?ra_game_id=N[&achievement_id=M]`** → `{goal, completed, objective}`. With `achievement_id` it checks that specific achievement goal; without it, a game-level (master/beat) goal for the game. The extension calls it on load to relabel the button.
+- **`GET /api/events`** → `{events: [...]}` distinct non-empty `Goal.event_name`s. Powers the extension's event datalist so an achievement goal lands in the SAME event group as the game's master/beat goals (near-miss typos otherwise split a group).
 
 **The widget's `RA_SYSTEMS` map (content.js) must mirror `ra_client.SYSTEMS` ids** — GameCube=16, Wii=19, Wii U=20 (NOT 80/20). A wrong id shows "Unknown system" in the panel even though the server still stores the right console (it resolves from `system_id`). Bump `manifest.json` `version` when `content.js` changes — it's a separately-loaded client, reloaded in `chrome://extensions`, not deployed with the app.
 
@@ -148,9 +149,14 @@ award badge. `_fetch_cover_goal` (mirrors `wanted._fetch_cover`) fetches a cover
 `covers/{ra_game_id}.png`; `/add` reuses an existing file on disk and only backgrounds a fetch
 when absent. Edit/complete/reopen return the re-rendered `partials/goal_card.html`; delete returns
 `""` (delete-swap). **All auto-tracked objectives are hardcore-only** (see `services/CLAUDE.md` →
-goals.py). **`achievement` goals** (objective targeting one RA achievement) are added via the
-extension's `POST /api/goal` (above), not the manual page form; the card renders them with a
-🎯 badge + the achievement title and skips the game-level progress bar.
+goals.py). **`achievement` goals** (objective targeting one RA achievement) are added two ways: the
+extension's `POST /api/goal`, OR the page itself — clicking a search result's **achievement count**
+(goal mode) hx-loads `GET /ra/games/{id}/achievements` (`games.py`, async, reads-creds-then-awaits
+→ `RAClient.get_achievements` → `partials/ra_achievements.html`); a 🎯 button calls
+`selectGoalAchievement(...)` which fills the add-form's hidden `achievement_id`/`achievement_title`,
+so `POST /goals/add` (with an `achievement_id`) creates an `achievement` goal and backgrounds
+`_enrich_achievement_goal` (badge + description). The card renders achievement goals with a 🎯 badge,
+the achievement title + description, the badge image as cover, and skips the game-level progress bar.
 
 ## Agent-Observable Diagnostics (`api.py`)
 
