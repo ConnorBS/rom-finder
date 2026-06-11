@@ -334,6 +334,21 @@ class RAClient:
             resp.raise_for_status()
             return resp.json()
 
+    async def get_game_user_progress(self, game_id: int, user: str | None = None) -> dict:
+        """API_GetGameInfoAndUserProgress — the game's achievement set WITH this user's
+        per-achievement unlock state (`DateEarned`/`DateEarnedHardcore` set when earned).
+        The authoritative answer to 'which achievements of game N has the user earned' —
+        used to diagnose event-hub (AotW/Roulette) credit vs the dashboard mirror."""
+        await _limiter.wait()
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"{RA_BASE_URL}/API_GetGameInfoAndUserProgress.php",
+                params=self._params({"g": game_id, "u": user or self.username}),
+                timeout=20,
+            )
+            resp.raise_for_status()
+            return resp.json()
+
     async def get_game_extended(self, game_id: int) -> dict:
         """API_GetGameExtended.php — full game detail INCLUDING the achievement set
         (`Achievements` = {id: {ID, Title, Description, Points, BadgeName, ...}}).

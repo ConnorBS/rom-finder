@@ -14,12 +14,9 @@ from app.services import logger as applog
 
 
 def _badge_key(url: str) -> str:
-    """Last path segment of a badge URL (e.g. '193454.png'), lowercased; '' for empty
-    or a placeholder badge ('0'/'00000'). Lets an event achievement goal match the SOURCE
-    achievement the user actually earns: RA's AotW / RA Roulette event tiles are CLONES
-    with their own achievement_id under the event hub, but they reuse the source
-    achievement's badge image. The user unlocks the source (a different id), so id-only
-    matching never completes those goals — the shared badge is the reliable link."""
+    """Last path segment of a badge URL (e.g. '193454.png'), lowercased; '' for empty or a
+    placeholder badge ('0'/'00000'). Used by the `/api/diag/goal-mirror` diagnostic to report
+    badge overlap; matching itself is by achievement_id (see evaluate_goals)."""
     if not url:
         return ""
     seg = url.rstrip("/").rsplit("/", 1)[-1].split("?", 1)[0].lower()
@@ -44,15 +41,15 @@ def evaluate_goals(session: Session) -> dict:
     goals are done once the achievement is unlocked in HARDCORE. Custom never auto-flips.
     Returns {"completed": N} newly flipped."""
     rows = {r.game_id: r for r in session.exec(select(RAGameProgress)).all()}
-    # Hardcore-earned achievement ids + their badge keys (the mirror dedupes on
-    # (achievement_id, hardcore)). Badges back the event-clone fallback below.
-    earned_hc: set[int] = set()
-    earned_hc_badges: set[str] = set()
-    for a in session.exec(select(RAAchievement).where(RAAchievement.hardcore == True)).all():  # noqa: E712
-        earned_hc.add(a.achievement_id)
-        bk = _badge_key(a.badge_url)
-        if bk:
-            earned_hc_badges.add(bk)
+    # Hardcore-earned achievement ids (the mirror dedupes on (achievement_id, hardcore)).
+    # Event-clone achievements (AotW/Roulette) are their OWN distinct hardcore unlocks in the
+    # mirror with their own id (NOT the source-game id), so a plain id match is correct — the
+    # import stores that same event-clone id. (Confirmed via the user's timeline: an event
+    # achievement shows as two rows, source + event clone, each a different id.)
+    earned_hc = {
+        a.achievement_id
+        for a in session.exec(select(RAAchievement).where(RAAchievement.hardcore == True)).all()  # noqa: E712
+    }
     goals = session.exec(
         select(Goal).where(
             Goal.status == GoalStatus.active,
@@ -64,12 +61,6 @@ def evaluate_goals(session: Session) -> dict:
         done = False
         if g.objective == GoalObjective.achievement:
             done = g.achievement_id is not None and g.achievement_id in earned_hc
-            # Event clones (AotW / RA Roulette) carry a hub-specific achievement_id the
-            # user never directly unlocks; fall back to a hardcore badge match (the clone
-            # reuses the source achievement's badge). Scoped to event-grouped goals so a
-            # direct single-achievement goal can't false-match on a reused badge image.
-            if not done and g.event_name:
-                done = _badge_key(g.cover_path) in earned_hc_badges
         elif g.ra_game_id is not None:
             row = rows.get(g.ra_game_id)
             done = bool(row and award_satisfies(g.objective, row.highest_award_kind))

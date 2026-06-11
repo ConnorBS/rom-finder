@@ -93,6 +93,11 @@ async def goals_page(
     grouped: dict[str, list] = {}
     for g in visible:
         grouped.setdefault(g.event_name or "", []).append(_card_ctx(g, progress_by_id, now))
+    # ALL goals per event (filter-independent) so an event's tally/total never moves when
+    # completed/past goals are hidden — only which cards render changes.
+    all_by_event: dict[str, list] = {}
+    for g in all_goals:
+        all_by_event.setdefault(g.event_name or "", []).append(g)
     empty_events = [name for name in event_rows if name and name not in grouped]
     event_keys = [e for e in grouped if e] + sorted(empty_events)
 
@@ -108,7 +113,7 @@ async def goals_page(
     # 'event'/'added' keep first-seen order.
     ordered_events = event_keys + ([""] if "" in grouped else [])
 
-    groups = [_build_group(e, grouped.get(e, []), event_rows.get(e)) for e in ordered_events]
+    groups = [_build_group(e, grouped.get(e, []), all_by_event.get(e, []), event_rows.get(e)) for e in ordered_events]
     event_names = sorted(set([g.event_name for g in all_goals if g.event_name]) | set(event_rows))
 
     applog.log_navigation("goals", {"goal_count": len(all_goals), "events": len(event_rows)})
@@ -131,16 +136,17 @@ async def goals_page(
     )
 
 
-def _build_group(name: str, cards: list, event: GoalEvent | None) -> dict:
-    """Assemble one event group: per-game subdivisions + achievement/points tallies +
-    its GoalEvent metadata (url, auto-sync, last sync)."""
-    ach = [c for c in cards if c["goal"].objective == GoalObjective.achievement]
-    # Subdivide by (game, console), preserving the (already-sorted) card order.
+def _build_group(name: str, cards: list, all_goals: list, event: GoalEvent | None) -> dict:
+    """Assemble one event group. DISPLAY (per-game subdivisions) uses the filtered `cards`;
+    the TALLIES (done/total, achievements, points, tier) come from `all_goals` — every goal
+    in the event — so hiding completed/past goals never changes the event's totals."""
+    ach = [g for g in all_goals if g.objective == GoalObjective.achievement]
+    # Subdivide the VISIBLE cards by (game, console), preserving the (already-sorted) order.
     subs: dict[tuple, list] = {}
     for c in cards:
         subs.setdefault((c["goal"].game_title or "", c["goal"].system or ""), []).append(c)
     subgroups = [{"game_title": k[0], "system": k[1], "cards": v} for k, v in subs.items()]
-    points_done = sum(c["goal"].points for c in ach if c["goal"].status == GoalStatus.completed)
+    points_done = sum(g.points for g in ach if g.status == GoalStatus.completed)
 
     # RA V2 award tiers (Bronze→Champion): parse the cached JSON + mark the current tier
     # = highest whose pointsRequired the user's earned event points have reached.
@@ -162,11 +168,11 @@ def _build_group(name: str, cards: list, event: GoalEvent | None) -> dict:
         "cards": cards,
         "subgroups": subgroups,
         "multi_game": len(subgroups) > 1,
-        "done": sum(1 for c in cards if c["goal"].status == GoalStatus.completed),
-        "total": len(cards),
+        "done": sum(1 for g in all_goals if g.status == GoalStatus.completed),
+        "total": len(all_goals),
         "ach_total": len(ach),
-        "ach_done": sum(1 for c in ach if c["goal"].status == GoalStatus.completed),
-        "points_total": sum(c["goal"].points for c in ach),
+        "ach_done": sum(1 for g in ach if g.status == GoalStatus.completed),
+        "points_total": sum(g.points for g in ach),
         "points_done": points_done,
         "tiers": tiers,
         "current_tier": current_tier,

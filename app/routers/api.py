@@ -211,13 +211,68 @@ async def diag_goal_mirror(event_game_id: int = 0):
         "mirror_rows_for_event_game": game_rows,
         "goals": len(goals),
         "match_by_id_hardcore": by_id,
-        "match_by_badge_only_hardcore": by_badge,   # what the new badge fallback recovers
+        "match_by_badge_only_hardcore": by_badge,   # informational badge overlap
         "no_match": len(id_absent) - by_badge,
         "sample_id_absent": [
             {"aid": g.achievement_id, "title": g.custom_text, "badge": _badge_key(g.cover_path),
              "badge_in_mirror_hc": _badge_key(g.cover_path) in hc_badges}
             for g in id_absent[:12]
         ],
+    }
+
+
+@router.get("/diag/user-game-progress")
+async def diag_user_game_progress(game_id: int):
+    """Ground truth from RA (NOT the local mirror): which achievements of `game_id` has the
+    configured user actually earned in hardcore? Cross-references against the imported goals
+    and the mirror, so we can tell a genuine 'not earned' from a mirror PULL GAP (RA says
+    earned but the dashboard mirror is missing it). One RA call. Use on an event hub id."""
+    from app.services.ra_client import RAClient
+    from app.db.models import Goal, GoalObjective, RAAchievement
+
+    with Session(engine) as s:
+        u = _get_setting(s, "ra_username")
+        k = _get_setting(s, "ra_api_key")
+    if not (u and k):
+        return {"error": "no RA credentials"}
+    try:
+        data = await RAClient(u, k).get_game_user_progress(game_id)
+    except Exception as exc:
+        return {"error": str(exc)}
+
+    achs = data.get("Achievements") or {}
+    earned_hc: set[int] = set()
+    for aid, a in achs.items():
+        if a.get("DateEarnedHardcore"):
+            try:
+                earned_hc.add(int(aid))
+            except (TypeError, ValueError):
+                pass
+
+    with Session(engine) as s:
+        goal_ids = {
+            g.achievement_id for g in s.exec(select(Goal).where(
+                Goal.ra_game_id == game_id,
+                Goal.objective == GoalObjective.achievement,
+                Goal.achievement_id != None,  # noqa: E711
+            )).all()
+        }
+        mirror_hc = {
+            a.achievement_id for a in s.exec(
+                select(RAAchievement).where(RAAchievement.hardcore == True)  # noqa: E712
+            ).all()
+        }
+    earned_goal_ids = goal_ids & earned_hc
+    return {
+        "game_id": game_id,
+        "title": data.get("Title"),
+        "console": data.get("ConsoleName"),
+        "ra_num_achievements": len(achs),
+        "ra_earned_hardcore": len(earned_hc),            # RA's truth: clones the user earned
+        "imported_goals": len(goal_ids),
+        "goals_earned_per_ra": len(earned_goal_ids),     # goals RA says are earned
+        "earned_but_missing_from_mirror": len(earned_goal_ids - mirror_hc),  # >0 ⇒ mirror PULL GAP
+        "sample_missing_from_mirror": sorted(earned_goal_ids - mirror_hc)[:20],
     }
 
 

@@ -120,51 +120,43 @@ def test_evaluate_achievement_goal_hardcore_only(fresh_engine):
         assert g.status == GoalStatus.completed and g.auto is True
 
 
-def test_evaluate_event_clone_completes_via_badge(fresh_engine):
-    """An AotW/Roulette event goal carries the event-hub CLONE achievement_id (which the
-    user never directly unlocks), but the clone reuses the SOURCE achievement's badge. The
-    user earns the source (a different id) in hardcore → the goal completes via the badge
-    fallback. Scoped to event-grouped goals."""
-    badge = "https://media.retroachievements.org/Badge/193454.png"
+def test_evaluate_event_clone_completes_by_its_own_id(fresh_engine):
+    """An imported event goal carries the EVENT-CLONE achievement_id (its own id, distinct
+    from the source-game achievement). RA records the clone as its own hardcore unlock, so a
+    plain id match completes the goal — trust the achievement id the import comes with."""
     with Session(engine) as s:
-        # User earned the SOURCE achievement (real id 9001, in the real game) in hardcore,
-        # same badge as the event clone. The clone id (571351) is NOT in the mirror.
-        s.add(RAAchievement(achievement_id=9001, game_id=219, badge_url=badge,
-                            earned_at=datetime.utcnow(), hardcore=True))
+        # The event-clone unlock (id 571351) in the mirror, hardcore; the source-game
+        # achievement (id 9001) is a separate, irrelevant row.
+        s.add(RAAchievement(achievement_id=571351, game_id=37650, earned_at=datetime.utcnow(), hardcore=True))
+        s.add(RAAchievement(achievement_id=9001, game_id=219, earned_at=datetime.utcnow(), hardcore=True))
         s.commit()
         clone = Goal(game_title="AotW 2026", ra_game_id=37650, achievement_id=571351,
                      objective=GoalObjective.achievement, custom_text="Troll Face",
-                     cover_path=badge, event_name="Achievement of the Week 2026")
-        # Same clone shape but UNGROUPED (no event_name) → badge fallback must NOT apply.
-        ungrouped = Goal(game_title="AotW 2026", ra_game_id=37650, achievement_id=571352,
-                         objective=GoalObjective.achievement, custom_text="Other",
-                         cover_path=badge, event_name="")
-        s.add(clone); s.add(ungrouped); s.commit()
-        s.refresh(clone); s.refresh(ungrouped)
-        clone_id, ungrouped_id = clone.id, ungrouped.id
+                     event_name="Achievement of the Week 2026")
+        s.add(clone); s.commit(); s.refresh(clone)
+        clone_id = clone.id
 
     with Session(engine) as s:
         assert evaluate_goals(s)["completed"] == 1
         assert s.get(Goal, clone_id).status == GoalStatus.completed
-        assert s.get(Goal, ungrouped_id).status == GoalStatus.active  # no event_name → no badge fallback
 
 
-def test_evaluate_event_clone_softcore_badge_does_not_complete(fresh_engine):
-    """The badge fallback stays hardcore-only: a softcore unlock of the source badge
-    must not complete the event goal."""
-    badge = "https://media.retroachievements.org/Badge/193454.png"
-    with Session(engine) as s:
-        s.add(RAAchievement(achievement_id=9001, game_id=219, badge_url=badge,
-                            earned_at=datetime.utcnow(), hardcore=False))  # softcore
-        s.commit()
-        g = Goal(game_title="AotW 2026", ra_game_id=37650, achievement_id=571351,
-                 objective=GoalObjective.achievement, custom_text="Troll Face",
-                 cover_path=badge, event_name="Achievement of the Week 2026")
-        s.add(g); s.commit(); s.refresh(g)
-        gid = g.id
-    with Session(engine) as s:
-        assert evaluate_goals(s)["completed"] == 0
-        assert s.get(Goal, gid).status == GoalStatus.active
+def test_event_tally_stable_when_hiding_completed(fresh_engine):
+    """Hiding completed (or past) goals must NOT change an event's total/done tally — only
+    which cards render. Regression: the tally was computed from the filtered visible cards."""
+    from app.routers.goals import _build_group, _card_ctx
+    now = datetime.utcnow()
+    done = Goal(game_title="G", system="PS1", ra_game_id=1, objective=GoalObjective.achievement,
+                achievement_id=1, points=5, event_name="E", status=GoalStatus.completed)
+    active = Goal(game_title="G", system="PS1", ra_game_id=1, objective=GoalObjective.achievement,
+                  achievement_id=2, points=7, event_name="E", status=GoalStatus.active)
+    all_goals = [done, active]
+    visible_cards = [_card_ctx(active, {}, now)]   # show_completed OFF → completed card filtered out
+    grp = _build_group("E", visible_cards, all_goals, None)
+    assert grp["total"] == 2 and grp["done"] == 1            # tally from ALL goals, not visible
+    assert grp["ach_total"] == 2 and grp["ach_done"] == 1
+    assert grp["points_total"] == 12 and grp["points_done"] == 5
+    assert len(grp["cards"]) == 1                            # display still filtered
 
 
 # --- extension API ---------------------------------------------------------
