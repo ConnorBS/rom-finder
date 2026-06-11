@@ -153,6 +153,8 @@ async def diag_ra_v2(event: int = 0, achievement: int = 0):
             res["body_snippet"] = r.text[:400]   # e.g. a Cloudflare challenge page
             return res
         res["top_keys"] = list(j.keys()) if isinstance(j, dict) else type(j).__name__
+        if r.status_code >= 400:   # surface JSON:API {message, errors} so the next probe is self-diagnosing
+            res["error_body"] = j if isinstance(j, dict) else r.text[:600]
         data = j.get("data") if isinstance(j, dict) else None
         if isinstance(data, dict):
             res["attributes"] = data.get("attributes")

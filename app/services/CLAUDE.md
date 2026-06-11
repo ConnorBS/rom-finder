@@ -29,6 +29,14 @@ which confirms reachability/auth + captures the real payload (event `awards` tie
 `points`/`pointsWeighted` + source `games`). Not yet wired into the UI — verify with the probe in a
 deployment that has the key + RA network first (see root CLAUDE.md → V2 roadmap). Docs source:
 `github.com/Chew/RA-api-docs/tree/feat/v2-docs/docs/v2`.
+**V2 is JSON:API — it ONLY produces `application/vnd.api+json`**; `_headers()` MUST send that as
+`Accept` (sending `application/json` returns HTTP **406**, confirmed via the prod probe 2026-06-11).
+The same probe confirmed **V2 is reachable from the deployment** (clean JSON error envelope, NOT a
+Cloudflare challenge — so it is NOT CF-gated). The probe now dumps a JSON:API error `{message, errors}`
+body for any 4xx (`error_body`), so the next failure is self-diagnosing. **Auth scheme still unconfirmed:**
+the client uses `Bearer`, but the official docs are inconsistent (V1 `?y=key` query param vs a base64
+`username:apikey` header); the 406 is content-negotiation, returned before auth, so a clean re-probe
+after the Accept fix is what tells us whether `Bearer` holds (200) or needs a different scheme (401/403).
 
 ### Cover filenames
 `{ra_game_id}.png` when RA ID is known; `lib_{library_id}.png` for entries with no RA ID.

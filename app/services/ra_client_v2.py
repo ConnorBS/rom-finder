@@ -25,7 +25,8 @@ class RAClientV2:
         self.username = username
 
     def _headers(self) -> dict:
-        return {"Authorization": f"Bearer {self.api_key}", "Accept": "application/json"}
+        # V2 is JSON:API and ONLY produces application/vnd.api+json — Accept: application/json got HTTP 406.
+        return {"Authorization": f"Bearer {self.api_key}", "Accept": "application/vnd.api+json"}
 
     async def get(self, path: str, params: dict | None = None) -> httpx.Response:
         await _limiter.wait()
