@@ -287,6 +287,33 @@
 
   const addStatus = el('div', '', { fontSize: '11px', minHeight: '16px', marginBottom: '10px', color: '#94a3b8' });
 
+  // Add as Goal row (Beat / Master) — track the game as a goal, not only a ROM hunt.
+  const goalRow = document.createElement('div');
+  applyStyles(goalRow, { display: 'flex', gap: '6px', marginBottom: '10px' });
+
+  const goalSelect = document.createElement('select');
+  [['beaten', 'Beat'], ['master', 'Master']].forEach(([v, label]) => {
+    const o = document.createElement('option');
+    o.value = v; o.textContent = label; goalSelect.appendChild(o);
+  });
+  applyStyles(goalSelect, {
+    padding: '6px 8px', background: '#1e293b', border: '1px solid #334155',
+    borderRadius: '5px', color: '#e2e8f0', fontSize: '12px', outline: 'none',
+  });
+
+  const goalBtn = document.createElement('button');
+  goalBtn.textContent = '🎯 Add as Goal';
+  applyStyles(goalBtn, {
+    flex: '1', padding: '8px', background: '#334155', color: '#e2e8f0',
+    border: '1px solid #475569', borderRadius: '6px', fontWeight: '600',
+    fontSize: '12px', cursor: 'pointer', transition: 'background 0.15s',
+  });
+  goalBtn.addEventListener('mouseenter', () => { if (!goalBtn.disabled) goalBtn.style.background = '#475569'; });
+  goalBtn.addEventListener('mouseleave', () => { if (!goalBtn.disabled) goalBtn.style.background = '#334155'; });
+
+  goalRow.appendChild(goalSelect);
+  goalRow.appendChild(goalBtn);
+
   // Subset advisory — shown only on a subset page. Explains that ROM Finder tracks
   // the BASE game and that patch-required subsets are the user's responsibility.
   const subsetNote = document.createElement('div');
@@ -362,6 +389,7 @@
   body.appendChild(subsetNote);
   body.appendChild(addBtn);
   body.appendChild(addStatus);
+  body.appendChild(goalRow);
   body.appendChild(divider);
   body.appendChild(searchLabel);
   body.appendChild(searchRow);
@@ -497,6 +525,43 @@
       addBtn.textContent = '+ Add to Wanted';
       addBtn.style.background = '#2563eb';
       addStatus.textContent = `Error: ${err.message}. Is ROM Finder running?`;
+      addStatus.style.color = '#f87171';
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Add as Goal (game-level master/beat objective — separate from the ROM hunt)
+  // -------------------------------------------------------------------------
+
+  goalBtn.addEventListener('click', async () => {
+    const items = await storageGet({ romFinderUrl: 'http://127.0.0.1:8080' });
+    const base = items.romFinderUrl.replace(/\/$/, '');
+
+    goalBtn.disabled = true;
+    const prevText = goalBtn.textContent;
+    goalBtn.textContent = 'Adding…';
+
+    try {
+      const resp = await apiFetch(`${base}/api/goal`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ra_game_id: gameId,
+          game_title: effectiveTitle(),
+          system: systemName,
+          system_id: systemId,
+          objective: goalSelect.value,   // 'beaten' | 'master'
+        }),
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      goalBtn.textContent = data.status === 'exists' ? '✓ Goal already set' : '✓ Goal added';
+      goalBtn.style.background = '#14532d';
+      goalBtn.style.borderColor = '#166534';
+    } catch (err) {
+      goalBtn.disabled = false;
+      goalBtn.textContent = prevText;
+      addStatus.textContent = `Goal error: ${err.message}. Is ROM Finder running?`;
       addStatus.style.color = '#f87171';
     }
   });

@@ -11,7 +11,7 @@ from app.db.models import Goal, GoalEvent, GoalObjective, GoalStatus, RAGameProg
 from app.services import settings as app_settings
 from app.services import logger as applog
 from app.services import events as events_service
-from app.services.goals import evaluate_goals
+from app.services.goals import evaluate_goals, resolve_event_source_games
 from app.services.ra_client import SYSTEMS, RAClient
 
 router = APIRouter(prefix="/goals")
@@ -64,7 +64,8 @@ async def goals_page(
     sort: str = Query(default="event"),
     session: Session = Depends(get_session),
 ):
-    evaluate_goals(session)  # LOCAL — fold in any RA progress since last visit
+    evaluate_goals(session)            # LOCAL — fold in any RA progress since last visit
+    resolve_event_source_games(session)  # LOCAL — name+desc match → real source game/console
 
     show_completed_on = show_completed != "0"
     show_past_on = show_past == "1"

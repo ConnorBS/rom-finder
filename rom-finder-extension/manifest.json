@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ROM Finder",
-  "version": "1.8.1",
+  "version": "1.8.2",
   "description": "Add RetroAchievements games to your ROM Finder wanted list, set goals (incl. per-achievement with auto-fetched badge art), import whole events, and search sources directly in the browser.",
   "permissions": ["storage", "webNavigation", "scripting"],
   "background": {

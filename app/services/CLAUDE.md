@@ -120,6 +120,15 @@ or the game's `highest_award_date`/`most_recent_date` for master/beaten) — NOT
 time (`updated_at` stays now so the live fingerprint still advances). A second pass **self-heals** the
 `completed_at` of already-auto-completed goals whose date predates this (re-stamps from the mirror when
 it differs; idempotent). Returns `{completed, corrected}`.
+**Source game/console resolution for event goals (`resolve_event_source_games`, LOCAL):** an event
+clone's V2 `games` link points at the event hub, not the real game, so to show "from {real game} ·
+{console}" we **match the achievement's NAME + DESCRIPTION against the mirror's NON-event achievements**
+(real game + console). Exactly one distinct source game → set `game_title`/`system`; zero or AMBIGUOUS
+(>1) → leave unresolved. Only touches event-hub goals (`system == "Events"`), so resolved ones are
+skipped. Description match strips a leading event game tag (`_DESC_TAG`, e.g. AotW's `"[FF1] "`) before
+comparing. `ra_game_id` is deliberately NOT changed (kept = hub id for import dedup). Called after
+`evaluate_goals` on `/goals` load + dashboard refresh. (Supersedes the broken V2 `events.enrich_source_games`,
+which used `include=games.system` — a 400 — and resolved only to the hub anyway.)
 Called from `ra_dashboard.refresh()` (after `sync_library_awards`/`recompute_subset_flags`) and
 on every `/goals` page load — the only two moments the mirror can change. Deliberately NOT a
 scheduler task (the mirror is manual-refresh only).

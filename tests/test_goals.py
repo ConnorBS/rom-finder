@@ -124,6 +124,69 @@ def test_completed_at_is_real_unlock_date_and_self_heals(fresh_engine):
         assert s.get(Goal, agid).completed_at == unlock
 
 
+def test_resolve_event_source_game_by_name_and_desc(fresh_engine):
+    from app.services.goals import resolve_event_source_games
+    with Session(engine) as s:
+        # SOURCE achievement on a real console (Mr. Bean / Wii)
+        s.add(RAAchievement(achievement_id=553117, game_id=35105, game_title="Mr. Bean's Wacky World",
+                            console_id=19, console_name="Wii", title="Golden Retriever",
+                            description="Collect all golden teddies", earned_at=datetime.utcnow(), hardcore=True))
+        # the EVENT-console clone of the same achievement — must be ignored as a source
+        s.add(RAAchievement(achievement_id=609327, game_id=38548, game_title="Collect-a-thon MaRAthon",
+                            console_id=101, console_name="Events", title="Golden Retriever",
+                            description="Collect all golden teddies", earned_at=datetime.utcnow(), hardcore=True))
+        s.commit()
+        g = Goal(game_title="Collect-a-thon MaRAthon", system="Events", ra_game_id=38548,
+                 achievement_id=609327, objective=GoalObjective.achievement,
+                 custom_text="Golden Retriever", achievement_desc="Collect all golden teddies",
+                 event_name="Collect-a-thon MaRAthon")
+        s.add(g); s.commit(); s.refresh(g)
+        gid = g.id
+    with Session(engine) as s:
+        assert resolve_event_source_games(s)["resolved"] == 1
+        g = s.get(Goal, gid)
+        assert g.game_title == "Mr. Bean's Wacky World" and g.system == "Wii"
+
+
+def test_resolve_event_source_game_aotw_desc_prefix(fresh_engine):
+    # AotW clone descriptions carry a "[FF1] " prefix; normalization still matches the source.
+    from app.services.goals import resolve_event_source_games
+    with Session(engine) as s:
+        s.add(RAAchievement(achievement_id=100, game_id=219, game_title="Final Fantasy",
+                            console_id=7, console_name="NES", title="Troll Face",
+                            description="Defeat the dark elf Astos", earned_at=datetime.utcnow(), hardcore=True))
+        s.commit()
+        g = Goal(game_title="AotW", system="Events", ra_game_id=37650, achievement_id=571351,
+                 objective=GoalObjective.achievement, custom_text="Troll Face",
+                 achievement_desc="[FF1] Defeat the dark elf Astos ", event_name="AotW")
+        s.add(g); s.commit(); s.refresh(g)
+        gid = g.id
+    with Session(engine) as s:
+        assert resolve_event_source_games(s)["resolved"] == 1
+        assert s.get(Goal, gid).system == "NES"
+
+
+def test_resolve_event_source_game_ambiguous_leaves_blank(fresh_engine):
+    from app.services.goals import resolve_event_source_games
+    with Session(engine) as s:
+        # same name+desc across TWO real games → ambiguous → don't conclude
+        s.add(RAAchievement(achievement_id=1, game_id=10, game_title="Game A", console_id=7,
+                            console_name="NES", title="Win", description="Beat it",
+                            earned_at=datetime.utcnow(), hardcore=True))
+        s.add(RAAchievement(achievement_id=2, game_id=20, game_title="Game B", console_id=12,
+                            console_name="SNES", title="Win", description="Beat it",
+                            earned_at=datetime.utcnow(), hardcore=True))
+        s.commit()
+        g = Goal(game_title="Ev", system="Events", ra_game_id=999, achievement_id=99,
+                 objective=GoalObjective.achievement, custom_text="Win", achievement_desc="Beat it",
+                 event_name="Ev")
+        s.add(g); s.commit(); s.refresh(g)
+        gid = g.id
+    with Session(engine) as s:
+        assert resolve_event_source_games(s)["resolved"] == 0
+        assert s.get(Goal, gid).system == "Events"   # left unresolved
+
+
 def test_looks_like_image():
     from app.routers.goals import _looks_like_image
     assert _looks_like_image("https://i.imgur.com/abc.png")

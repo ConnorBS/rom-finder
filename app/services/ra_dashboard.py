@@ -234,13 +234,15 @@ async def refresh() -> dict:
         try:
             from app.services.mastery import sync_library_awards
             from app.services.subsets import recompute_subset_flags
-            from app.services.goals import evaluate_goals
+            from app.services.goals import evaluate_goals, resolve_event_source_games
             with Session(engine) as s:
                 sync_library_awards(s)
             with Session(engine) as s:
                 recompute_subset_flags(s)
             with Session(engine) as s:
                 evaluate_goals(s)
+            with Session(engine) as s:
+                resolve_event_source_games(s)   # LOCAL: real source game/console for event goals
         except Exception as exc:
             applog.warning("system", f"Award/subset recompute after dashboard sync failed: {exc}")
         return {"status": "ok", "achievements": ach_count, "games": game_count}
