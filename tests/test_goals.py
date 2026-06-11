@@ -451,3 +451,76 @@ def test_events_search_by_name(client, monkeypatch):
 def test_events_search_without_creds(client):
     r = client.get("/ra/events/search?q=x")
     assert r.status_code == 200 and "credentials" in r.text.lower()
+
+
+# --- event deadline auto-pull (RA V2 activeThrough) ------------------------
+
+def test_parse_iso_dt_formats():
+    from app.services.events import _parse_iso_dt
+    assert _parse_iso_dt("2027-01-03T00:00:00.000000Z").day == 3
+    assert _parse_iso_dt("2027-01-03").month == 1
+    assert _parse_iso_dt("") is None and _parse_iso_dt("not-a-date") is None
+
+
+def test_import_event_pulls_deadline_from_v2(client, monkeypatch):
+    from app.services.ra_client import RAClient
+    from app.services.ra_client_v2 import RAClientV2
+    _seed_creds()
+
+    async def fake_ext(self, gid):
+        return _extended(achs=[_ach(1, "A")])
+
+    async def fake_event(self, event_id, include="awards"):
+        return {"data": {"attributes": {"title": "AotW", "activeThrough": "2027-01-03T00:00:00.000000Z"}}}
+    monkeypatch.setattr(RAClient, "get_game_extended", fake_ext)
+    monkeypatch.setattr(RAClientV2, "get_event", fake_event)
+
+    r = client.post("/api/import-event", json={"ra_game_id": 196})  # no deadline given
+    assert r.json()["status"] == "ok"
+    with Session(engine) as s:
+        g = s.exec(select(Goal).where(Goal.ra_game_id == 196)).first()
+        assert g.deadline is not None and (g.deadline.year, g.deadline.month, g.deadline.day) == (2027, 1, 3)
+        ev = s.exec(select(GoalEvent).where(GoalEvent.ra_game_id == 196)).first()
+        assert ev.deadline.year == 2027   # stored on the event for nightly-added goals
+
+
+def test_import_event_explicit_deadline_skips_v2(client, monkeypatch):
+    from app.services.ra_client import RAClient
+    from app.services.ra_client_v2 import RAClientV2
+    _seed_creds()
+    calls = []
+
+    async def fake_ext(self, gid):
+        return _extended(achs=[_ach(1, "A")])
+
+    async def rec_event(self, event_id, include="awards"):
+        calls.append(event_id)
+        return {"data": {"attributes": {"activeThrough": "2027-01-03"}}}
+    monkeypatch.setattr(RAClient, "get_game_extended", fake_ext)
+    monkeypatch.setattr(RAClientV2, "get_event", rec_event)
+
+    client.post("/api/import-event", json={"ra_game_id": 196, "deadline": "2026-09-18"})
+    assert calls == []   # V2 not consulted when the user provided a deadline
+    with Session(engine) as s:
+        g = s.exec(select(Goal).where(Goal.ra_game_id == 196)).first()
+        assert (g.deadline.month, g.deadline.day) == (9, 18)
+
+
+def test_import_event_v2_unreachable_is_graceful(client, monkeypatch):
+    from app.services.ra_client import RAClient
+    from app.services.ra_client_v2 import RAClientV2
+    _seed_creds()
+
+    async def fake_ext(self, gid):
+        return _extended(achs=[_ach(1, "A")])
+
+    async def boom(self, event_id, include="awards"):
+        raise RuntimeError("cloudflare 403")
+    monkeypatch.setattr(RAClient, "get_game_extended", fake_ext)
+    monkeypatch.setattr(RAClientV2, "get_event", boom)
+
+    r = client.post("/api/import-event", json={"ra_game_id": 196})  # no deadline; V2 fails
+    assert r.json()["status"] == "ok"   # import still succeeds
+    with Session(engine) as s:
+        g = s.exec(select(Goal).where(Goal.ra_game_id == 196)).first()
+        assert g.deadline is None

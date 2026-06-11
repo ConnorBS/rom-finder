@@ -105,7 +105,11 @@ the id from a pasted URL/`/game/N`/`/event/N`/bare number. `sync_all_auto()` is 
 any newly-published achievements — that's how AotW/random-roll events grow over time. Stores the
 achievement's own RA `points` per goal (NB: this is the achievement's points, **not** the event's
 own point value, which the V1 API doesn't expose). `routers/goals._refresh_goal_art` re-pulls badges
-(one call per distinct game) + box art on demand, also rate-limited.
+(one call per distinct game) + box art on demand, also rate-limited. **Event deadline auto-pull**:
+when an import gives no explicit deadline, `sync_event` best-effort fetches the event's end date from
+RA **V2** (`events.fetch_event_deadline` → `/events/{id}` `activeThrough`) and stamps it on the goals +
+the `GoalEvent` (so nightly-added achievements inherit it). Best-effort — V2 unreachable
+(Cloudflare/bad key) just means no auto-deadline; gated by setting `event_pull_deadline` (default true).
 
 **Achievement-goal enrichment** (`routers/goals._enrich_achievement_goal`, background): on add, an
 achievement goal is enriched from `RAClient.get_achievements(game_id)` — canonical title

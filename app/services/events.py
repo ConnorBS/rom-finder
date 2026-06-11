@@ -42,6 +42,36 @@ def _creds() -> tuple[str, str]:
         return app_settings.get(s, "ra_username"), app_settings.get(s, "ra_api_key")
 
 
+def _parse_iso_dt(value) -> datetime | None:
+    """Parse an RA V2 ISO timestamp (e.g. '2027-01-03T00:00:00.000000Z' or
+    '2027-01-03') to a naive UTC datetime. Returns None on anything unparseable."""
+    if not value:
+        return None
+    s = str(value).strip().rstrip("Zz")
+    try:
+        return datetime.fromisoformat(s)
+    except ValueError:
+        try:
+            return datetime.strptime(s[:10], "%Y-%m-%d")
+        except ValueError:
+            return None
+
+
+async def fetch_event_deadline(api_key: str, event_id: int) -> datetime | None:
+    """Best-effort: the RA **V2** event's `activeThrough` (its end date) → the goal
+    deadline. Returns None if V2 is unreachable/unauthorized (Cloudflare, bad key, no
+    such field) so import never fails on it — it just doesn't auto-set a deadline.
+    Activates automatically once V2 is reachable (verify with /api/diag/ra-v2)."""
+    from app.services.ra_client_v2 import RAClientV2
+    try:
+        data = await RAClientV2(api_key).get_event(event_id)
+    except Exception as exc:
+        applog.verbose("system", f"V2 event deadline lookup skipped (event {event_id}): {exc}", {})
+        return None
+    attrs = (data.get("data") or {}).get("attributes", {}) if isinstance(data, dict) else {}
+    return _parse_iso_dt(attrs.get("activeThrough"))
+
+
 def build_event_goals(
     session: Session,
     *,
@@ -141,6 +171,13 @@ async def sync_event(
     system = data.get("ConsoleName", "")
     achievements = RAClient.achievements_from_extended(data)
     name = (event_name or title).strip() or title
+
+    # No explicit deadline? Best-effort: use the event's end date (V2 `activeThrough`).
+    if deadline is None:
+        with Session(engine) as s:
+            pull = app_settings.get_bool(s, "event_pull_deadline", True)
+        if pull:
+            deadline = await fetch_event_deadline(api_key, game_id)
 
     with Session(engine) as s:
         stats = build_event_goals(

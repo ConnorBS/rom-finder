@@ -75,6 +75,9 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "sched_eventsync_enabled": "true",
     "sched_eventsync_time": "05:30",
     "sched_eventsync_last_run": "",
+    # Auto-set imported event goals' deadline from the event's end date (RA V2
+    # `activeThrough`) when no deadline is given. Best-effort; needs V2 reachable.
+    "event_pull_deadline": "true",
     # Torrent/usenet last-resort downloads (qBittorrent/SABnzbd via Prowlarr). The
     # poller runs every scheduler tick while jobs are in flight (not a daily slot).
     "sched_poll_external_enabled": "true",
