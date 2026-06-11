@@ -50,8 +50,9 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "check_dir_readonly": "false",
     "covers_dir_readonly": "false",
     # Cover art sources — RA on by default, SteamGridDB opt-in
-    "cover_sources_order": '["retroachievements", "steamgriddb"]',
+    "cover_sources_order": '["retroachievements", "ra_v2_boxart", "steamgriddb"]',
     "cover_source_retroachievements_enabled": "true",
+    "cover_source_ra_v2_boxart_enabled": "false",
     "cover_source_steamgriddb_enabled": "false",
     "cover_source_steamgriddb_api_key": "",
     # Autodiscover — periodically add newly-released RA games to Wanted pool
