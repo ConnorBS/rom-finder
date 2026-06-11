@@ -42,26 +42,46 @@
                 class="flex-shrink-0 bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1.5 rounded-md transition-colors"
             >Select →</button>
             {% elif mode == 'add' %}
-            <!-- Add to Wanted mode -->
-            <form
-                id="add-form-{{ game.ID }}"
-                hx-post="/wanted/add"
-                hx-target="#add-form-{{ game.ID }}"
-                hx-swap="innerHTML"
-                hx-indicator="find button"
-                class="flex-shrink-0"
-            >
-                <input type="hidden" name="ra_game_id" value="{{ game.ID }}">
-                <input type="hidden" name="game_title" value="{{ game.Title }}">
-                <input type="hidden" name="system" value="{{ system_name }}">
-                <button
-                    type="submit"
-                    class="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1.5 rounded-md transition-colors"
+            <!-- Add to Wanted (ROM hunt) OR add as a Goal (master/beat to track) -->
+            <div class="flex-shrink-0 flex flex-col items-stretch gap-1.5">
+                <form
+                    id="add-form-{{ game.ID }}"
+                    hx-post="/wanted/add"
+                    hx-target="#add-form-{{ game.ID }}"
+                    hx-swap="innerHTML"
+                    hx-indicator="find button"
                 >
-                    <span class="htmx-label">+ Add to Wanted</span>
-                    <span class="htmx-indicator">Adding...</span>
-                </button>
-            </form>
+                    <input type="hidden" name="ra_game_id" value="{{ game.ID }}">
+                    <input type="hidden" name="game_title" value="{{ game.Title }}">
+                    <input type="hidden" name="system" value="{{ system_name }}">
+                    <button
+                        type="submit"
+                        class="w-full bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1.5 rounded-md transition-colors"
+                    >
+                        <span class="htmx-label">+ Add to Wanted</span>
+                        <span class="htmx-indicator">Adding...</span>
+                    </button>
+                </form>
+                <form
+                    id="goal-form-{{ game.ID }}"
+                    hx-post="/goals/add"
+                    hx-target="#goal-form-{{ game.ID }}"
+                    hx-swap="innerHTML"
+                    class="flex items-center gap-1"
+                >
+                    <input type="hidden" name="ra_game_id" value="{{ game.ID }}">
+                    <input type="hidden" name="game_title" value="{{ game.Title }}">
+                    <input type="hidden" name="system" value="{{ system_name }}">
+                    <select name="objective"
+                            class="bg-gray-800 border border-gray-700 text-gray-300 rounded-md px-1.5 py-1 text-xs focus:outline-none focus:border-blue-500">
+                        <option value="beaten">Beat</option>
+                        <option value="master">Master</option>
+                    </select>
+                    <button type="submit"
+                            class="flex-1 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-200 hover:text-white text-xs px-2 py-1 rounded-md transition-colors"
+                            title="Track this game as a goal">🎯 Goal</button>
+                </form>
+            </div>
             {% else %}
             <!-- Default: find sources inline -->
             <button

@@ -124,6 +124,44 @@ def test_completed_at_is_real_unlock_date_and_self_heals(fresh_engine):
         assert s.get(Goal, agid).completed_at == unlock
 
 
+def test_looks_like_image():
+    from app.routers.goals import _looks_like_image
+    assert _looks_like_image("https://i.imgur.com/abc.png")
+    assert _looks_like_image("https://x/y.JPG?token=1")     # case + query ignored
+    assert _looks_like_image("https://x/y.webp#frag")
+    assert not _looks_like_image("https://docs.google.com/spreadsheets/d/abc")
+    assert not _looks_like_image("")
+
+
+def test_event_edit_sets_deadline_and_image_renders(client):
+    with Session(engine) as s:
+        s.add(GoalEvent(name="Summer", url="", auto_sync=False))
+        s.add(Goal(game_title="G", system="NES", ra_game_id=1,
+                   objective=GoalObjective.master, event_name="Summer"))
+        s.commit()
+    r = client.post("/goals/event/edit", data={
+        "name": "Summer", "url": "https://i.imgur.com/pic.png", "deadline": "2026-09-01"})
+    assert r.status_code == 200
+    with Session(engine) as s:
+        ev = s.exec(select(GoalEvent).where(GoalEvent.name == "Summer")).first()
+        assert ev.url == "https://i.imgur.com/pic.png"
+        assert ev.deadline is not None and ev.deadline.month == 9
+    html = client.get("/goals").text
+    assert "i.imgur.com/pic.png" in html      # image URL rendered as <img> in the header
+    assert "Sep 01, 2026" in html             # event deadline badge
+
+
+def test_event_edit_clears_deadline(client):
+    with Session(engine) as s:
+        s.add(GoalEvent(name="E", url="", deadline=datetime(2026, 5, 1), auto_sync=False))
+        s.add(Goal(game_title="G", system="NES", ra_game_id=1,
+                   objective=GoalObjective.master, event_name="E"))
+        s.commit()
+    client.post("/goals/event/edit", data={"name": "E", "url": "", "deadline": ""})
+    with Session(engine) as s:
+        assert s.exec(select(GoalEvent).where(GoalEvent.name == "E")).first().deadline is None
+
+
 def test_evaluate_achievement_goal_hardcore_only(fresh_engine):
     with Session(engine) as s:
         # achievement 555 earned in SOFTCORE only — must NOT satisfy the goal

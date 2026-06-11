@@ -168,6 +168,11 @@
                     <input type="url" name="url" placeholder="https://docs.google.com/…"
                            class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
                 </div>
+                <div>
+                    <label class="block text-gray-500 text-xs mb-1">Deadline (optional)</label>
+                    <input type="date" name="deadline"
+                           class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
+                </div>
                 <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">Save event</button>
             </form>
         </div>
@@ -217,12 +222,23 @@
             <div class="mb-3">
                 <div class="flex items-center flex-wrap gap-x-3 gap-y-1">
                     <h2 class="text-sm font-semibold {% if group.name %}text-gray-200{% else %}text-gray-500{% endif %}">{{ group.name or 'No event' }}</h2>
-                    {% if group.event and group.event.url %}
+                    {% if group.event_image %}
+                    <a href="{{ group.event.url }}" target="_blank" rel="noopener noreferrer" title="Open image">
+                        <img src="{{ group.event.url }}" alt="{{ group.name }}" loading="lazy"
+                             class="h-8 max-w-[8rem] object-contain rounded border border-gray-800 hover:border-gray-600 transition-colors">
+                    </a>
+                    {% elif group.event and group.event.url %}
                     <a href="{{ group.event.url }}" target="_blank" rel="noopener noreferrer"
                        class="text-blue-400 hover:underline text-xs">↗ link</a>
                     {% endif %}
                     {% if group.event and group.event.auto_sync %}
                     <span class="text-emerald-500/80 text-xs" title="Re-checked nightly for new achievements{% if group.event.last_synced_at %} — last {{ group.event.last_synced_at.strftime('%b %d') }}{% endif %}">⟳ auto-sync</span>
+                    {% endif %}
+                    {% if group.event and group.event.deadline %}
+                    {% set ev_done = group.total and group.done >= group.total %}
+                    {% set ev_overdue = group.event.deadline < now and not ev_done %}
+                    <span class="text-xs {% if ev_done %}text-green-400{% elif ev_overdue %}text-red-400{% else %}text-amber-400{% endif %}"
+                          title="Event deadline">📅 {{ group.event.deadline.strftime('%b %d, %Y') }}{% if ev_overdue %} · overdue{% endif %}</span>
                     {% endif %}
                     <span class="text-gray-600 text-xs">{{ group.done }} of {{ group.total }} done</span>
                     {% if group.ach_total %}
@@ -231,12 +247,33 @@
                     <div class="flex-1 border-t border-gray-800 min-w-[2rem]"></div>
                     {% if group.name %}
                     <button type="button"
+                            onclick="document.getElementById('event-edit-{{ loop.index }}').classList.toggle('hidden')"
+                            class="text-gray-600 hover:text-blue-300 text-xs transition-colors flex-shrink-0"
+                            title="Edit this event's link & deadline">✎ Edit</button>
+                    <button type="button"
                             hx-post="/goals/event/delete" hx-vals='{"name": {{ group.name | tojson }}}'
                             hx-confirm="Delete the entire “{{ group.name }}” event and all {{ group.total }} of its goals?"
                             class="text-gray-600 hover:text-red-400 text-xs transition-colors flex-shrink-0"
                             title="Delete this event and all its goals">🗑 Delete event</button>
                     {% endif %}
                 </div>
+                {% if group.name %}
+                <form id="event-edit-{{ loop.index }}" class="hidden mt-2 flex flex-wrap items-end gap-2 bg-gray-900/60 border border-gray-800 rounded-lg p-2"
+                      hx-post="/goals/event/edit" hx-swap="none">
+                    <input type="hidden" name="name" value="{{ group.name }}">
+                    <div class="flex-1 min-w-[12rem]">
+                        <label class="block text-gray-500 text-xs mb-0.5">Link</label>
+                        <input type="url" name="url" value="{{ group.event.url if group.event else '' }}" placeholder="https://…"
+                               class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-gray-500 text-xs mb-0.5">Deadline</label>
+                        <input type="date" name="deadline" value="{{ group.event.deadline.strftime('%Y-%m-%d') if group.event and group.event.deadline else '' }}"
+                               class="bg-gray-800 border border-gray-700 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500">
+                    </div>
+                    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1 rounded transition-colors">Save</button>
+                </form>
+                {% endif %}
                 {% if group.total %}
                 <div class="w-full bg-gray-800 rounded-full h-1 overflow-hidden mt-1.5">
                     <div class="h-full bg-emerald-500" style="width: {{ (100 * group.done / group.total) | round(0, 'floor') }}%"></div>

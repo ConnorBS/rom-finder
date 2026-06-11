@@ -22,6 +22,18 @@ def _ra_configured(session: Session) -> bool:
     return bool(app_settings.get(session, "ra_username") and app_settings.get(session, "ra_api_key"))
 
 
+_IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".bmp", ".svg")
+
+
+def _looks_like_image(url: str) -> bool:
+    """True when a URL points at an image (by extension, ignoring any query/fragment) so the
+    event header can render it inline instead of a text link."""
+    if not url:
+        return False
+    path = url.split("?", 1)[0].split("#", 1)[0].rstrip("/").lower()
+    return path.endswith(_IMAGE_EXTS)
+
+
 def _parse_deadline(value: str) -> datetime | None:
     value = (value or "").strip()
     if not value:
@@ -177,6 +189,7 @@ def _build_group(name: str, cards: list, all_goals: list, event: GoalEvent | Non
         "tiers": tiers,
         "current_tier": current_tier,
         "event": event,
+        "event_image": bool(event and event.url and _looks_like_image(event.url)),
     }
 
 
@@ -308,20 +321,44 @@ async def import_event(
 async def upsert_custom_event(
     name: str = Form(...),
     url: str = Form(default=""),
+    deadline: str = Form(default=""),
     session: Session = Depends(get_session),
 ):
     """Create or update a CUSTOM event — a named group with an optional link
-    (e.g. a Google Sheet) for navigation. No RA involvement."""
+    (e.g. a Google Sheet) + deadline. No RA involvement."""
     name = name.strip()
     if not name:
         return HTMLResponse('<span class="text-red-400 text-xs">Event name required.</span>')
-    events_service.upsert_event(session, name, url=url.strip(), auto_sync=False)
+    events_service.upsert_event(session, name, url=url.strip(), deadline=_parse_deadline(deadline), auto_sync=False)
     session.commit()
     applog.log_action("upsert_event", {"name": name, "url": url.strip()})
     return HTMLResponse(
         f'<span class="text-green-400 text-xs">✓ Event “{name}” saved.</span>'
         '<a href="/goals" class="text-blue-400 text-xs hover:underline ml-2">View ↗</a>'
     )
+
+
+@router.post("/event/edit", response_class=HTMLResponse)
+async def edit_event(
+    name: str = Form(...),
+    url: str = Form(default=""),
+    deadline: str = Form(default=""),
+    session: Session = Depends(get_session),
+):
+    """Update an event's link + deadline (custom OR RA) without touching its goals or
+    `auto_sync`. Empty clears. Creates the GoalEvent if the group exists only via
+    `goal.event_name`. Returns HX-Refresh so the header re-renders."""
+    name = name.strip()
+    ev = session.exec(select(GoalEvent).where(GoalEvent.name == name)).first()
+    if ev is None:
+        ev = GoalEvent(name=name)
+    ev.url = url.strip()
+    ev.deadline = _parse_deadline(deadline)
+    ev.updated_at = datetime.utcnow()
+    session.add(ev)
+    session.commit()
+    applog.log_action("edit_event", {"name": name})
+    return HTMLResponse("", headers={"HX-Refresh": "true"})
 
 
 @router.post("/event/delete", response_class=HTMLResponse)

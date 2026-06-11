@@ -165,11 +165,18 @@ the achievement title + description, the badge image as cover, and skips the gam
 `API_GetGameExtended` call (`services/events.sync_event`; async, no `Depends(get_session)`), skipping
 placeholder tiles and (optionally) already-earned ones, and records a `GoalEvent(auto_sync=True)`.
 The achievement-list panel's **⇊ Import all as event** button bridges to this (`prepImportEvent` fills
-the Import-event tab). **Custom events**: `POST /goals/event` (Form: `name`, `url`) upserts a
-`GoalEvent` with a navigation link (no RA). **`POST /goals/refresh-art`** backgrounds a rate-limited
-re-pull of badges (one call per distinct game) + box art. The list page groups by event with a header
-showing the event link, an ⟳ auto-sync badge, a done/total progress bar, and the achievement/points
-tally; multi-game events **subdivide by game · console**. Nightly growth is the scheduler `eventsync`
+the Import-event tab). **Custom events**: `POST /goals/event` (Form: `name`, `url`, `deadline`) upserts a
+`GoalEvent` with a navigation link + optional deadline (no RA). **`POST /goals/event/edit`** (Form `name`,
+`url`, `deadline`) updates an existing event's link + deadline (empty clears) **without touching its goals
+or `auto_sync`** — works for custom AND RA events, creating the `GoalEvent` if the group existed only via
+`goal.event_name`; returns `HX-Refresh`. Backs the header **✎ Edit** inline form. **`POST /goals/refresh-art`**
+backgrounds a rate-limited re-pull of badges (one call per distinct game) + box art. The list page groups
+by event with a header showing the event link **(rendered as an inline `<img>` when the url is an image —
+`_looks_like_image`, surfaced as `group.event_image`)**, the event **deadline** badge (3-state: green done /
+red overdue / amber upcoming), an ⟳ auto-sync badge, a done/total progress bar, and the achievement/points
+tally; multi-game events **subdivide by game · console**. **Add-as-goal from search:** the RA game-search
+results partial (`ra_game_results.html`, `mode='add'`) now offers a **🎯 Goal** action (Beat/Master select →
+`POST /goals/add`) beside **+ Add to Wanted**, so a discovered game can be tracked as a goal, not only hunted. Nightly growth is the scheduler `eventsync`
 task (`POST /scheduler/run/eventsync` to run now). Goal `points` (migration 0021) and `achievement_desc`
 (0020) are the new columns. `/api/events` lists distinct event names for the datalists.
 
