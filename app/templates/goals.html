@@ -92,7 +92,13 @@
         <!-- Import event mode -->
         <div id="goal-mode-event" class="hidden">
             {% if ra_configured %}
-            <p class="text-gray-500 text-xs mb-3">Paste an RA event (or game) URL or ID — every achievement is imported as a goal in <strong>one</strong> request. Placeholder tiles are skipped. The event re-checks nightly for newly-added achievements.</p>
+            <p class="text-gray-500 text-xs mb-3">Search an event by name (or paste its URL / ID below) — every achievement is imported as a goal in <strong>one</strong> request. Placeholder tiles are skipped. The event re-checks nightly for newly-added achievements.</p>
+            <div class="mb-3">
+                <input type="search" id="event-search" placeholder="Search events by name…" autocomplete="off"
+                       class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 placeholder-gray-600"
+                       hx-get="/ra/events/search" hx-target="#event-search-results" hx-trigger="input changed delay:400ms, search" name="q">
+                <div id="event-search-results" class="mt-2"></div>
+            </div>
             <form hx-post="/goals/import-event" hx-target="#goal-feedback" hx-swap="innerHTML"
                   class="flex flex-col sm:flex-row sm:items-end gap-3 flex-wrap">
                 <div class="flex-1 min-w-[14rem]">

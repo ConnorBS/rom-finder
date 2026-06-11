@@ -410,6 +410,37 @@ def _parse_goal_deadline(value: str):
         return None
 
 
+class EventImportRequest(BaseModel):
+    ra_game_id: int = 0          # the event/game hub id (extension on an /event/ page sends this)
+    event_ref: str = ""          # OR a pasted URL / id string
+    event_name: str = ""         # defaults to the RA event title
+    deadline: str = ""           # YYYY-MM-DD; "" = none
+    include_completed: bool = True
+
+
+@router.post("/import-event")
+async def api_import_event(req: EventImportRequest):
+    """JSON twin of POST /goals/import-event for the browser extension's event-page
+    panel. Imports every (non-placeholder) achievement of an RA event as goals in ONE
+    API_GetGameExtended call and records an auto-sync GoalEvent. Async, no
+    Depends(get_session) — events.sync_event manages its own sessions across the await."""
+    from app.services import events as events_service
+
+    game_id = req.ra_game_id or events_service.parse_event_ref(req.event_ref)
+    if not game_id:
+        return {"status": "error", "error": "no event/game id"}
+    res = await events_service.sync_event(
+        game_id, event_name=(req.event_name.strip() or None),
+        deadline=_parse_goal_deadline(req.deadline),
+        include_completed=req.include_completed, auto_sync=True,
+    )
+    if res.get("error") == "no_credentials":
+        return {"status": "error", "error": "no RA credentials"}
+    if res.get("error"):
+        return {"status": "error", "error": res["error"]}
+    return {"status": "ok", **res}
+
+
 @router.get("/wanted")
 async def api_list_wanted(session: Session = Depends(get_session)):
     games = session.exec(select(WantedGame)).all()

@@ -1,0 +1,22 @@
+{% if error %}
+<div class="bg-red-900/40 border border-red-700 text-red-300 px-3 py-2 rounded text-xs">Search failed: {{ error }}</div>
+{% elif events %}
+<div class="border border-gray-800 rounded-lg divide-y divide-gray-800 max-h-72 overflow-y-auto">
+    {% for ev in events %}
+    <div class="flex items-center justify-between gap-3 px-3 py-2">
+        <div class="min-w-0">
+            <p class="text-gray-200 text-xs font-medium truncate">{{ ev.Title }}</p>
+            <p class="text-gray-600 text-xs">RA event #{{ ev.ID }}{% if ev.NumAchievements %} · {{ ev.NumAchievements }} achievements{% endif %}</p>
+        </div>
+        <button type="button"
+                data-id="{{ ev.ID }}" data-title="{{ ev.Title }}"
+                onclick="prepImportEvent(this.dataset.id, this.dataset.title)"
+                class="flex-shrink-0 bg-pink-700 hover:bg-pink-600 text-white text-xs px-2.5 py-1 rounded-md transition-colors">Select →</button>
+    </div>
+    {% endfor %}
+</div>
+{% elif query %}
+<p class="text-gray-500 text-xs">No events match “{{ query }}”. You can still paste a URL or ID below.</p>
+{% else %}
+<p class="text-gray-600 text-xs">Type an event name to search, or paste a URL/ID below.</p>
+{% endif %}

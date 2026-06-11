@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "ROM Finder",
-  "version": "1.7.0",
-  "description": "Add RetroAchievements games to your ROM Finder wanted list, set goals (incl. per-achievement with auto-fetched badge art), and search sources directly in the browser.",
+  "version": "1.8.0",
+  "description": "Add RetroAchievements games to your ROM Finder wanted list, set goals (incl. per-achievement with auto-fetched badge art), import whole events, and search sources directly in the browser.",
   "permissions": ["storage", "webNavigation", "scripting"],
   "background": {
     "service_worker": "background.js"
@@ -21,6 +21,11 @@
     {
       "matches": ["https://retroachievements.org/achievement/*"],
       "js": ["achievement.js"],
+      "run_at": "document_end"
+    },
+    {
+      "matches": ["https://retroachievements.org/event/*"],
+      "js": ["event.js"],
       "run_at": "document_end"
     }
   ],

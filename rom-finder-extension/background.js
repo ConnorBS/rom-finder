@@ -12,12 +12,14 @@
 
 const GAME_PATH_RE = /\/game\/\d+/;
 const ACH_PATH_RE = /\/achievement\/\d+/;
+const EVENT_PATH_RE = /\/event\/\d+/;
 
 chrome.webNavigation.onHistoryStateUpdated.addListener(
   (details) => {
     let file = null;
     if (GAME_PATH_RE.test(details.url)) file = 'content.js';
     else if (ACH_PATH_RE.test(details.url)) file = 'achievement.js';
+    else if (EVENT_PATH_RE.test(details.url)) file = 'event.js';
     if (!file) return;
     chrome.scripting.executeScript({
       target: { tabId: details.tabId, frameId: details.frameId },

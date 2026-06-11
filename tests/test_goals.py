@@ -393,3 +393,61 @@ def test_event_nightly_sync_adds_new_achievements(client, monkeypatch):
     assert r.status_code == 200
     with Session(engine) as s:
         assert len(s.exec(select(Goal).where(Goal.ra_game_id == 196)).all()) == 2
+
+
+def test_api_import_event_json(client, monkeypatch):
+    """Extension path: POST /api/import-event (JSON) imports an event's achievements."""
+    from app.services.ra_client import RAClient
+    payload = _extended(title="AotW 2026", achs=[_ach(1, "A"), _ach(2, "B", badge="00000"), _ach(3, "C")])
+
+    async def fake(self, gid):
+        return payload
+    monkeypatch.setattr(RAClient, "get_game_extended", fake)
+    _seed_creds()
+
+    r = client.post("/api/import-event", json={"ra_game_id": 196, "include_completed": True})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "ok" and body["created"] == 2 and body["skipped_placeholder"] == 1
+    with Session(engine) as s:
+        goals = s.exec(select(Goal).where(Goal.ra_game_id == 196)).all()
+        assert len(goals) == 2
+        ev = s.exec(select(GoalEvent).where(GoalEvent.ra_game_id == 196)).first()
+        assert ev.auto_sync is True and ev.name == "AotW 2026"
+
+
+def test_api_import_event_parses_url(client, monkeypatch):
+    from app.services.ra_client import RAClient
+
+    async def fake(self, gid):
+        assert gid == 196   # parsed from the /event/ URL
+        return _extended(achs=[_ach(1, "A")])
+    monkeypatch.setattr(RAClient, "get_game_extended", fake)
+    _seed_creds()
+    r = client.post("/api/import-event",
+                    json={"event_ref": "https://retroachievements.org/event/196-achievement-of-the-week-2026"})
+    assert r.json()["status"] == "ok"
+
+
+def test_api_import_event_no_id(client):
+    r = client.post("/api/import-event", json={"event_ref": "not a number"})
+    assert r.json()["status"] == "error"
+
+
+def test_events_search_by_name(client, monkeypatch):
+    from app.services.ra_client import RAClient
+
+    async def fake_search(self, query):
+        assert query == "aotw"
+        return [{"ID": 196, "Title": "Achievement of the Week 2026", "NumAchievements": 64}]
+    monkeypatch.setattr(RAClient, "search_events", fake_search)
+    _seed_creds()
+    r = client.get("/ra/events/search?q=aotw")
+    assert r.status_code == 200
+    assert "Achievement of the Week 2026" in r.text
+    assert "prepImportEvent" in r.text and "196" in r.text
+
+
+def test_events_search_without_creds(client):
+    r = client.get("/ra/events/search?q=x")
+    assert r.status_code == 200 and "credentials" in r.text.lower()

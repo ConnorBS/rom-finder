@@ -11,6 +11,7 @@ Key methods:
 - `lookup_hash(md5)` → game info dict if matched, else `None`. **Wrong-game guard:** a hash can match a *different* RA game than intended (a Solaris ROM downloaded during a Kirby hunt hashes to Solaris). BOTH verify paths must check the matched id equals the expected `ra_game_id` before marking verified — `downloads.py` (approval) and `hunter.py` (`_match_is_correct_game`, auto-hunt). A mismatch is recorded as `bad_hash` and the hunt continues.
 - `get_game_info(game_id)` → full game detail (no achievement set)
 - `get_game_extended(game_id)` → game detail **including the achievement set** (`API_GetGameExtended`); `get_achievements(game_id)` flattens it to `[{id,title,description,points,badge_url}]` (badge = `media.retroachievements.org/Badge/{BadgeName}.png`). Used to list a game's achievements for goal-setting + to enrich an achievement goal's card. Events are special "event games", so this also returns an event hub's achievement list given its game id.
+- `search_events(query)` → events matching a name, via `get_game_list(RA_EVENTS_CONSOLE_ID=101)` (RA files event hubs under the "Events" console) + the same title-substring filter as `search_games`. Backs the Goals page's event name-search (`GET /ra/events/search`).
 - `test_credentials()` → `(bool, message)`
 
 `SYSTEMS` dict maps RA numeric console IDs → display names (authoritative list).  

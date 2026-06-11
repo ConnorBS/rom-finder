@@ -18,6 +18,10 @@ logger = logging.getLogger(__name__)
 
 RA_BASE_URL = "https://retroachievements.org/API"
 
+# RA files event hubs (AotW, etc.) under the "Events" console — API_GetGameList(101)
+# returns them, so events are searchable by name through the normal game-list path.
+RA_EVENTS_CONSOLE_ID = 101
+
 # ---------------------------------------------------------------------------
 # Rate limiter — shared across all RAClient instances.
 # RA's documented limit is 500 req/min (~8.3/s). We target 2/s (120/min)
@@ -214,6 +218,12 @@ class RAClient:
             games = resp.json()
         q = _normalize_title(query)
         return [g for g in games if q in _normalize_title(g.get("Title", ""))]
+
+    async def search_events(self, query: str) -> list[dict]:
+        """Search RA events by name. Events are games filed under the 'Events' console
+        (id 101), so this reuses API_GetGameList + the same title-substring filter.
+        Empty query returns all events (so the picker can list them)."""
+        return await self.search_games(RA_EVENTS_CONSOLE_ID, query)
 
     async def lookup_hash(self, md5: str) -> Optional[dict]:
         """Look up a game by its ROM MD5 hash. Returns game info dict or None.

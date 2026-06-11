@@ -243,6 +243,28 @@ async def ra_game_achievements(
     )
 
 
+@router.get("/ra/events/search", response_class=HTMLResponse)
+async def ra_events_search(request: Request, q: str = Query(default="")):
+    """HTMX: search RA events by name (Events console) so the Goals page can import
+    one without pasting a URL/id. Reads creds in a short session, then releases it."""
+    with Session(engine) as session:
+        ra = _get_ra_client(session)
+    if not ra:
+        return HTMLResponse('<p class="text-yellow-500 text-xs">Add RA credentials in Settings to search events.</p>')
+    events: list[dict] = []
+    error = None
+    try:
+        events = await ra.search_events(q)
+    except Exception as exc:
+        error = str(exc)
+    events = events[:50]
+    applog.verbose("navigation", f"RA event search: \"{q}\" → {len(events)}", {"query": q, "error": error})
+    return templates.TemplateResponse(
+        request, "partials/ra_event_results.html",
+        {"events": events, "query": q, "error": error},
+    )
+
+
 @router.get("/ra/games/{game_id}/sources", response_class=HTMLResponse)
 async def ra_game_sources(
     request: Request,
