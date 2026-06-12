@@ -120,5 +120,8 @@
       "PowerShell(venv\\\\Scripts\\\\python -m pytest tests/test_file_size_display.py tests/test_collection_sort.py tests/test_collection_achievements.py -q 2>&1 | Select-Object -Last 6)",
       "PowerShell(venv\\\\Scripts\\\\python -m pytest tests/ -q 2>&1 | Select-Object -Last 3)"
     ]
+  },
+  "remote": {
+    "defaultEnvironmentId": "env_01M1khxX5RXSutxBniRPZUx1"
   }
 }

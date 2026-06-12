@@ -454,6 +454,36 @@
             </div>
         </section>
 
+        <section>
+            <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">CHD format check</h2>
+            <div class="bg-gray-900 border border-gray-800 rounded-lg px-5 py-4 space-y-3">
+                <div class="flex items-center justify-between gap-4">
+                    <div class="min-w-0">
+                        <p class="text-sm text-gray-200 font-medium">Check &amp; fix CHD container codec</p>
+                        <p class="text-xs text-gray-600 mt-0.5">Flag CHDs that use the Zstandard codec (<code>cdzs</code>/<code>zstd</code>) — RetroArch can play them, but its RetroAchievements hasher can't read them, so the game earns no achievements. When <code>chdman</code> is available it also re-encodes them onto a RA-safe codec (disc data verified identical, so the RA hash is unchanged). Opt-in; run it from the <a href="/scheduler" class="text-blue-400 hover:underline">Scheduler</a> (manual button or a daily slot).</p>
+                    </div>
+                    <label class="flex items-center gap-2 flex-shrink-0">
+                        <input
+                            type="checkbox"
+                            name="chd_format_check_enabled"
+                            value="true"
+                            {% if settings.chd_format_check_enabled == "true" %}checked{% endif %}
+                            class="w-4 h-4 rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-blue-500 focus:ring-offset-gray-900"
+                        >
+                        <span class="text-xs text-gray-400">Enabled</span>
+                    </label>
+                </div>
+                <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs border-t border-gray-800 pt-3">
+                    <span class="text-gray-500">chdman (in-app convert):
+                        {% if settings.chd_status.chdman_available %}<span class="text-green-400">available</span>{% else %}<span class="text-amber-400">not available — flag only</span>{% endif %}
+                    </span>
+                    {% if settings.chd_status.checked_chd %}<span class="text-gray-500">{{ settings.chd_status.checked_chd }} CHD checked</span>{% endif %}
+                    {% if settings.chd_status.bad %}<span class="text-rose-400">{{ settings.chd_status.bad }} on Zstandard</span>{% elif settings.chd_status.checked_chd %}<span class="text-green-400">all RA-safe</span>{% endif %}
+                    {% if settings.chd_status.last_run %}<span class="text-gray-600">Last run: {{ settings.chd_status.last_run[:16].replace("T", " ") }} UTC</span>{% endif %}
+                </div>
+            </div>
+        </section>
+
         <div class="flex items-center gap-4">
             <button
                 type="submit"

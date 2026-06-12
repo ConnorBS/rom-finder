@@ -198,6 +198,13 @@ def _m_0023_library_time_to_beat(s: Session) -> None:
     _add_column(s, "library", "time_to_beat_min", "INTEGER", "0")
 
 
+def _m_0024_library_chd_codec(s: Session) -> None:
+    # CHD container codec status from the file header (services/chd_format.run_chd_check):
+    # "" = not a CHD/unchecked, "ok" = RA-safe, "cdzs"/"zstd" = Zstandard (RetroArch can't
+    # hash it → no achievements until re-encoded). Drives the bad_chd filter + /api/status.chd.
+    _add_column(s, "library", "chd_codec", "VARCHAR", "''")
+
+
 # (version_id, apply_fn) — applied in order, recorded once.
 MIGRATIONS: list[tuple[str, "callable"]] = [
     ("0001_download_source_id", _m_0001),
@@ -223,6 +230,7 @@ MIGRATIONS: list[tuple[str, "callable"]] = [
     ("0021_goal_points", _m_0021_goal_points),
     ("0022_goalevent_tiers", _m_0022_goalevent_tiers),
     ("0023_library_time_to_beat", _m_0023_library_time_to_beat),
+    ("0024_library_chd_codec", _m_0024_library_chd_codec),
 ]
 
 

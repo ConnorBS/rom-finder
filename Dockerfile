@@ -35,6 +35,17 @@ RUN curl -fsSL \
     && chmod 755 /usr/local/bin/nodtool \
     || echo "nodtool download failed — compressed Wii/GameCube dumps won't be hashable"
 
+# chdman (MAME tools) — used by the OPT-IN in-app CHD format check
+# (services/chd_format.py) to re-encode CHDs off the RetroAchievements-incompatible
+# Zstandard codec (cdzs/zstd). DETECTION needs no binary (header read); only the
+# CONVERT step uses chdman. NB: the distro package can be too old to DECODE zstd
+# input — it can still re-encode non-zstd CHDs, and /api/status.chd reports its
+# availability so flag-only operation is diagnosable (the R: batch scripts with a
+# current chdman remain the reliable re-encode path).
+RUN apt-get update && apt-get install -y --no-install-recommends mame-tools \
+    && rm -rf /var/lib/apt/lists/* \
+    || echo "mame-tools (chdman) install failed — in-app CHD conversion off (detection still works)"
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 

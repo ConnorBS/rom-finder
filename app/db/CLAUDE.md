@@ -22,6 +22,10 @@ ra_award         — own highest RA award tier (migration 0017): mastered|comple
 is_subset_rom    — this entry is itself an RA "Subset" copy (title/filename marker)
 subset_info      — JSON [{game_id,title,mastered}] of subsets whose accepted hash list contains this ROM's hash
 file_size        — ROM file size in bytes (migration 0018); enables the collection size sort + the detail-panel Size row; set on scan/rehash AND on download-approval (create_library_entry_from_download stats the file)
+chd_codec        — CHD container codec status (migration 0024): ""=not-a-CHD/unchecked, "ok"=RA-safe,
+                   "cdzs"/"zstd"=Zstandard (RetroArch can't hash for achievements until re-encoded).
+                   Derived from the file header by services/chd_format.run_chd_check (opt-in). Drives the
+                   collection bad_chd filter + /api/status.chd.
 added_at
 ```
 

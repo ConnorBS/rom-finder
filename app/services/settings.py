@@ -76,6 +76,13 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "sched_eventsync_enabled": "true",
     "sched_eventsync_time": "05:30",
     "sched_eventsync_last_run": "",
+    # CHD format check (opt-in) — flag (and, when chdman is available, re-encode) CHDs
+    # whose container uses Zstandard (cdzs/zstd), which RetroArch's RetroAchievements
+    # hasher can't read. Master flag off by default; the daily task is also opt-in.
+    "chd_format_check_enabled": "false",
+    "sched_chdcheck_enabled": "false",
+    "sched_chdcheck_time": "04:30",
+    "sched_chdcheck_last_run": "",
     # Auto-set imported event goals' deadline from the event's end date (RA V2
     # `activeThrough`) when no deadline is given. Best-effort; needs V2 reachable.
     "event_pull_deadline": "true",

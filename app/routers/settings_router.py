@@ -45,6 +45,15 @@ def set_setting(session: Session, key: str, value: str) -> None:
     session.add(s)
 
 
+def _chd_status_ctx(session: Session) -> dict:
+    """CHD-format-check status for the Settings panel (DB-only; safe if the service errors)."""
+    try:
+        from app.services.chd_format import chd_format_status
+        return chd_format_status(session)
+    except Exception:
+        return {"enabled": False, "chdman_available": False, "checked_chd": 0, "bad": 0, "last_run": ""}
+
+
 def _scan_folders(path_str: str) -> list[str]:
     """Return sorted list of subdirectory names under path_str."""
     try:
@@ -98,6 +107,8 @@ async def settings_page(request: Request, session: Session = Depends(get_session
         "covers_dir_readonly": get_setting(session, "covers_dir_readonly", "false"),
         "ra_autodiscover_enabled": get_setting(session, "ra_autodiscover_enabled", "false"),
         "ra_autodiscover_last_checked": get_setting(session, "ra_autodiscover_last_checked", ""),
+        "chd_format_check_enabled": get_setting(session, "chd_format_check_enabled", "false"),
+        "chd_status": _chd_status_ctx(session),
     }
     all_srcs = source_registry.all_sources()
     src_enabled = {
@@ -195,7 +206,7 @@ async def save_settings(
     set_setting(session, "verbose_logging", verbose_logging)
 
     # Review directory toggle + per-directory read-only toggles + autodiscover enable flag
-    for key in ("use_review_dir", "download_dir_readonly", "check_dir_readonly", "covers_dir_readonly", "ra_autodiscover_enabled"):
+    for key in ("use_review_dir", "download_dir_readonly", "check_dir_readonly", "covers_dir_readonly", "ra_autodiscover_enabled", "chd_format_check_enabled"):
         set_setting(session, key, "true" if form_data.get(key) == "true" else "false")
 
     # ROM source toggles

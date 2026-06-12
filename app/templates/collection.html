@@ -27,6 +27,7 @@
                 {% if counts.mastered %}<span class="text-yellow-300" title="Mastered — 100% in hardcore">{{ counts.mastered }} mastered</span>{% endif %}
                 {% if counts.beaten %}<span class="text-slate-400" title="Beaten (or completed) but not mastered">{{ counts.beaten }} beaten</span>{% endif %}
                 {% if counts.subset_available %}<span class="text-amber-400" title="Owned games with a hash-compatible subset still to play">{{ counts.subset_available }} subset avail.</span>{% endif %}
+                {% if counts.bad_chd %}<span class="text-rose-400" title="CHDs using the Zstandard codec (cdzs/zstd) — RetroArch can't hash them for achievements until re-encoded">{{ counts.bad_chd }} CHD codec</span>{% endif %}
             </div>
         </div>
 
@@ -109,7 +110,7 @@
 
             <!-- Status pills -->
             <div class="flex gap-1 flex-wrap">
-                {% set statuses = [("", "All"), ("verified", "Verified"), ("found", "Found"), ("library", "Library"), ("wanted", "Wanted"), ("no_ra", "No RA"), ("unsupported", "Unsupported"), ("missing", "Missing"), ("duplicate", "Duplicate"), ("has_save", "Has Save"), ("has_mastered", "Mastered"), ("beaten", "Beaten"), ("subset_available", "Subset avail.")] %}
+                {% set statuses = [("", "All"), ("verified", "Verified"), ("found", "Found"), ("library", "Library"), ("wanted", "Wanted"), ("no_ra", "No RA"), ("unsupported", "Unsupported"), ("missing", "Missing"), ("duplicate", "Duplicate"), ("has_save", "Has Save"), ("has_mastered", "Mastered"), ("beaten", "Beaten"), ("subset_available", "Subset avail."), ("bad_chd", "CHD codec")] %}
                 {% for val, label in statuses %}
                 <a href="?q={{ q }}&system={{ selected_system }}&status={{ val }}&view={{ view }}&per_page={{ per_page }}&sort={{ selected_sort }}"
                    class="px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors
@@ -453,6 +454,9 @@
                     {% elif item.subset_compatible %}
                     <span class="bg-amber-950/60 border border-amber-800 rounded-full px-2 py-0.5 text-amber-300/80 text-xs" title="Hash-compatible with a subset (all mastered)">⊕ subset</span>
                     {% endif %}
+                    {% if item.bad_chd %}
+                    <span class="bg-rose-900/80 border border-rose-700 rounded-full px-2 py-0.5 text-rose-200 text-xs" title="CHD uses the Zstandard codec — RetroArch can't hash it for achievements until re-encoded (run the CHD format check)">⚠ CHD codec</span>
+                    {% endif %}
                 </div>
             </div>
 
@@ -581,6 +585,9 @@
                         {% endif %}
                         {% if item.subsets_available %}
                         <span class="ml-1 inline-flex items-center text-amber-400 text-xs" title="{{ item.subsets_available }} hash-compatible subset(s) unfinished">⊕{{ item.subsets_available }}</span>
+                        {% endif %}
+                        {% if item.bad_chd %}
+                        <span class="ml-1 inline-flex items-center text-rose-400 text-xs" title="CHD on the Zstandard codec — RetroArch can't hash it for achievements until re-encoded">⚠CHD</span>
                         {% endif %}
                     </td>
                     <td class="px-4 py-3">

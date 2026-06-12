@@ -295,6 +295,14 @@ async def run_event_sync() -> dict:
     return result
 
 
+async def run_chd_check() -> dict:
+    """Flag (and, when chdman is available, re-encode) CHDs whose container uses the
+    RetroAchievements-incompatible Zstandard codec — the in-app twin of the R: batch
+    scripts. Opt-in (`chd_format_check_enabled`); sets its own last_run when it runs."""
+    from app.services.chd_format import run_chd_check as _run
+    return await _run()
+
+
 async def run_poll_external() -> dict:
     """One pass over in-flight torrent/usenet jobs (qBittorrent/SABnzbd): advance
     file-selection, update progress, ingest + RA-verify completed ones. Driven from
@@ -334,13 +342,22 @@ async def scheduler_loop() -> None:
                     _get(session, "sched_eventsync_time", "05:30"),
                     _get(session, "sched_eventsync_last_run", ""),
                 ),
+                "chdcheck": (
+                    _get(session, "sched_chdcheck_enabled", "false"),
+                    _get(session, "sched_chdcheck_time", "04:30"),
+                    _get(session, "sched_chdcheck_last_run", ""),
+                ),
             }
+            # The CHD check is double-gated: its daily toggle AND the feature opt-in flag.
+            chd_master = _get(session, "chd_format_check_enabled", "false")
 
         runners = {"scan": run_scan, "hash": run_hash_check,
                    "autodiscover": run_autodiscover, "verify": run_verify,
-                   "eventsync": run_event_sync}
+                   "eventsync": run_event_sync, "chdcheck": run_chd_check}
         for task_name, (enabled, time_str, last_run) in task_configs.items():
             if enabled != "true":
+                continue
+            if task_name == "chdcheck" and chd_master != "true":
                 continue
             if not _should_run(last_run, time_str):
                 continue

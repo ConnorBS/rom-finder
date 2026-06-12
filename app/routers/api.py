@@ -705,6 +705,14 @@ async def api_status(session: Session = Depends(get_session)):
     except Exception as e:
         status["subsets"] = {"error": str(e)}
 
+    # CHD container-format check — counts of owned CHDs on the RA-incompatible
+    # Zstandard codec (read off the stamped chd_codec column; no file I/O).
+    try:
+        from app.services.chd_format import chd_format_status
+        status["chd"] = chd_format_status(session)
+    except Exception as e:
+        status["chd"] = {"error": str(e)}
+
     # External torrent/usenet jobs (qBittorrent/SABnzbd via Prowlarr download client).
     try:
         from app.db.models import ExternalDownload

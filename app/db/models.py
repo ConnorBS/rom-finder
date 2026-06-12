@@ -249,6 +249,10 @@ class LibraryEntry(SQLModel, table=True):
                                  # Populated/refreshed on scan + rehash (0 = not yet measured)
     time_to_beat_min: int = 0    # RA V2 medianTimeToBeatMinutes (migration 0023); 0 = unknown.
                                  # Captured by services/game_sets.refresh_game_sets (same V2 call as sets)
+    chd_codec: str = ""          # CHD container compression status (migration 0024), set by
+                                 # services/chd_format.run_chd_check: "" = not a CHD/unchecked,
+                                 # "ok" = RA-safe codecs, "cdzs"/"zstd" = Zstandard (no cheevos in
+                                 # RetroArch until re-encoded). Derived from the file header.
     added_at: datetime = Field(default_factory=datetime.utcnow)
 
 

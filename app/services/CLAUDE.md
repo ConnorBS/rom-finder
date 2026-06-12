@@ -186,6 +186,29 @@ All are normalised to `payload["ID"]` before returning. Callers always use `matc
 
 ---
 
+### CHD format check (`chd_format.py`)
+The in-app twin of the `R:\Roms\<console>\_Convert-to-CHD.bat` scripts. A CHD compressed with
+**Zstandard** (`cdzs` for CD images, `zstd` for DVD/raw) is a valid, hash-correct dump that plays
+fine, but RetroArch's *RetroAchievements* hasher (its bundled libchdr) can't decode the zstd hunks,
+so the game boots and earns **no achievements**. Two halves:
+- **Detection — pure, no binary.** `read_chd_codecs(path)` reads the CHD **v5 header** (32 bytes:
+  tag `MComprHD` + version at offset 12 + four compressor FourCCs at offset 16) and returns the codec
+  list (pre-v5 → `[]`, can't be zstd; not-a-CHD → `None`). `chd_status(path)` → `"cdzs"`/`"zstd"`
+  (needs re-encode), `"ok"`, or `""`. Validated against real chdman-0.283 files.
+- **Conversion — best-effort, needs `chdman`.** `convert_chd(path)` runs `chdman copy` to a temp file
+  with `cdlz,cdzl,cdfl` (CD) / `lzma,zlib,huff,flac` (DVD), confirms the new **Data SHA1 == original**
+  (disc data identical → RA hash unchanged), then `os.replace`-swaps. Exec'd with an arg list (no
+  shell) so spaces/`( )`/`!` in names are safe. **NB:** a `chdman` too old to *read* zstd (the distro
+  package) re-encodes non-zstd fine but fails on a cdzs input — surfaced, so it falls back to flag-only.
+
+`run_chd_check(convert=None)` walks owned `.chd` entries, stamps `LibraryEntry.chd_codec` (migration
+0024), and re-encodes the zstd ones when enabled + chdman present (fresh session per file write, never
+across the chdman await; per-card overlay via `chd-check-batch`). **Gated on the `chd_format_check_enabled`
+opt-in** (returns `{status:"disabled"}` otherwise). Wired as the scheduler **`chdcheck`** task
+(`sched_chdcheck_*`, double-gated on the master flag, default off) + its Run-now button. `chd_format_status(session)`
+is the DB-only snapshot for `/api/status.chd` + the Settings panel (counts off the stamped column +
+chdman availability, no file I/O).
+
 ## ROM Sources (`sources/`)
 
 Each source extends `BaseSource`:
@@ -255,7 +278,8 @@ Three daily tasks configured via `/scheduler`:
 | **Hash check** | Backfill `hashed_at`; clear stale hashes (mtime > hashed_at); hash un-hashed entries |
 | **RA autodiscover** | `get_game_list()` per tracked system; add games with new achievement sets to Wanted |
 | **Event sync** (`eventsync`, ~05:30) | Re-check each auto-sync `GoalEvent` for newly-added achievements (`events.sync_all_auto`); one RA call per event |
+| **CHD format check** (`chdcheck`, ~04:30, **opt-in**) | Flag (and, with `chdman`, re-encode) owned CHDs on the RA-incompatible Zstandard codec (`chd_format.run_chd_check`). **Double-gated**: its own `sched_chdcheck_enabled` AND the master `chd_format_check_enabled` flag (both default off) — the loop skips it unless the master flag is on. |
 
-`scheduler_loop()` wakes every 60s, checks `_should_run()` per enabled task against configured local time. Started as `asyncio.create_task()` in `lifespan`.
+`scheduler_loop()` wakes every 60s, checks `_should_run()` per enabled task against configured local time. Started as `asyncio.create_task()` in `lifespan`. **The `chdcheck` task is additionally skipped unless `chd_format_check_enabled` is true.**
 
 **Run Now behaviour**: `POST /scheduler/run/{task_id}` is synchronous — HTTP response held until task completes (intentional for self-hosted, no proxy timeouts). UI shows spinner via `hx-indicator`; "Last run" timestamp updates via HTMX OOB swap after completion.

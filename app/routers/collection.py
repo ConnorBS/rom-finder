@@ -141,6 +141,7 @@ def _build_collection(session: Session) -> list[dict]:
             "subsets_available": _subset_view(lib)[1],
             "file_size": lib.file_size if lib else 0,
             "time_to_beat_min": lib.time_to_beat_min if lib else 0,
+            "bad_chd": bool(lib and lib.chd_codec in ("cdzs", "zstd")),
             "progress": _meta(w.ra_game_id)[0],
             "achievements": _meta(w.ra_game_id)[1],
             "points": _meta(w.ra_game_id)[2],
@@ -175,6 +176,7 @@ def _build_collection(session: Session) -> list[dict]:
                 "subsets_available": _subset_view(e)[1],
                 "file_size": e.file_size,
                 "time_to_beat_min": e.time_to_beat_min,
+                "bad_chd": e.chd_codec in ("cdzs", "zstd"),
                 "progress": _meta(e.ra_game_id)[0],
                 "achievements": _meta(e.ra_game_id)[1],
                 "points": _meta(e.ra_game_id)[2],
@@ -224,6 +226,8 @@ async def collection_page(
         filtered = [i for i in filtered if i.get("ra_award") in _BEATEN_KINDS and not i.get("mastered")]
     elif status == "subset_available":
         filtered = [i for i in filtered if i.get("subsets_available")]
+    elif status == "bad_chd":
+        filtered = [i for i in filtered if i.get("bad_chd")]
     elif status:
         filtered = [i for i in filtered if i["status"] == status]
 
@@ -287,6 +291,7 @@ async def collection_page(
                 "mastered": sum(1 for i in all_items if i.get("mastered")),
                 "beaten": sum(1 for i in all_items if i.get("ra_award") in _BEATEN_KINDS and not i.get("mastered")),
                 "subset_available": sum(1 for i in all_items if i.get("subsets_available")),
+                "bad_chd": sum(1 for i in all_items if i.get("bad_chd")),
             },
         },
     )
@@ -312,6 +317,7 @@ async def collection_counts(session: Session = Depends(get_session)):
         "mastered": sum(1 for i in all_items if i.get("mastered")),
         "beaten": sum(1 for i in all_items if i.get("ra_award") in _BEATEN_KINDS and not i.get("mastered")),
         "subset_available": sum(1 for i in all_items if i.get("subsets_available")),
+        "bad_chd": sum(1 for i in all_items if i.get("bad_chd")),
     }
     parts = [f'<span>{counts["total"]} total</span>']
     if counts["verified"]:
@@ -336,6 +342,8 @@ async def collection_counts(session: Session = Depends(get_session)):
         parts.append(f'<span class="text-slate-400">{counts["beaten"]} beaten</span>')
     if counts["subset_available"]:
         parts.append(f'<span class="text-amber-400" title="Mastered/owned games with a hash-compatible subset still to play">{counts["subset_available"]} subset avail.</span>')
+    if counts.get("bad_chd"):
+        parts.append(f'<span class="text-rose-400" title="CHDs using the Zstandard codec (cdzs/zstd) — RetroArch can\'t hash them for achievements until re-encoded">{counts["bad_chd"]} CHD codec</span>')
     return HTMLResponse(" ".join(parts))
 
 

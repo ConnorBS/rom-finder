@@ -104,6 +104,7 @@ FastAPI `BackgroundTasks` runs after the HTTP response in the same event loop. C
 - `"scan-hash-batch"` — hash step inside scheduler scan pipeline
 - `"sched-hash-batch"` — hash step inside scheduler hash-check task
 - `"autodiscover"` — RA autodiscover pass
+- `"chd-check-batch"` — CHD format check/re-encode pass (`chd_format.run_chd_check`)
 
 ### Card overlay scope gotcha
 `batch_types` broadcast was removed. Only entries in `ActivityTask.entry_ids` get overlays. Always pass `entry_ids` to `start_batch()` for rehash/verify operations.

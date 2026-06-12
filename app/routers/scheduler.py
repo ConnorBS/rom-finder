@@ -65,6 +65,21 @@ def _task_list(session: Session) -> list[dict]:
             "time": _get(session, "sched_eventsync_time", "05:30"),
             "last_run": _get(session, "sched_eventsync_last_run", ""),
         },
+        {
+            "id": "chdcheck",
+            "name": "CHD format check",
+            "description": (
+                "Flag CHDs whose container uses the Zstandard codec (cdzs/zstd) — RetroArch "
+                "can read them but its RetroAchievements hasher can't, so the game earns no "
+                "achievements. When chdman is available it also re-encodes them onto a "
+                "RA-safe codec (disc data verified identical). "
+                + ("Enabled." if _get(session, "chd_format_check_enabled", "false") == "true"
+                   else "Turn on “CHD format check” in Settings first.")
+            ),
+            "enabled": _get(session, "sched_chdcheck_enabled", "false"),
+            "time": _get(session, "sched_chdcheck_time", "04:30"),
+            "last_run": _get(session, "sched_chdcheck_last_run", ""),
+        },
     ]
 
 
@@ -79,7 +94,7 @@ async def scheduler_page(request: Request, session: Session = Depends(get_sessio
 @router.post("/save", response_class=HTMLResponse)
 async def save_schedule(request: Request, session: Session = Depends(get_session)):
     form = await request.form()
-    for tid in ("scan", "hash", "autodiscover", "verify", "eventsync"):
+    for tid in ("scan", "hash", "autodiscover", "verify", "eventsync", "chdcheck"):
         _set(session, f"sched_{tid}_enabled", "true" if form.get(f"sched_{tid}_enabled") == "true" else "false")
         time_val = str(form.get(f"sched_{tid}_time", "04:00")).strip() or "04:00"
         _set(session, f"sched_{tid}_time", time_val)
@@ -100,10 +115,10 @@ def _oob_last_run(task_id: str) -> str:
 
 @router.post("/run/{task_id}", response_class=HTMLResponse)
 async def run_task_now(task_id: str):
-    from app.services.scheduler import run_scan, run_hash_check, run_autodiscover, run_verify, run_event_sync
+    from app.services.scheduler import run_scan, run_hash_check, run_autodiscover, run_verify, run_event_sync, run_chd_check
     runners = {"scan": run_scan, "hash": run_hash_check,
                "autodiscover": run_autodiscover, "verify": run_verify,
-               "eventsync": run_event_sync}
+               "eventsync": run_event_sync, "chdcheck": run_chd_check}
     fn = runners.get(task_id)
     if not fn:
         return HTMLResponse('<span class="text-red-400 text-xs">Unknown task.</span>')
@@ -166,6 +181,29 @@ async def run_task_now(task_id: str):
             if created:
                 return HTMLResponse(f'<span class="text-green-400 text-xs">&#10003; {created} new achievement goal{"s" if created != 1 else ""} added across {events_n} event{"s" if events_n != 1 else ""}.</span>{oob}')
             return HTMLResponse(f'<span class="text-gray-400 text-xs">Checked {events_n} event{"s" if events_n != 1 else ""} — no new achievements.</span>{oob}')
+
+        if task_id == "chdcheck":
+            if result.get("status") == "disabled":
+                return HTMLResponse('<span class="text-yellow-500 text-xs">Turn on “CHD format check” in Settings first.</span>')
+            checked = result.get("checked", 0)
+            flagged = result.get("flagged", 0)
+            converted = result.get("converted", 0)
+            failed = result.get("failed", 0)
+            still = result.get("still_bad", 0)
+            if checked == 0:
+                return HTMLResponse(f'<span class="text-gray-400 text-xs">No CHDs found to check.</span>{oob}')
+            if flagged == 0:
+                return HTMLResponse(f'<span class="text-green-400 text-xs">&#10003; {checked} CHDs checked — all on RA-safe codecs.</span>{oob}')
+            parts = [f"{flagged} on Zstandard"]
+            if converted: parts.append(f"{converted} re-encoded")
+            if failed:    parts.append(f"{failed} failed")
+            tail = ""
+            if still and not result.get("converted_in_app"):
+                tail = " — re-encode with the batch scripts (chdman unavailable in-app)" if not result.get("chdman_available") else f" — {still} still need fixing"
+            elif still:
+                tail = f" — {still} still need fixing (see logs)"
+            cls = "text-green-400" if converted and not failed else ("text-yellow-500" if still else "text-green-400")
+            return HTMLResponse(f'<span class="{cls} text-xs">&#10003; {checked} checked, {", ".join(parts)}{tail}.</span>{oob}')
 
         return HTMLResponse(f'<span class="text-green-400 text-xs">&#10003; Done.</span>{oob}')
     except Exception as exc:
