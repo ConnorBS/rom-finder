@@ -100,10 +100,14 @@ Wired as the scheduler **`verify`** task (`sched_verify_*`, default 05:00) and t
 ### Goal auto-completion (`goals.py`) — LOCAL
 `evaluate_goals(session)` flips every active, non-custom `Goal` to completed when the local RA
 mirror satisfies it — zero RA calls. **Hardcore-only** across the board: `master` ⇐
-`highest_award_kind == "mastered"`, `beaten` ⇐ `in ("beaten","mastered")` (both from
-`ra_game_progress` via `award_satisfies`), and `achievement` ⇐ a **hardcore** `ra_achievement`
+`highest_award_kind == "mastered"`, `beaten` ⇐ `in ("beaten","beaten-hardcore","mastered")` (both
+from `ra_game_progress` via `award_satisfies`), and `achievement` ⇐ a **hardcore** `ra_achievement`
 row exists for the goal's `achievement_id`. Softcore awards/unlocks never count; `custom` never
-auto-completes.
+auto-completes. **⚠ RA's API returns `"beaten-hardcore"` (and `"beaten-softcore"`) for the beaten
+tiers — NOT plain `"beaten"`.** `award_satisfies` (and `mastery._BEATEN_KINDS` / `collection._BEATEN_KINDS`
+/ the collection Beaten badge) must therefore accept `"beaten-hardcore"`; the original code only
+checked `"beaten"`, so every hardcore-beaten (non-mastered) game silently never completed its Beat
+goal nor got a Beaten badge (fixed 2026-06-13). `beaten-softcore`/`completed` stay excluded (hardcore-only).
 **Event clones are matched by their OWN id (trust the import id).** RA's **AotW / RA Roulette**
 event tiles are *clones* with their own `achievement_id` under the event hub — distinct from the
 source-game achievement. But RA records the clone as **its own hardcore unlock** (the user's

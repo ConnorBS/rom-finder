@@ -83,11 +83,13 @@ def _badge_key(url: str) -> str:
 
 def award_satisfies(objective: str, kind: str) -> bool:
     """True when an RA award tier (highest_award_kind) satisfies the goal. Hardcore
-    only: a softcore award (beaten-softcore / completed) never counts."""
+    only: a softcore award (beaten-softcore / completed) never counts. NB: RA's API
+    returns **"beaten-hardcore"** for a hardcore beat (not plain "beaten"), so both
+    spellings must count — otherwise hardcore-beaten goals never auto-complete."""
     if objective == GoalObjective.master:
         return kind == "mastered"
     if objective == GoalObjective.beaten:
-        return kind in ("beaten", "mastered")
+        return kind in ("beaten", "beaten-hardcore", "mastered")
     return False  # custom / achievement use a different signal (see evaluate_goals)
 
 

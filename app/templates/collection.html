@@ -443,7 +443,7 @@
                     <span class="bg-yellow-900/80 border border-yellow-600 rounded-full px-2 py-0.5 text-yellow-300 text-xs" title="Mastered — 100% in hardcore">🏅 Mastered</span>
                     {% elif item.ra_award == 'completed' %}
                     <span class="bg-emerald-900/80 border border-emerald-700 rounded-full px-2 py-0.5 text-emerald-200 text-xs" title="Completed — 100% in softcore">✅ Completed</span>
-                    {% elif item.ra_award in ('beaten', 'beaten-softcore') %}
+                    {% elif item.ra_award in ('beaten', 'beaten-hardcore', 'beaten-softcore') %}
                     <span class="bg-slate-800/80 border border-slate-500 rounded-full px-2 py-0.5 text-slate-200 text-xs" title="Beaten">🏆 Beaten</span>
                     {% endif %}
                     {% if item.is_subset_rom %}
@@ -577,7 +577,7 @@
                         <span class="ml-1 inline-flex items-center text-yellow-300 text-xs" title="Mastered — 100% in hardcore">🏅</span>
                         {% elif item.ra_award == 'completed' %}
                         <span class="ml-1 inline-flex items-center text-emerald-300 text-xs" title="Completed — 100% in softcore">✅</span>
-                        {% elif item.ra_award in ('beaten', 'beaten-softcore') %}
+                        {% elif item.ra_award in ('beaten', 'beaten-hardcore', 'beaten-softcore') %}
                         <span class="ml-1 inline-flex items-center text-slate-300 text-xs" title="Beaten">🏆</span>
                         {% endif %}
                         {% if item.is_subset_rom %}

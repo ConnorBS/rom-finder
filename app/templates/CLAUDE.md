@@ -75,6 +75,15 @@ and event groups by their earliest deadline. **Un-completed goal cards render gr
 has a **🗑 Delete event** button → `POST /goals/event/delete` (Form `name`) which deletes every goal
 under it + its `GoalEvent` and returns `HX-Refresh`.
 
+## Goals page — collapsible event groups
+
+Each event `<section>` (in `#goals-groups`, keyed by `data-event-key`) has a ▾/▸ chevron
+(`.event-collapse-btn`) that toggles its `.event-grid` (`hidden`) so you can navigate by headers;
+a header **Collapse all / Expand all** pair calls `setAllGoalsCollapsed()`. Collapsed state persists
+in `localStorage` (`goalsCollapsed:<event-name>`) and is re-applied on load AND on the **`live:updated`**
+event (so an in-place morph doesn't blow it away — idiomorph drops the `hidden` class since the server
+HTML lacks it, then `applyGoalsCollapsed()` restores it). Minimal JS, like the collection multi-select.
+
 ## Goals page (`goals.html`, `partials/goal_card.html`)
 
 `/goals` lists event objectives grouped by `event_name` ("No event" last) with a "N of M done"

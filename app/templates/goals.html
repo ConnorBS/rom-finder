@@ -215,12 +215,18 @@
 
     <!-- Goals grouped by event -->
     {% if groups %}
-    <div class="space-y-8">
+    <div class="flex justify-end gap-2 mb-2">
+        <button type="button" onclick="setAllGoalsCollapsed(true)" class="text-gray-500 hover:text-gray-300 text-xs transition-colors" title="Collapse every event to just its header">⊟ Collapse all</button>
+        <span class="text-gray-700 text-xs">·</span>
+        <button type="button" onclick="setAllGoalsCollapsed(false)" class="text-gray-500 hover:text-gray-300 text-xs transition-colors" title="Expand every event">⊞ Expand all</button>
+    </div>
+    <div id="goals-groups" class="space-y-8">
         {% for group in groups %}
-        <section>
+        <section data-event-key="{{ group.name or 'No event' }}">
             <!-- Event header -->
             <div class="mb-3">
                 <div class="flex items-center flex-wrap gap-x-3 gap-y-1">
+                    <button type="button" onclick="toggleEventGrid(this)" class="event-collapse-btn text-gray-500 hover:text-gray-200 transition-colors flex-shrink-0 leading-none" title="Collapse / expand this event"><span class="chev text-xs">▾</span></button>
                     <h2 class="text-sm font-semibold {% if group.name %}text-gray-200{% else %}text-gray-500{% endif %}">{{ group.name or 'No event' }}</h2>
                     {% if group.event_image %}
                     <a href="{{ group.event.url }}" target="_blank" rel="noopener noreferrer" title="Open image">
@@ -298,6 +304,7 @@
                 {% endif %}
             </div>
 
+            <div class="event-grid">
             {% if group.cards %}
             <!-- All event cards in one flowing grid: achievements first, full games last -->
             <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
@@ -310,6 +317,7 @@
             {% else %}
             <p class="text-gray-600 text-xs">No goals under this event yet.</p>
             {% endif %}
+            </div>
         </section>
         {% endfor %}
     </div>
@@ -322,6 +330,38 @@
 </div>
 
 <script>
+// --- Collapsible event groups (navigate by header; state persisted per event) ---
+function rfGoalsKey(name) { return 'goalsCollapsed:' + name; }
+function _setEventGrid(sec, collapsed) {
+    var grid = sec.querySelector('.event-grid');
+    var chev = sec.querySelector('.event-collapse-btn .chev');
+    if (grid) grid.classList.toggle('hidden', collapsed);
+    if (chev) chev.textContent = collapsed ? '▸' : '▾';  // ▸ / ▾
+}
+function toggleEventGrid(btn) {
+    var sec = btn.closest('section');
+    var grid = sec.querySelector('.event-grid');
+    var collapsed = !(grid && grid.classList.contains('hidden'));
+    _setEventGrid(sec, collapsed);
+    try { localStorage.setItem(rfGoalsKey(sec.getAttribute('data-event-key')), collapsed ? '1' : '0'); } catch (e) {}
+}
+function applyGoalsCollapsed() {
+    document.querySelectorAll('#goals-groups section[data-event-key]').forEach(function (sec) {
+        var v = null;
+        try { v = localStorage.getItem(rfGoalsKey(sec.getAttribute('data-event-key'))); } catch (e) {}
+        _setEventGrid(sec, v === '1');
+    });
+}
+function setAllGoalsCollapsed(collapsed) {
+    document.querySelectorAll('#goals-groups section[data-event-key]').forEach(function (sec) {
+        try { localStorage.setItem(rfGoalsKey(sec.getAttribute('data-event-key')), collapsed ? '1' : '0'); } catch (e) {}
+    });
+    applyGoalsCollapsed();
+}
+document.addEventListener('DOMContentLoaded', applyGoalsCollapsed);
+document.addEventListener('live:updated', applyGoalsCollapsed);  // re-apply after an in-place morph
+applyGoalsCollapsed();
+
 function goalsApplyFilters() {
     var u = new URL(window.location.href);
     u.searchParams.set('sort', document.getElementById('goals-sort').value);

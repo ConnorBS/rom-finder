@@ -19,7 +19,9 @@ from app.services.duplicates import _is_subset, _norm_title
 # Strip a trailing RA "[Subset - X]" / "(Subset - X)" segment to get the parent title.
 _SUBSET_SPLIT_RE = re.compile(r"\s*[(\[]\s*subset\b.*$", re.IGNORECASE)
 
-_BEATEN_KINDS = ("beaten", "beaten-softcore", "completed")
+# RA's API returns "beaten-hardcore"/"beaten-softcore" for the beaten tiers (plain
+# "beaten" kept for safety); all count as beaten for the collection's Beaten count.
+_BEATEN_KINDS = ("beaten", "beaten-hardcore", "beaten-softcore", "completed")
 
 
 def base_title(title: str) -> str:

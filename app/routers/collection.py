@@ -33,7 +33,9 @@ def _get_setting(session: Session, key: str, default: str = "") -> str:
     return s.value if s else default
 
 
-_BEATEN_KINDS = ("beaten", "beaten-softcore", "completed")
+# RA returns "beaten-hardcore"/"beaten-softcore"; both (plus plain "beaten" + softcore
+# "completed") count as "beaten" for the collection's Beaten count/filter.
+_BEATEN_KINDS = ("beaten", "beaten-hardcore", "beaten-softcore", "completed")
 
 # Sort options for the collection toolbar: (key, label). `_SORT_KEYS` maps each key to
 # an item sort-function + reverse flag. Progress/points/achievements come from the RA
