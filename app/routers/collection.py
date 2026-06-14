@@ -18,7 +18,7 @@ PER_PAGE_CARDS = 50
 PER_PAGE_LIST = 100
 
 from app.db.database import engine, get_session
-from app.db.models import AppSetting, LibraryEntry, WantedGame, HuntStatus, RAGameProgress, RAAchievement
+from app.db.models import AppSetting, LibraryEntry, LibraryRoot, WantedGame, HuntStatus, RAGameProgress, RAAchievement
 from app.services import logger as applog
 from app.services import cover_sources as cover_source_registry
 from app.services import settings as app_settings
@@ -110,6 +110,27 @@ def _build_collection(session: Session) -> list[dict]:
         if e.duplicate_of is not None and e.id is not None:
             in_dup_group.add(e.id)
 
+    # Directory (LibraryRoot) labels + cross-directory duplicate detection. A duplicate
+    # group is keyed by its canonical id (duplicate_of, or own id for the canonical);
+    # a group whose members span >1 distinct root is a "cross-directory" duplicate.
+    roots = {r.id: r for r in session.exec(select(LibraryRoot)).all()}
+    group_roots: dict[int, set] = {}
+    for e in library_entries:
+        if e.root_id is not None:
+            group_roots.setdefault(e.duplicate_of or e.id, set()).add(e.root_id)
+
+    def _root_label(lib) -> str:
+        if lib and lib.root_id is not None:
+            r = roots.get(lib.root_id)
+            if r:
+                return r.label or r.path
+        return ""
+
+    def _cross_dir(lib) -> bool:
+        if not lib:
+            return False
+        return len(group_roots.get(lib.duplicate_of or lib.id, set())) > 1
+
     items: list[dict] = []
     seen_lib_ids: set[int] = set()
 
@@ -134,6 +155,9 @@ def _build_collection(session: Session) -> list[dict]:
             "missing": lib.missing if lib else False,
             "duplicate": bool(lib and lib.id in in_dup_group),
             "duplicate_of": lib.duplicate_of if lib else None,
+            "root_id": lib.root_id if lib else None,
+            "root_label": _root_label(lib),
+            "cross_dir_dup": _cross_dir(lib),
             "has_save": bool(lib and lib.save_count),
             "save_count": lib.save_count if lib else 0,
             "ra_award": lib.ra_award if lib else "",
@@ -169,6 +193,9 @@ def _build_collection(session: Session) -> list[dict]:
                 "missing": e.missing,
                 "duplicate": bool(e.id in in_dup_group),
                 "duplicate_of": e.duplicate_of,
+                "root_id": e.root_id,
+                "root_label": _root_label(e),
+                "cross_dir_dup": _cross_dir(e),
                 "has_save": bool(e.save_count),
                 "save_count": e.save_count,
                 "ra_award": e.ra_award,
@@ -197,12 +224,15 @@ async def collection_page(
     q: str = Query(default=""),
     system: str = Query(default=""),
     status: str = Query(default=""),
+    root: int = Query(default=0),
     view: str = Query(default="cards"),
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=0),
     sort: str = Query(default="added_desc"),
     session: Session = Depends(get_session),
 ):
+    from app.services import library_roots
+    roots = library_roots.get_roots(session)
     all_items = _build_collection(session)
     systems = sorted({i["system"] for i in all_items if i["system"]})
 
@@ -212,6 +242,8 @@ async def collection_page(
         filtered = [i for i in filtered if ql in i["game_title"].lower()]
     if system:
         filtered = [i for i in filtered if i["system"] == system]
+    if root:
+        filtered = [i for i in filtered if i.get("root_id") == root]
     if status == "no_ra":
         filtered = [i for i in filtered if i.get("file_hash") and not i.get("ra_matched") and not i.get("unsupported")]
     elif status == "unsupported":
@@ -230,6 +262,8 @@ async def collection_page(
         filtered = [i for i in filtered if i.get("subsets_available")]
     elif status == "bad_chd":
         filtered = [i for i in filtered if i.get("bad_chd")]
+    elif status == "cross_dir_dup":
+        filtered = [i for i in filtered if i.get("cross_dir_dup")]
     elif status:
         filtered = [i for i in filtered if i["status"] == status]
 
@@ -266,9 +300,11 @@ async def collection_page(
         {
             "items": items,
             "systems": systems,
+            "roots": roots,
             "q": q,
             "selected_system": system,
             "selected_status": status,
+            "selected_root": root,
             "view": view,
             "covers_enabled": covers_enabled,
             "page": page,
@@ -294,6 +330,7 @@ async def collection_page(
                 "beaten": sum(1 for i in all_items if i.get("ra_award") in _BEATEN_KINDS and not i.get("mastered")),
                 "subset_available": sum(1 for i in all_items if i.get("subsets_available")),
                 "bad_chd": sum(1 for i in all_items if i.get("bad_chd")),
+                "cross_dir_dup": sum(1 for i in all_items if i.get("cross_dir_dup")),
             },
         },
     )
@@ -320,6 +357,7 @@ async def collection_counts(session: Session = Depends(get_session)):
         "beaten": sum(1 for i in all_items if i.get("ra_award") in _BEATEN_KINDS and not i.get("mastered")),
         "subset_available": sum(1 for i in all_items if i.get("subsets_available")),
         "bad_chd": sum(1 for i in all_items if i.get("bad_chd")),
+        "cross_dir_dup": sum(1 for i in all_items if i.get("cross_dir_dup")),
     }
     parts = [f'<span>{counts["total"]} total</span>']
     if counts["verified"]:
@@ -346,6 +384,8 @@ async def collection_counts(session: Session = Depends(get_session)):
         parts.append(f'<span class="text-amber-400" title="Mastered/owned games with a hash-compatible subset still to play">{counts["subset_available"]} subset avail.</span>')
     if counts.get("bad_chd"):
         parts.append(f'<span class="text-rose-400" title="CHDs using the Zstandard codec (cdzs/zstd) — RetroArch can\'t hash them for achievements until re-encoded">{counts["bad_chd"]} CHD codec</span>')
+    if counts.get("cross_dir_dup"):
+        parts.append(f'<span class="text-fuchsia-400" title="Duplicate copies that exist across more than one directory">{counts["cross_dir_dup"]} across dirs</span>')
     return HTMLResponse(" ".join(parts))
 
 
@@ -384,48 +424,41 @@ async def scan_saves_endpoint(session: Session = Depends(get_session)):
 
 @router.post("/collection/bulk/scan", response_class=HTMLResponse)
 async def bulk_scan(session: Session = Depends(get_session)):
-    """Scan the ROM directory and import untracked files into the library."""
-    from app.routers.library import ROM_EXTENSIONS, _build_folder_to_system_map, _rom_title, is_disc_track
+    """Scan every registered ROM directory and import untracked files into the library."""
+    from collections import defaultdict
+    from pathlib import Path
+    from app.routers.library import is_disc_track
+    from app.services import library_roots
 
-    download_dir = _get_setting(session, "download_dir", "")
-    if not download_dir:
+    library_roots.reconcile_primary_path(session)
+    roots = library_roots.get_roots(session)
+    if not roots:
         return HTMLResponse('<span class="text-yellow-400 text-xs">No ROMs directory configured. Set it in Settings first.</span>')
 
-    from pathlib import Path
-    base = Path(download_dir)
-    if not base.exists():
-        return HTMLResponse(f'<span class="text-yellow-400 text-xs">Directory not found: {download_dir}</span>')
+    # Top-level system subfolders across all roots (for the "across M folders" tally).
+    folders = 0
+    for root in roots:
+        base = Path(root.path)
+        if base.exists() and base.is_dir():
+            folders += sum(1 for d in base.iterdir() if d.is_dir())
 
-    folder_map = app_settings.get_json(session, "folder_map", {})
-    folder_to_system = _build_folder_to_system_map(folder_map)
     existing_entries = session.exec(select(LibraryEntry)).all()
     existing_paths = {e.file_path for e in existing_entries}
 
-    # --- Import new ROMs on disk -------------------------------------------
+    # --- Import new ROMs on disk (all roots) -------------------------------
     cue_cache: dict[str, bool] = {}
     added = 0
     scanned = 0
-    folders = 0
-    for subdir in sorted(base.iterdir()):
-        if not subdir.is_dir():
+    for root, system, title, fname, fpath in library_roots.iter_rom_files(roots, cue_cache):
+        scanned += 1
+        if fpath in existing_paths:
             continue
-        folders += 1
-        system = folder_to_system.get(subdir.name, subdir.name)
-        for f in sorted(subdir.rglob('*')):
-            if not f.is_file() or f.suffix.lower() not in ROM_EXTENSIONS:
-                continue
-            if is_disc_track(f, cue_cache):
-                continue   # a .bin/.img track of a .cue disc — the .cue is the entry
-            scanned += 1
-            fp = str(f)
-            if fp in existing_paths:
-                continue
-            session.add(LibraryEntry(
-                game_title=_rom_title(f), system=system, file_name=f.name, file_path=fp,
-                file_size=f.stat().st_size,
-            ))
-            existing_paths.add(fp)
-            added += 1
+        session.add(LibraryEntry(
+            game_title=title, system=system, file_name=fname, file_path=fpath,
+            file_size=Path(fpath).stat().st_size, root_id=root.id,
+        ))
+        existing_paths.add(fpath)
+        added += 1
 
     # --- Clean up disc-track artifacts already in the library --------------
     # Tracks imported before this rule are real files on disk (so they'd never be
@@ -462,19 +495,26 @@ async def bulk_scan(session: Session = Depends(get_session)):
             session.add(e)
             restored += 1
 
-    # Entries whose file is gone and not already flagged.
-    gone = [e for e in existing_entries if not on_disk[id(e)] and not e.missing]
+    # Flag missing files. The >50%-of-present safety guard (an unmounted drive
+    # shouldn't mass-flag the library) is applied PER ROOT, so one offline directory
+    # doesn't suppress flagging in the others — nor flag the whole library.
+    gone_by_root: dict = defaultdict(list)
+    present_by_root: dict = defaultdict(int)
+    for e in existing_entries:
+        if not e.missing:
+            present_by_root[e.root_id] += 1
+        if not on_disk[id(e)] and not e.missing:
+            gone_by_root[e.root_id].append(e)
     flagged = 0
-    present_count = sum(1 for e in existing_entries if not e.missing)
-    if gone and len(gone) > max(5, present_count // 2):
-        # More than half the present library looks missing — almost certainly an
-        # unmounted share or wrong path. Don't flag en masse; warn instead.
-        applog.warning(
-            "library",
-            f"Scan: {len(gone)} of {present_count} files missing — skipping "
-            "missing-flag (possible unmounted drive). Check the ROMs directory.",
-        )
-    else:
+    for rid, gone in gone_by_root.items():
+        present_count = present_by_root.get(rid, 0)
+        if gone and len(gone) > max(5, present_count // 2):
+            applog.warning(
+                "library",
+                f"Scan: {len(gone)} of {present_count} files missing in directory "
+                f"#{rid} — skipping missing-flag (possible unmounted drive).",
+            )
+            continue
         for e in gone:
             e.missing = True
             e.missing_at = datetime.utcnow()
@@ -488,7 +528,7 @@ async def bulk_scan(session: Session = Depends(get_session)):
     from app.services.saves import scan_saves   # refresh save flags (read-only)
     scan_saves(session)
     applog.log_action("bulk_scan", {
-        "download_dir": download_dir, "scanned": scanned, "folders": folders,
+        "roots": len(roots), "scanned": scanned, "folders": folders,
         "added": added, "flagged_missing": flagged, "restored": restored,
         "removed_tracks": removed_tracks,
     })
@@ -543,6 +583,108 @@ def _delete_rom_file(session: Session, e: LibraryEntry) -> tuple[bool, str, int]
     except OSError as exc:
         return False, f"Could not delete file: {exc}", removed
     return True, "", removed
+
+
+def _disc_siblings(p: "Path") -> list:
+    """Same-stem data/audio tracks of a .cue/.gdi/.ccd descriptor (so a disc moves as one
+    unit). Mirrors the sibling set _delete_rom_file removes."""
+    import glob
+    from pathlib import Path
+    if p.suffix.lower() not in (".cue", ".gdi", ".ccd"):
+        return []
+    out = []
+    for sib in p.parent.glob(glob.escape(p.stem) + ".*"):
+        if sib != p and sib.suffix.lower() in (".bin", ".img", ".iso", ".sub", ".ccd", ".cue") and sib.exists():
+            out.append(sib)
+    return out
+
+
+async def _relocate(library_id: int, dest_root_id: int) -> tuple[bool, str]:
+    """Move one ROM (+ its disc tracks) into `dest_root`, updating file_path + root_id.
+    Refuses a read-only source/dest, a same-directory no-op, or a name conflict at the
+    destination. Fresh sessions only; the blocking shutil.move runs in an executor with
+    NO session held (so the pool isn't drained on a large cross-filesystem copy)."""
+    import asyncio
+    import shutil
+    from pathlib import Path
+    from app.services import library_roots
+    loop = asyncio.get_event_loop()
+
+    # 1) Read + validate, then release the session before the copy.
+    with Session(engine) as session:
+        e = session.get(LibraryEntry, library_id)
+        if not e:
+            return False, "Entry not found."
+        roots = library_roots.get_roots(session)
+        dest_root = next((r for r in roots if r.id == dest_root_id), None)
+        if dest_root is None:
+            return False, "Destination directory not found."
+        if dest_root.readonly:
+            return False, f"Destination '{dest_root.label or dest_root.path}' is read-only."
+        src_root = library_roots.root_for_path(roots, e.file_path)
+        if src_root is not None and src_root.readonly:
+            return False, f"Source '{src_root.label or src_root.path}' is read-only."
+        if src_root is not None and src_root.id == dest_root.id:
+            return False, "Already in that directory."
+        src = Path(e.file_path)
+        folder = library_roots.dest_folder_for_system(dest_root, e.system)
+        dest_dir = Path(dest_root.path) / folder
+        dest = dest_dir / src.name
+        if str(dest) == str(e.file_path):
+            return False, "Source and destination are the same."
+        conflict = dest.exists() or session.exec(
+            select(LibraryEntry).where(LibraryEntry.file_path == str(dest), LibraryEntry.id != e.id)
+        ).first() is not None
+        if conflict:
+            return False, f"A file named '{src.name}' already exists in '{dest_root.label or folder}'."
+        siblings = _disc_siblings(src)
+        game_title = e.game_title
+
+    # 2) Move with NO session held.
+    try:
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        if src.exists():
+            await loop.run_in_executor(None, shutil.move, str(src), str(dest))
+        for sib in siblings:
+            await loop.run_in_executor(None, shutil.move, str(sib), str(dest_dir / sib.name))
+    except Exception as exc:
+        applog.error("library", f"Move failed: {exc}", {"library_id": library_id})
+        return False, f"Move failed: {exc}"
+
+    # 3) Update the DB in a fresh session.
+    with Session(engine) as session:
+        e = session.get(LibraryEntry, library_id)
+        if e:
+            e.file_path = str(dest)
+            e.file_name = dest.name
+            e.root_id = dest_root_id
+            e.missing = False
+            e.missing_at = None
+            session.add(e)
+            session.commit()
+    applog.log_action("library_move", {"game": game_title, "dest": str(dest), "root_id": dest_root_id})
+    return True, ""
+
+
+async def _bulk_move(ids: list[int], dest_root_id: int) -> None:
+    """Background batch move — one activity-tray progress entry, per-file fresh session,
+    so cards drain as they complete and a mid-batch restart loses at most the in-flight file."""
+    from app.services import activity as activity_store
+    task_id = "move-batch"
+    activity_store.start_batch(task_id, f"Moving {len(ids)} ROM(s)…", len(ids), "move", entry_ids=ids)
+    moved = skipped = 0
+    try:
+        for lid in ids:
+            if activity_store.is_cancelled(task_id):
+                break
+            ok, _err = await _relocate(lid, dest_root_id)
+            moved += 1 if ok else 0
+            skipped += 0 if ok else 1
+            activity_store.complete_entry(task_id, lid)
+    finally:
+        activity_store.finish(task_id)
+    _refresh_duplicates()
+    applog.log_action("bulk_move", {"requested": len(ids), "moved": moved, "skipped": skipped, "dest_root_id": dest_root_id})
 
 
 def _wanted_for_entry(session: Session, e: LibraryEntry) -> WantedGame | None:
@@ -802,6 +944,43 @@ async def bulk_delete(
     return HTMLResponse(
         f'<span class="text-green-400 text-xs">&#10003; {", ".join(parts)}.</span>',
         headers={"HX-Refresh": "true"},
+    )
+
+
+@router.post("/collection/library/{library_id}/move", response_class=HTMLResponse)
+async def move_library_entry(library_id: int, dest_root_id: int = Form(...)):
+    """Move a single ROM (+ disc tracks) to another directory. Opens its own sessions
+    (no Depends, so the pool isn't held across the file copy). Returns HX-Refresh on
+    success (grid/badges/duplicate flags update) or an inline error on refusal."""
+    ok, err = await _relocate(library_id, dest_root_id)
+    if not ok:
+        return HTMLResponse(f'<span class="text-red-400 text-xs">{err}</span>')
+    _refresh_duplicates()   # a cross-directory group may re-elect its canonical
+    return HTMLResponse("", headers={"HX-Refresh": "true"})
+
+
+@router.post("/collection/bulk/move", response_class=HTMLResponse)
+async def bulk_move(
+    background_tasks: BackgroundTasks,
+    library_ids: str = Form(default=""),
+    dest_root_id: int = Form(...),
+    session: Session = Depends(get_session),
+):
+    """Move a selection of ROMs to another directory in the background (one activity-tray
+    progress entry). Read-only/conflict/same-dir entries are skipped per-file."""
+    ids = [int(x) for x in library_ids.split(",") if x.strip().isdigit()]
+    if not ids:
+        return HTMLResponse('<span class="text-gray-400 text-xs">No entries selected.</span>')
+    from app.services import library_roots
+    dest_root = next((r for r in library_roots.get_roots(session) if r.id == dest_root_id), None)
+    if dest_root is None:
+        return HTMLResponse('<span class="text-red-400 text-xs">Destination directory not found.</span>')
+    if dest_root.readonly:
+        return HTMLResponse('<span class="text-red-400 text-xs">Destination directory is read-only.</span>')
+    background_tasks.add_task(_bulk_move, ids, dest_root_id)
+    return HTMLResponse(
+        f'<span class="text-blue-400 text-xs">&#8635; Moving {len(ids)} ROM{"s" if len(ids) != 1 else ""} '
+        f'to {dest_root.label or dest_root.path}… reload when the activity tray clears.</span>'
     )
 
 

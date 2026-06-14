@@ -205,6 +205,15 @@ def _m_0024_library_chd_codec(s: Session) -> None:
     _add_column(s, "library", "chd_codec", "VARCHAR", "''")
 
 
+def _m_0025_library_root_id(s: Session) -> None:
+    # Which registered LibraryRoot (directory) a ROM lives in. NULL until backfilled by
+    # services/library_roots.ensure_primary_and_backfill (lifespan), which longest-prefix
+    # matches each entry's file_path to a root. Enables the directory badge/filter,
+    # cross-directory duplicate detection, and move-source resolution. The library_roots
+    # table itself is created by create_all (new table, no migration needed).
+    _add_column(s, "library", "root_id", "INTEGER", None)
+
+
 # (version_id, apply_fn) — applied in order, recorded once.
 MIGRATIONS: list[tuple[str, "callable"]] = [
     ("0001_download_source_id", _m_0001),
@@ -231,6 +240,7 @@ MIGRATIONS: list[tuple[str, "callable"]] = [
     ("0022_goalevent_tiers", _m_0022_goalevent_tiers),
     ("0023_library_time_to_beat", _m_0023_library_time_to_beat),
     ("0024_library_chd_codec", _m_0024_library_chd_codec),
+    ("0025_library_root_id", _m_0025_library_root_id),
 ]
 
 

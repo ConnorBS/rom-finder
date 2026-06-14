@@ -198,20 +198,21 @@ async def auto_hunt(wanted_id: int) -> None:
         ra_username = _gs(session, "ra_username")
         ra_api_key = _gs(session, "ra_api_key")
         check_dir = _gs(session, "check_dir", "/rom-check")
-        download_dir = _gs(session, "download_dir", "/roms")
         use_review = _gs(session, "use_review_dir", "true") == "true"
-        folder_map = app_settings.get_json(session, "folder_map", {})
         srcs = _enabled_srcs(session)
         game_title = game.game_title
         system = game.system
         ra_game_id = game.ra_game_id
+        # Final target = the primary root (or its legacy download_dir fallback).
+        from app.services import library_roots
+        target_base, system_folder, primary_root_id = library_roots.download_target(session, system)
 
     if not ra_username or not ra_api_key:
         applog.warning("hunt", "Auto-hunt skipped — RA credentials not configured", {"game": game_title})
         return
 
-    system_folder = folder_map.get(system) or DEFAULT_FOLDER_MAP.get(system, system)
-    base_dir = check_dir if use_review else download_dir
+    base_dir = check_dir if use_review else target_base
+    target_root_id = None if use_review else primary_root_id
 
     activity_store.start(task_id, f"Hunting: {game_title}", task_type="hunt")
     applog.info("hunt", f"Auto-hunt started: {game_title}", {"wanted_id": wanted_id, "system": system})
@@ -520,6 +521,7 @@ async def auto_hunt(wanted_id: int) -> None:
                                 file_name=final_path.name, file_path=str(final_path),
                                 file_hash=file_hash, hash_verified=True,
                                 ra_game_id=matched_ra_id, ra_matched=True,
+                                root_id=target_root_id,
                             ))
                         session.commit()
 

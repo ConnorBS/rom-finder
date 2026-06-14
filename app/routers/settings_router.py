@@ -11,7 +11,7 @@ from pathlib import Path
 APP_VERSION = os.environ.get("APP_VERSION", "dev")
 
 from app.db.database import get_session
-from app.db.models import AppSetting, InstalledExtension
+from app.db.models import AppSetting, InstalledExtension, LibraryEntry, LibraryRoot
 from app.services import sources as source_registry
 from app.services import cover_sources as cover_source_registry
 from app.services.ra_client import SYSTEMS, DEFAULT_FOLDER_MAP
@@ -141,6 +141,22 @@ async def settings_page(request: Request, session: Session = Depends(get_session
 
     roms_folders = _scan_folders(download_dir)
 
+    # Library directories (LibraryRoot) — the combined collection is the union of these.
+    # The primary root is the download target; its path mirrors the download_dir field above.
+    from app.services import library_roots
+    roots = library_roots.get_roots(session)
+    primary = next((r for r in roots if r.is_primary), roots[0] if roots else None)
+    if primary:
+        current["download_dir"] = primary.path
+    roots_ctx = []
+    for r in roots:
+        try:
+            fmap = json.loads(r.folder_map or "{}")
+        except (ValueError, TypeError):
+            fmap = {}
+        rows = [{"folder": f, "system": fmap.get(f) or _automap_folder(f)} for f in _scan_folders(r.path)]
+        roots_ctx.append({"root": r, "rows": rows})
+
     # Extension settings — only extensions with at least one setting
     raw_ext_schemas = extension_loader.get_settings_schemas()
     ext_schemas = {k: v for k, v in raw_ext_schemas.items() if v}
@@ -167,6 +183,7 @@ async def settings_page(request: Request, session: Session = Depends(get_session
             "cover_source_api_keys": cover_src_api_keys,
             "roms_folders": roms_folders,
             "folder_map": folder_map,
+            "roots_ctx": roots_ctx,
             "known_systems": KNOWN_SYSTEMS,
             "ext_schemas": ext_schemas,
             "ext_names": ext_names,
@@ -189,6 +206,12 @@ async def save_settings(
     ra_api_key: str = Form(default=""),
 ):
     set_setting(session, "download_dir", download_dir)
+    # The ROMs-directory field edits the PRIMARY library root's path — keep them in sync.
+    from app.services import library_roots
+    primary = library_roots.primary_root(session)
+    if primary and primary.path != os.path.normpath(download_dir):
+        primary.path = os.path.normpath(download_dir)
+        session.add(primary)
     set_setting(session, "check_dir", check_dir)
     set_setting(session, "covers_dir", covers_dir)
     set_setting(session, "saves_dir", saves_dir)
@@ -226,14 +249,17 @@ async def save_settings(
             api_key_val = form_data.get(f"cover_source_{src.source_id}_api_key", "")
             set_setting(session, f"cover_source_{src.source_id}_api_key", str(api_key_val))
 
-    # Folder mapping — parallel arrays folder_names[] + folder_systems[]
+    # Legacy global folder_map — per-directory maps now live on each LibraryRoot
+    # (Library Directories section), so only rewrite the legacy key if the old global
+    # table is still posting folder_names[] (it no longer is; guard prevents a wipe).
     folder_names = form_data.getlist("folder_names[]")
     folder_systems = form_data.getlist("folder_systems[]")
     folder_map: dict[str, str] = {}
-    for fname, fsys in zip(folder_names, folder_systems):
-        if fsys:
-            folder_map[fsys] = fname
-    set_setting(session, "folder_map", json.dumps(folder_map))
+    if folder_names:
+        for fname, fsys in zip(folder_names, folder_systems):
+            if fsys:
+                folder_map[fsys] = fname
+        set_setting(session, "folder_map", json.dumps(folder_map))
 
     # Extension settings — save ext_{ext_id}_{key} and re-configure loaded extensions
     ext_schemas = extension_loader.get_settings_schemas()
@@ -271,6 +297,112 @@ async def save_settings(
         'text-green-300 px-4 py-3 rounded-lg text-sm">'
         'Settings saved.</div>'
     )
+
+
+@router.post("/roots/add", response_class=HTMLResponse)
+async def add_root(
+    path: str = Form(...),
+    label: str = Form(default=""),
+    session: Session = Depends(get_session),
+):
+    """Register a new ROM directory. The first one becomes primary (download target)."""
+    from app.services import library_roots
+    p = (path or "").strip()
+    if not p:
+        return HTMLResponse('<span class="text-red-400 text-xs">Enter a directory path.</span>')
+    norm = os.path.normpath(p)
+    if not os.path.isdir(norm):
+        return HTMLResponse(f'<span class="text-red-400 text-xs">Directory not found: {norm}</span>')
+    if session.exec(select(LibraryRoot).where(LibraryRoot.path == norm)).first():
+        return HTMLResponse('<span class="text-yellow-400 text-xs">That directory is already registered.</span>')
+    roots = library_roots.get_roots(session)
+    is_primary = len(roots) == 0
+    max_pos = max((r.position for r in roots), default=-1)
+    session.add(LibraryRoot(path=norm, label=(label or "").strip(), is_primary=is_primary,
+                            position=max_pos + 1, folder_map="{}"))
+    if is_primary:
+        set_setting(session, "download_dir", norm)
+    session.commit()
+    applog.log_settings("Library directory added", {"path": norm, "label": label, "primary": is_primary})
+    return HTMLResponse("", headers={"HX-Refresh": "true"})
+
+
+@router.post("/roots/{root_id}/remove", response_class=HTMLResponse)
+async def remove_root(root_id: int, session: Session = Depends(get_session)):
+    """De-register a directory (files stay on disk). If it was primary, promote the next."""
+    from app.services import library_roots
+    r = session.get(LibraryRoot, root_id)
+    if not r:
+        return HTMLResponse("", headers={"HX-Refresh": "true"})
+    was_primary = r.is_primary
+    for e in session.exec(select(LibraryEntry).where(LibraryEntry.root_id == root_id)).all():
+        e.root_id = None
+        session.add(e)
+    session.delete(r)
+    session.commit()
+    if was_primary:
+        remaining = library_roots.get_roots(session)
+        if remaining:
+            remaining[0].is_primary = True
+            session.add(remaining[0])
+            set_setting(session, "download_dir", remaining[0].path)
+            session.commit()
+    applog.log_settings("Library directory removed", {"root_id": root_id})
+    return HTMLResponse("", headers={"HX-Refresh": "true"})
+
+
+@router.post("/roots/{root_id}/primary", response_class=HTMLResponse)
+async def set_primary_root(root_id: int, session: Session = Depends(get_session)):
+    """Make a directory the primary download target (and sync the download_dir setting)."""
+    target = session.get(LibraryRoot, root_id)
+    if not target:
+        return HTMLResponse("", headers={"HX-Refresh": "true"})
+    for r in session.exec(select(LibraryRoot)).all():
+        r.is_primary = (r.id == root_id)
+        session.add(r)
+    set_setting(session, "download_dir", target.path)
+    session.commit()
+    applog.log_settings("Primary library directory changed", {"root_id": root_id, "path": target.path})
+    return HTMLResponse("", headers={"HX-Refresh": "true"})
+
+
+@router.post("/roots/{root_id}/readonly", response_class=HTMLResponse)
+async def toggle_root_readonly(
+    root_id: int,
+    readonly: str = Form(default=""),
+    session: Session = Depends(get_session),
+):
+    """Toggle a directory's read-only lock (no writes/moves into or out of it)."""
+    r = session.get(LibraryRoot, root_id)
+    if r:
+        r.readonly = (readonly == "true")
+        session.add(r)
+        session.commit()
+    return HTMLResponse("", headers={"HX-Refresh": "true"})
+
+
+@router.post("/roots/{root_id}/mapping", response_class=HTMLResponse)
+async def save_root_mapping(
+    root_id: int,
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    """Save a directory's per-folder console mapping (stored folder→system on the root)."""
+    r = session.get(LibraryRoot, root_id)
+    if not r:
+        return HTMLResponse('<span class="text-red-400 text-xs">Directory not found.</span>')
+    form = await request.form()
+    folder_names = form.getlist("folder_names[]")
+    folder_systems = form.getlist("folder_systems[]")
+    fmap: dict[str, str] = {}
+    for fname, fsys in zip(folder_names, folder_systems):
+        if fsys:
+            fmap[fname] = fsys     # folder → system (per-directory direction)
+    r.folder_map = json.dumps(fmap)
+    session.add(r)
+    session.commit()
+    applog.log_settings("Directory console mapping saved", {"root_id": root_id, "mapped": len(fmap)})
+    return HTMLResponse(f'<span class="text-green-400 text-xs">&#10003; Mapping saved for {r.label or r.path} ({len(fmap)} folder(s) mapped).</span>')
 
 
 @router.post("/ra-test", response_class=HTMLResponse)

@@ -75,10 +75,12 @@ def create_library_entry_from_download(
     download: Download,
     file_path: Path | str,
     file_hash: Optional[str] = None,
+    root_id: Optional[int] = None,
 ) -> LibraryEntry:
     """Build + add (not commit) a LibraryEntry from a completed Download.
     `file_path` is the final on-disk path; `file_hash` overrides download.file_hash
-    when the hash was computed in this pass (the _run_download path). Caller commits."""
+    when the hash was computed in this pass (the _run_download path); `root_id` is the
+    owning LibraryRoot (the primary download target). Caller commits."""
     p = Path(file_path)
     try:
         file_size = p.stat().st_size   # so size sort + detail size work without a rescan
@@ -94,6 +96,7 @@ def create_library_entry_from_download(
         ra_game_id=download.ra_game_id,
         ra_matched=download.hash_verified,
         file_size=file_size,
+        root_id=root_id,
     )
     session.add(entry)
     return entry

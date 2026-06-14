@@ -44,48 +44,33 @@ def _should_run(last_run_str: str, time_str: str) -> bool:
 
 
 async def run_scan() -> dict:
-    """Scan for new ROMs, then hash + fetch covers + RA-verify each newly-found file."""
-    import json
-    from app.routers.library import ROM_EXTENSIONS, _build_folder_to_system_map, _rom_title, is_disc_track
+    """Scan for new ROMs across all library roots, then hash + fetch covers + RA-verify each."""
+    from app.services import library_roots
     from app.services.hasher import hash_rom
     from app.services.rahasher import compute_ra_hash
     from app.services import activity as activity_store
 
     with Session(engine) as session:
-        download_dir = _get(session, "download_dir", "")
-        folder_map = app_settings.get_json(session, "folder_map", {})
+        library_roots.reconcile_primary_path(session)
+        roots = library_roots.get_roots(session)
         ra_username = _get(session, "ra_username")
         ra_api_key = _get(session, "ra_api_key")
         covers_readonly = _get(session, "covers_dir_readonly", "false") == "true"
 
-    if not download_dir:
+    if not roots:
         return {"error": "No ROMs directory configured"}
-    base = Path(download_dir)
-    if not base.exists():
-        return {"error": f"ROMs directory not found: {download_dir}"}
-
-    folder_to_system = _build_folder_to_system_map(folder_map)
 
     with Session(engine) as session:
         existing_paths = set(session.exec(select(LibraryEntry.file_path)).all())
 
-    # --- Step 1: find new files ---
+    # --- Step 1: find new files across all roots ---
     cue_cache: dict[str, bool] = {}
-    new_files: list[tuple[str, str, str, str]] = []  # (title, system, fname, fpath)
-    for subdir in sorted(base.iterdir()):
-        if not subdir.is_dir():
+    new_files: list[tuple[str, str, str, str, int]] = []  # (title, system, fname, fpath, root_id)
+    for root, system, title, fname, fpath in library_roots.iter_rom_files(roots, cue_cache):
+        if fpath in existing_paths:
             continue
-        system = folder_to_system.get(subdir.name, subdir.name)
-        for f in sorted(subdir.rglob('*')):
-            if not f.is_file() or f.suffix.lower() not in ROM_EXTENSIONS:
-                continue
-            if is_disc_track(f, cue_cache):
-                continue   # .bin/.img track of a .cue disc — not a standalone ROM
-            fp = str(f)
-            if fp in existing_paths:
-                continue
-            new_files.append((_rom_title(f), system, f.name, fp))
-            existing_paths.add(fp)
+        new_files.append((title, system, fname, fpath, root.id))
+        existing_paths.add(fpath)
 
     if not new_files:
         _set_last_run("sched_scan_last_run")
@@ -95,8 +80,9 @@ async def run_scan() -> dict:
     # --- Step 2: insert into DB, collecting new IDs ---
     new_ids: list[int] = []
     with Session(engine) as session:
-        for title, system, fname, fpath in new_files:
-            e = LibraryEntry(game_title=title, system=system, file_name=fname, file_path=fpath)
+        for title, system, fname, fpath, root_id in new_files:
+            e = LibraryEntry(game_title=title, system=system, file_name=fname,
+                             file_path=fpath, root_id=root_id)
             session.add(e)
             session.flush()
             new_ids.append(e.id)

@@ -33,11 +33,11 @@
 
         <!-- View toggle -->
         <div class="flex items-center gap-1 bg-gray-800 border border-gray-700 rounded-lg p-1 flex-shrink-0">
-            <a href="?q={{ q }}&system={{ selected_system }}&status={{ selected_status }}&view=cards&per_page={{ per_page }}&sort={{ selected_sort }}"
+            <a href="?q={{ q }}&system={{ selected_system }}&status={{ selected_status }}&root={{ selected_root }}&view=cards&per_page={{ per_page }}&sort={{ selected_sort }}"
                class="px-2.5 py-1.5 rounded text-xs font-medium transition-colors {% if view == 'cards' %}bg-gray-600 text-white{% else %}text-gray-400 hover:text-white{% endif %}">
                 Cards
             </a>
-            <a href="?q={{ q }}&system={{ selected_system }}&status={{ selected_status }}&view=list&per_page={{ per_page }}&sort={{ selected_sort }}"
+            <a href="?q={{ q }}&system={{ selected_system }}&status={{ selected_status }}&root={{ selected_root }}&view=list&per_page={{ per_page }}&sort={{ selected_sort }}"
                class="px-2.5 py-1.5 rounded text-xs font-medium transition-colors {% if view != 'cards' %}bg-gray-600 text-white{% else %}text-gray-400 hover:text-white{% endif %}">
                 List
             </a>
@@ -59,7 +59,7 @@
                 hx-target="body"
                 hx-push-url="true"
                 hx-trigger="input changed delay:400ms, search"
-                hx-include="#col-system,#col-status,#col-view,#col-perpage,#col-sort"
+                hx-include="#col-system,#col-status,#col-view,#col-perpage,#col-sort,#col-root"
                 name="q"
             >
 
@@ -68,7 +68,7 @@
                 hx-get="/collection"
                 hx-target="body"
                 hx-push-url="true"
-                hx-include="#col-q,#col-status,#col-view,#col-perpage,#col-sort"
+                hx-include="#col-q,#col-status,#col-view,#col-perpage,#col-sort,#col-root"
             >
                 <option value="">All systems</option>
                 {% for sys in systems %}
@@ -76,12 +76,29 @@
                 {% endfor %}
             </select>
 
+            {% if roots and roots | length > 1 %}
+            <select id="col-root" name="root" title="Filter by directory"
+                class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500 w-full sm:w-auto"
+                hx-get="/collection"
+                hx-target="body"
+                hx-push-url="true"
+                hx-include="#col-q,#col-system,#col-status,#col-view,#col-perpage,#col-sort"
+            >
+                <option value="0">All directories</option>
+                {% for r in roots %}
+                <option value="{{ r.id }}" {% if r.id == selected_root %}selected{% endif %}>{{ r.label or r.path }}{% if r.is_primary %} ★{% endif %}</option>
+                {% endfor %}
+            </select>
+            {% else %}
+            <input type="hidden" id="col-root" name="root" value="{{ selected_root }}">
+            {% endif %}
+
             <select id="col-sort" name="sort" title="Sort order"
                 class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500 w-full sm:w-auto"
                 hx-get="/collection"
                 hx-target="body"
                 hx-push-url="true"
-                hx-include="#col-q,#col-system,#col-status,#col-view,#col-perpage"
+                hx-include="#col-q,#col-system,#col-status,#col-view,#col-perpage,#col-root"
             >
                 {% for val, label in sort_options %}
                 <option value="{{ val }}" {% if val == selected_sort %}selected{% endif %}>{{ label }}</option>
@@ -93,7 +110,7 @@
                 hx-get="/collection"
                 hx-target="body"
                 hx-push-url="true"
-                hx-include="#col-q,#col-system,#col-status,#col-view,#col-sort"
+                hx-include="#col-q,#col-system,#col-status,#col-view,#col-sort,#col-root"
             >
                 {% for pp in [50, 100, 250, 500, 1000] %}
                 <option value="{{ pp }}" {% if pp == per_page %}selected{% endif %}>{{ pp }} / page</option>
@@ -110,13 +127,15 @@
 
             <!-- Status pills -->
             <div class="flex gap-1 flex-wrap">
-                {% set statuses = [("", "All"), ("verified", "Verified"), ("found", "Found"), ("library", "Library"), ("wanted", "Wanted"), ("no_ra", "No RA"), ("unsupported", "Unsupported"), ("missing", "Missing"), ("duplicate", "Duplicate"), ("has_save", "Has Save"), ("has_mastered", "Mastered"), ("beaten", "Beaten"), ("subset_available", "Subset avail."), ("bad_chd", "CHD codec")] %}
+                {% set statuses = [("", "All"), ("verified", "Verified"), ("found", "Found"), ("library", "Library"), ("wanted", "Wanted"), ("no_ra", "No RA"), ("unsupported", "Unsupported"), ("missing", "Missing"), ("duplicate", "Duplicate"), ("cross_dir_dup", "Across dirs"), ("has_save", "Has Save"), ("has_mastered", "Mastered"), ("beaten", "Beaten"), ("subset_available", "Subset avail."), ("bad_chd", "CHD codec")] %}
                 {% for val, label in statuses %}
-                <a href="?q={{ q }}&system={{ selected_system }}&status={{ val }}&view={{ view }}&per_page={{ per_page }}&sort={{ selected_sort }}"
+                {% if val != "cross_dir_dup" or (roots and roots | length > 1) %}
+                <a href="?q={{ q }}&system={{ selected_system }}&status={{ val }}&root={{ selected_root }}&view={{ view }}&per_page={{ per_page }}&sort={{ selected_sort }}"
                    class="px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors
                           {% if selected_status == val %}border-blue-600 bg-blue-600/20 text-blue-300{% else %}border-gray-700 bg-gray-800 text-gray-400 hover:text-white{% endif %}">
                     {{ label }}
                 </a>
+                {% endif %}
                 {% endfor %}
             </div>
         </div>
@@ -337,6 +356,17 @@
         <button type="button" hx-post="/collection/bulk/verify" hx-vals='js:{library_ids: selectedIds()}'
             hx-target="#bulk-result" hx-swap="innerHTML"
             class="text-xs bg-gray-700 hover:bg-gray-600 text-gray-200 px-2.5 py-1.5 rounded transition-colors">Verify</button>
+        {% if roots and roots | length > 1 %}
+        <span class="w-px h-5 bg-blue-800 mx-1"></span>
+        <select id="sel-move-dest" title="Destination directory"
+            class="text-xs bg-gray-800 border border-gray-700 text-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-blue-500">
+            {% for r in roots %}<option value="{{ r.id }}">{{ r.label or r.path }}{% if r.is_primary %} ★{% endif %}</option>{% endfor %}
+        </select>
+        <button type="button" hx-post="/collection/bulk/move"
+            hx-vals='js:{library_ids: selectedIds(), dest_root_id: document.getElementById("sel-move-dest").value}'
+            hx-target="#bulk-result" hx-swap="innerHTML"
+            class="text-xs bg-gray-700 hover:bg-gray-600 text-gray-200 px-2.5 py-1.5 rounded transition-colors">Move to →</button>
+        {% endif %}
         <span class="w-px h-5 bg-blue-800 mx-1"></span>
         <label class="text-xs text-gray-400 flex items-center gap-1"><input type="checkbox" id="sel-delete-file" class="accent-red-600"> delete file</label>
         <button type="button"
@@ -456,6 +486,12 @@
                     {% endif %}
                     {% if item.bad_chd %}
                     <span class="bg-rose-900/80 border border-rose-700 rounded-full px-2 py-0.5 text-rose-200 text-xs" title="CHD uses the Zstandard codec — RetroArch can't hash it for achievements until re-encoded (run the CHD format check)">⚠ CHD codec</span>
+                    {% endif %}
+                    {% if item.cross_dir_dup %}
+                    <span class="bg-fuchsia-900/80 border border-fuchsia-700 rounded-full px-2 py-0.5 text-fuchsia-200 text-xs" title="A duplicate copy of this game exists in more than one directory">⧉ across dirs</span>
+                    {% endif %}
+                    {% if item.root_label and roots and roots | length > 1 %}
+                    <span class="bg-gray-800/85 border border-gray-600 rounded-full px-2 py-0.5 text-gray-300 text-xs" title="Directory: {{ item.root_label }}">⌂ {{ item.root_label }}</span>
                     {% endif %}
                 </div>
             </div>
@@ -589,6 +625,12 @@
                         {% if item.bad_chd %}
                         <span class="ml-1 inline-flex items-center text-rose-400 text-xs" title="CHD on the Zstandard codec — RetroArch can't hash it for achievements until re-encoded">⚠CHD</span>
                         {% endif %}
+                        {% if item.cross_dir_dup %}
+                        <span class="ml-1 inline-flex items-center text-fuchsia-400 text-xs" title="Duplicate copy exists across more than one directory">⧉dirs</span>
+                        {% endif %}
+                        {% if item.root_label and roots and roots | length > 1 %}
+                        <span class="ml-1 inline-flex items-center text-gray-400 text-xs" title="Directory">⌂ {{ item.root_label }}</span>
+                        {% endif %}
                     </td>
                     <td class="px-4 py-3">
                         {% if item.ra_matched and item.ra_game_id %}
@@ -661,12 +703,12 @@
         {% if total_pages > 1 %}
         <div class="flex items-center gap-1">
             {% if page > 1 %}
-            <a href="?q={{ q }}&system={{ selected_system }}&status={{ selected_status }}&view={{ view }}&per_page={{ per_page }}&sort={{ selected_sort }}&page={{ page - 1 }}"
+            <a href="?q={{ q }}&system={{ selected_system }}&status={{ selected_status }}&root={{ selected_root }}&view={{ view }}&per_page={{ per_page }}&sort={{ selected_sort }}&page={{ page - 1 }}"
                class="px-3 py-1.5 bg-gray-800 border border-gray-700 rounded-lg hover:text-white transition-colors">&#8592; Prev</a>
             {% endif %}
             <span class="px-3 py-1.5 text-gray-600">{{ page }} / {{ total_pages }}</span>
             {% if page < total_pages %}
-            <a href="?q={{ q }}&system={{ selected_system }}&status={{ selected_status }}&view={{ view }}&per_page={{ per_page }}&sort={{ selected_sort }}&page={{ page + 1 }}"
+            <a href="?q={{ q }}&system={{ selected_system }}&status={{ selected_status }}&root={{ selected_root }}&view={{ view }}&per_page={{ per_page }}&sort={{ selected_sort }}&page={{ page + 1 }}"
                class="px-3 py-1.5 bg-gray-800 border border-gray-700 rounded-lg hover:text-white transition-colors">Next &#8594;</a>
             {% endif %}
         </div>
@@ -676,7 +718,7 @@
     {% else %}
     <div class="bg-gray-900 border border-gray-800 rounded-lg p-12 text-center">
         <p class="text-gray-500 text-sm">
-            {% if q or selected_system or selected_status %}
+            {% if q or selected_system or selected_status or selected_root %}
             No items match your filters.
             {% else %}
             Your collection is empty. <a href="/search" class="text-blue-400 hover:underline">Search for ROMs</a> or use <strong class="text-gray-300">Scan folder</strong> above to import from disk.

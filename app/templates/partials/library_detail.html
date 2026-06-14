@@ -59,6 +59,12 @@
     <span class="text-gray-300" title="RetroAchievements median time to beat">⏱ {% if entry.time_to_beat_min >= 60 %}~{{ entry.time_to_beat_min // 60 }}h{% if entry.time_to_beat_min % 60 %} {{ entry.time_to_beat_min % 60 }}m{% endif %}{% else %}~{{ entry.time_to_beat_min }}m{% endif %} <span class="text-gray-600">(median)</span></span>
   </div>
   {% endif %}
+  {% if entry.root_id and root_labels.get(entry.root_id) %}
+  <div class="flex gap-3">
+    <span class="text-gray-500 w-20 flex-shrink-0">Directory</span>
+    <span class="text-gray-300">⌂ {{ root_labels.get(entry.root_id) }}</span>
+  </div>
+  {% endif %}
   <div class="flex gap-3">
     <span class="text-gray-500 w-20 flex-shrink-0">Path</span>
     <span class="text-gray-400 font-mono break-all text-xs leading-relaxed">{{ entry.file_path }}</span>
@@ -154,7 +160,7 @@
     <div class="mb-1">
       <span class="text-gray-300 font-mono break-all">{{ m.file_name }}</span>
     </div>
-    <p class="text-gray-600 mb-1">{{ m.system }}{% if m.file_size %} · {{ fsize(m.file_size) }}{% endif %}{% if m.id == entry.id %} · <span class="text-gray-400">this entry</span>{% endif %}</p>
+    <p class="text-gray-600 mb-1">{{ m.system }}{% if m.file_size %} · {{ fsize(m.file_size) }}{% endif %}{% if m.root_id and root_labels.get(m.root_id) %} · <span class="text-gray-400" title="Directory">⌂ {{ root_labels.get(m.root_id) }}</span>{% endif %}{% if m.id == entry.id %} · <span class="text-gray-400">this entry</span>{% endif %}</p>
     {% if m.id != entry.id and m.file_hash and entry.file_hash %}
     <p class="mb-1">
       {% if m.file_hash == entry.file_hash %}
@@ -198,6 +204,20 @@
           title="Delete the entry and the ROM file from disk (plus disc tracks for a .cue)">Delete entry + ROM file</button>
   {% endif %}
 </div>
+{% if roots and roots | length > 1 and not entry.missing %}
+<div class="bg-gray-900 border border-gray-800 rounded-lg p-3 mb-2 flex flex-wrap items-center gap-1.5">
+  <span class="text-gray-500 text-xs">Move to</span>
+  <select id="dz-move-dest" title="Destination directory"
+          class="text-xs bg-gray-800 border border-gray-700 text-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-blue-500">
+    {% for r in roots %}{% if r.id != entry.root_id %}<option value="{{ r.id }}">{{ r.label or r.path }}{% if r.is_primary %} ★{% endif %}</option>{% endif %}{% endfor %}
+  </select>
+  <button hx-post="/collection/library/{{ entry.id }}/move"
+          hx-vals='js:{dest_root_id: document.getElementById("dz-move-dest").value}'
+          hx-target="#dz-feedback" hx-swap="innerHTML"
+          class="text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 hover:text-white px-2.5 py-1.5 rounded transition-colors"
+          title="Move this ROM (and its disc tracks) into the selected directory">Move →</button>
+</div>
+{% endif %}
 <div id="dz-feedback" class="text-xs mb-5 min-h-[1rem]"></div>
 
 <!-- Download records -->

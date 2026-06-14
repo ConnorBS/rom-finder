@@ -32,6 +32,8 @@ app/
     goals.py           # Goal auto-completion from the RA mirror (LOCAL) — evaluate_goals
     events.py          # Event import (one API call) + nightly auto-sync of growing RA events
     settings.py        # Canonical settings accessors + DEFAULT_SETTINGS (leaf: imports only app.db)
+    library_roots.py   # Multiple ROM directories: LibraryRoot CRUD, per-dir console mapping,
+                       #   the shared iter_rom_files walk, download_target, primary seeding/backfill
     title_utils.py     # Search query generation + result relevance (search == hunt)
     sources/           # ROM download sources
     cover_sources/     # Cover art sources

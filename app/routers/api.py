@@ -713,6 +713,23 @@ async def api_status(session: Session = Depends(get_session)):
     except Exception as e:
         status["chd"] = {"error": str(e)}
 
+    # Library directories (LibraryRoot) — the combined collection is their union.
+    try:
+        from app.services import library_roots
+        status["directories"] = [
+            {
+                "id": r.id,
+                "label": r.label or r.path,
+                "path": r.path,
+                "primary": r.is_primary,
+                "readonly": r.readonly,
+                "rom_count": _count(session, LibraryEntry, LibraryEntry.root_id == r.id),
+            }
+            for r in library_roots.get_roots(session)
+        ]
+    except Exception as e:
+        status["directories"] = {"error": str(e)}
+
     # External torrent/usenet jobs (qBittorrent/SABnzbd via Prowlarr download client).
     try:
         from app.db.models import ExternalDownload
@@ -848,6 +865,9 @@ async def api_changes(session: Session = Depends(get_session)):
                 func.coalesce(func.sum(LibraryEntry.save_count), 0),
                 func.coalesce(func.sum(func.length(LibraryEntry.ra_award)), 0),
                 func.coalesce(func.sum(func.length(LibraryEntry.subset_info)), 0),
+                # root_id sum moves when a ROM is moved between directories (no other
+                # column changes), so the live morph reflects a move without a manual reload.
+                func.coalesce(func.sum(LibraryEntry.root_id), 0),
                 func.max(LibraryEntry.added_at),
                 func.max(LibraryEntry.hashed_at),
                 func.max(LibraryEntry.ra_checked_at),

@@ -213,6 +213,33 @@ opt-in** (returns `{status:"disabled"}` otherwise). Wired as the scheduler **`ch
 is the DB-only snapshot for `/api/status.chd` + the Settings panel (counts off the stamped column +
 chdman availability, no file I/O).
 
+## Library roots — multiple ROM directories (`library_roots.py`)
+
+The library is the **union of all registered `LibraryRoot` directories**, not one `download_dir`.
+This leaf-ish module is the single home for root logic (so routers/scheduler don't duplicate it):
+- `get_roots` / `primary_root` — ordered roots / the one `is_primary`.
+- `iter_rom_files(roots, cue_cache)` — the **one shared on-disk walk** reused by all three scan paths
+  (`collection.bulk_scan`, `library /scan`, `scheduler.run_scan`); yields `(root, system, title, fname, fpath)`
+  and lazily imports `ROM_EXTENSIONS`/`is_disc_track`/`_rom_title` from `routers.library` (same pattern
+  scheduler already used) to avoid a module-load services→routers import.
+- `resolve_system(root, folder)` — per-root **folder→system** map (then built-in default aliases, then the
+  folder name). `dest_folder_for_system(root, system)` inverts it (the folder to FILE a download into).
+- `download_target(session, system)` → `(base_dir, folder, root_id)` — where downloads/hunts/moves file
+  (the **primary** root). Every download chokepoint (`downloads._do_approve_move`/`_run_download`,
+  `hunter.auto_hunt`, `external_hunt._staging_dir` + ingest) routes through it and stamps `root_id`.
+- `root_for_path(roots, path)` — longest-prefix match (assigns `root_id` on backfill + resolves a move's source).
+- **`reconcile_primary_path(session)`** — keeps the primary root's `path` == the `download_dir` setting.
+  Called at the scan/download chokepoints + by `ensure_primary_and_backfill`, so anything that sets
+  `download_dir` directly (the Settings ROMs-dir field, tests, env defaults) still drives the primary dir.
+- `ensure_primary_and_backfill(session)` — lifespan startup: seeds the primary from `download_dir`
+  (migrating the **reversed** legacy global `folder_map` into its folder→system map), guarantees one
+  primary, then backfills any null `LibraryEntry.root_id`. Idempotent.
+
+**Moving** (`routers/collection._relocate` / `_bulk_move`): relocates a ROM (+ its `.cue`/`.gdi` tracks)
+into another root's console subfolder, updating `file_path`+`root_id`. Fresh sessions only — the blocking
+`shutil.move` runs in an executor with NO session held (so the pool isn't drained on a big cross-fs copy,
+mirroring `_do_approve_move`). Refused on a read-only source/dest or a name conflict at the destination.
+
 ## ROM Sources (`sources/`)
 
 Each source extends `BaseSource`:

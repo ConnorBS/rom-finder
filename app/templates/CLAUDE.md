@@ -63,6 +63,21 @@ Each card/list row also shows **base achievements earned/total** (`🏆 {item.ac
 
 Multi-select is minimal JS (sanctioned, like the card-states poller): `.sel-check[data-lib-id]` checkboxes (card info area — kept off the cover so they don't trigger the detail slide-over; list view first column), a `#selection-bar` shown when the `window._sel` Set is non-empty, and `selectAllFiltered()` using `window.allFilteredLibIds`. **`window._sel` is initialised in `base.html`** (not the page's inline script) so it **survives a live in-place morph**; it still **resets on a real full render** (filter/paginate/HX-Refresh) via base.html's `htmx:afterSwap` handler that clears it when the swap target is `document.body`. The collection page re-applies it to checkboxes (`bindSelChecks()`) both at load and on the `live:updated` event after each morph. Action buttons post `library_ids` via `hx-vals` (body, not URL). `#col-perpage` (50–1000) is wired like `#col-system`; every nav link threads `&per_page`.
 
+## Multiple directories (`collection.html`, `partials/library_detail.html`, `settings.html`)
+
+The collection combines every `LibraryRoot`. With **>1 root**, cards/rows show a `⌂ {label}` directory
+badge, a fuchsia `⧉ across dirs` badge (`item.cross_dir_dup`), a `#col-root` directory `<select>`
+filter, an **Across dirs** status pill, and a selection-bar **Move to →** dropdown
+(`/collection/bulk/move`). With a single root those controls hide and `#col-root` becomes a hidden input
+(so `hx-include` still finds it). **`&root={{ selected_root }}` is threaded through every nav link**
+(view toggle, status pills, pagination) like `&system`/`&status`. The detail panel
+(`library_detail.html`) shows the entry's **Directory** row + each duplicate copy's directory, and a
+**Move to** control (`/collection/library/{id}/move`). **Settings → Library Directories** (a section
+**outside** the main settings `<form>`, so each root's mapping is its own `<form>`) lists roots with
+★-primary / read-only / remove + an add-directory form + a per-directory folder→console mapping table
+(saved to `LibraryRoot.folder_map`); add/remove/primary/readonly return `HX-Refresh`, mapping returns a
+`#dir-feedback` snippet.
+
 ## Goals page filters/sort + delete-event
 
 The Goals header has a toolbar (plain query-param controls, navigate via `goalsApplyFilters()`):

@@ -10,7 +10,7 @@ from app.db.database import engine
 from app.db.migrations import run_migrations
 from app.db.models import (  # noqa: F401 — registers tables for create_all
     AppSetting, WantedGame, AppLog, HuntAttempt, InstalledExtension,
-    RAAchievement, RAGameProgress, RAProfile, Goal, GoalEvent,
+    RAAchievement, RAGameProgress, RAProfile, Goal, GoalEvent, LibraryRoot,
 )
 from app.services import settings as app_settings
 from app.services.settings import DEFAULT_SETTINGS
@@ -27,6 +27,9 @@ async def lifespan(app: FastAPI):
             if not session.get(AppSetting, key):
                 session.add(AppSetting(key=key, value=value))
         session.commit()
+        # Seed the primary library root from download_dir + backfill LibraryEntry.root_id
+        from app.services.library_roots import ensure_primary_and_backfill
+        ensure_primary_and_backfill(session)
         # Ensure the configured covers directory exists
         covers_path = app_settings.get(session, "covers_dir", "static/covers")
         Path(covers_path).mkdir(parents=True, exist_ok=True)

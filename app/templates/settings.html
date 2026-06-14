@@ -228,71 +228,6 @@
             </div>
         </section>
 
-        <!-- System Folder Mapping -->
-        <section>
-            <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">System Folder Mapping</h2>
-            <div class="bg-gray-900 border border-gray-800 rounded-lg p-5">
-                <p class="text-gray-500 text-xs mb-4">Map each folder in your ROMs directory to a system. ROM Finder will use these folders instead of creating new ones.</p>
-                <div class="overflow-x-auto">
-                    <table class="w-full">
-                        <thead>
-                            <tr>
-                                <th class="text-left text-xs text-gray-500 font-medium pb-2 pr-4">Folder</th>
-                                <th class="text-left text-xs text-gray-500 font-medium pb-2">System</th>
-                            </tr>
-                        </thead>
-                        <tbody id="folder-map-rows">
-                            {% if roms_folders %}
-                                {% for folder in roms_folders %}
-                                {% set assigned = namespace(sys="") %}
-                                {% for sys, f in folder_map.items() %}
-                                    {% if f == folder %}{% set assigned.sys = sys %}{% endif %}
-                                {% endfor %}
-                                <tr class="border-t border-gray-800">
-                                    <td class="py-2 pr-4 text-sm text-gray-300 font-mono">{{ folder }}</td>
-                                    <td class="py-2">
-                                        <input type="hidden" name="folder_names[]" value="{{ folder }}">
-                                        <select name="folder_systems[]" class="bg-gray-800 border border-gray-700 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500">
-                                            <option value="">— Not mapped —</option>
-                                            {% for sys in known_systems %}
-                                            <option value="{{ sys }}" {% if sys == assigned.sys %}selected{% endif %}>{{ sys }}</option>
-                                            {% endfor %}
-                                        </select>
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            {% else %}
-                                <tr id="folder-map-empty">
-                                    <td colspan="2" class="py-4 text-gray-600 text-sm text-center">
-                                        {% if settings.download_dir %}No subfolders found — save settings first if the path changed.{% else %}Set a ROMs directory above to scan for folders.{% endif %}
-                                    </td>
-                                </tr>
-                            {% endif %}
-                        </tbody>
-                    </table>
-                </div>
-                <div class="flex gap-3 mt-3">
-                    <button
-                        type="button"
-                        hx-get="/settings/folder-scan"
-                        hx-vals='js:{"path": document.getElementById("download_dir").value}'
-                        hx-target="#folder-map-rows"
-                        hx-swap="innerHTML"
-                        class="text-xs text-blue-400 hover:text-blue-300 transition-colors"
-                    >↻ Rescan folders</button>
-                    <button
-                        type="button"
-                        hx-get="/settings/folder-automap"
-                        hx-vals='js:{"path": document.getElementById("download_dir").value}'
-                        hx-target="#folder-map-rows"
-                        hx-swap="innerHTML"
-                        class="text-xs text-purple-400 hover:text-purple-300 transition-colors"
-                        title="Automatically suggest system mappings based on folder names"
-                    >&#10024; Auto-map</button>
-                </div>
-            </div>
-        </section>
-
         <!-- Cover Art Sources -->
         <section>
             <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-1">Cover Art Sources</h2>
@@ -494,6 +429,94 @@
             <div id="settings-feedback"></div>
         </div>
     </form>
+
+    <!-- Library Directories -->
+    <section class="space-y-3 border-t border-gray-800 pt-6 mt-2">
+        <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider">Library Directories</h2>
+        <p class="text-gray-500 text-xs">Your collection combines every directory below. The <span class="text-yellow-400">★</span> primary directory is where new downloads are filed. Map each directory's folders to a console so the same system groups across directories even when the folder names differ.</p>
+        <div id="dir-feedback" class="text-xs min-h-[1rem]"></div>
+
+        {% for rc in roots_ctx %}
+        <div class="bg-gray-900 border border-gray-800 rounded-lg p-5 space-y-3">
+            <div class="flex items-start justify-between gap-3 flex-wrap">
+                <div class="min-w-0">
+                    <p class="text-sm text-gray-200 font-medium">
+                        {% if rc.root.is_primary %}<span class="text-yellow-400" title="Primary download target">★</span> {% endif %}{{ rc.root.label or rc.root.path }}
+                        {% if rc.root.readonly %}<span class="ml-1 text-[11px] bg-gray-800 border border-gray-700 text-gray-400 px-1.5 py-0.5 rounded-full">read-only</span>{% endif %}
+                    </p>
+                    <p class="text-xs text-gray-500 font-mono break-all">{{ rc.root.path }}</p>
+                </div>
+                <div class="flex items-center gap-3 flex-shrink-0">
+                    {% if not rc.root.is_primary %}
+                    <button hx-post="/settings/roots/{{ rc.root.id }}/primary" hx-target="#dir-feedback" hx-swap="innerHTML"
+                            class="text-xs text-yellow-500 hover:text-yellow-400 transition-colors" title="Make this the download target">★ Make primary</button>
+                    {% endif %}
+                    <label class="text-xs text-gray-400 flex items-center gap-1" title="Scan/view only — never written, moved into, or out of">
+                        <input type="checkbox" name="readonly" value="true" class="accent-blue-600"
+                               {% if rc.root.readonly %}checked{% endif %}
+                               hx-post="/settings/roots/{{ rc.root.id }}/readonly" hx-target="#dir-feedback" hx-swap="innerHTML"> read-only
+                    </label>
+                    {% if not rc.root.is_primary %}
+                    <button hx-post="/settings/roots/{{ rc.root.id }}/remove"
+                            hx-confirm="Stop tracking this directory? Files stay on disk; its ROMs leave the combined view until re-added."
+                            hx-target="#dir-feedback" hx-swap="innerHTML"
+                            class="text-xs text-red-500 hover:text-red-400 transition-colors">Remove</button>
+                    {% endif %}
+                </div>
+            </div>
+
+            <form hx-post="/settings/roots/{{ rc.root.id }}/mapping" hx-target="#dir-feedback" hx-swap="innerHTML">
+                <div class="overflow-x-auto">
+                    <table class="w-full">
+                        <thead>
+                            <tr>
+                                <th class="text-left text-xs text-gray-500 font-medium pb-2 pr-4">Folder</th>
+                                <th class="text-left text-xs text-gray-500 font-medium pb-2">Console</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in rc.rows %}
+                            <tr class="border-t border-gray-800">
+                                <td class="py-2 pr-4 text-sm text-gray-300 font-mono break-all">{{ row.folder }}</td>
+                                <td class="py-2">
+                                    <input type="hidden" name="folder_names[]" value="{{ row.folder }}">
+                                    <select name="folder_systems[]" class="bg-gray-800 border border-gray-700 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500">
+                                        <option value="">— Not mapped —</option>
+                                        {% for sys in known_systems %}
+                                        <option value="{{ sys }}" {% if sys == row.system %}selected{% endif %}>{{ sys }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="2" class="py-3 text-gray-600 text-sm text-center">No subfolders found in this directory.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% if rc.rows %}
+                <button type="submit" class="mt-3 text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 hover:text-white px-3 py-1.5 rounded transition-colors">Save mapping</button>
+                {% endif %}
+            </form>
+        </div>
+        {% endfor %}
+
+        <!-- Add directory -->
+        <form hx-post="/settings/roots/add" hx-target="#dir-feedback" hx-swap="innerHTML"
+              class="bg-gray-900 border border-gray-800 rounded-lg p-5 flex flex-wrap items-end gap-3">
+            <div class="flex-1 min-w-[200px]">
+                <label class="block text-xs text-gray-400 mb-1">Add a directory (absolute path inside the container)</label>
+                <input type="text" name="path" placeholder="/mnt/roms2"
+                       class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500 font-mono">
+            </div>
+            <div>
+                <label class="block text-xs text-gray-400 mb-1">Label</label>
+                <input type="text" name="label" placeholder="Archive"
+                       class="bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500 w-32">
+            </div>
+            <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">Add directory</button>
+        </form>
+    </section>
 
     <!-- Application -->
     <section class="space-y-3 border-t border-gray-800 pt-6 mt-2">

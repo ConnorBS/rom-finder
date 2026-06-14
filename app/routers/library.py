@@ -169,11 +169,15 @@ async def library_detail(
     # game's achievement sets, each base-compatible or patch-required (+ patch link).
     from app.services.game_sets import game_sets_for
     game_sets = game_sets_for(session, entry.ra_game_id) if entry.ra_game_id else []
+    from app.services import library_roots
+    roots = library_roots.get_roots(session)
+    root_labels = {r.id: (r.label or r.path) for r in roots}
     return templates.TemplateResponse(
         request, "partials/library_detail.html",
         {"entry": entry, "downloads": downloads,
          "dup_group": dup_group, "canonical_id": canonical_id, "mixed_dump": mixed_dump,
-         "saves": saves, "subsets": subsets, "game_sets": game_sets},
+         "saves": saves, "subsets": subsets, "game_sets": game_sets,
+         "roots": roots, "root_labels": root_labels},
     )
 
 
@@ -255,52 +259,37 @@ async def verify_ra_library_entry(
 
 @router.post("/scan", response_class=HTMLResponse)
 async def scan_rom_folder(session: Session = Depends(get_session)):
-    """Scan the ROM directory and add discovered files to the library."""
-    download_dir = _get_setting(session, "download_dir", "")
-    if not download_dir:
+    """Scan every registered ROM directory and add discovered files to the library."""
+    from app.services import library_roots
+    library_roots.reconcile_primary_path(session)
+    roots = library_roots.get_roots(session)
+    if not roots:
         return HTMLResponse(
             '<span class="text-yellow-400 text-xs">No ROMs directory configured. Set it in Settings first.</span>'
         )
-
-    folder_map = app_settings.get_json(session, "folder_map", {})
-    folder_to_system = _build_folder_to_system_map(folder_map)
 
     existing_paths = set(
         session.exec(select(LibraryEntry.file_path)).all()
     )
 
-    base = Path(download_dir)
-    if not base.exists():
-        return HTMLResponse(
-            f'<span class="text-yellow-400 text-xs">Directory not found: {download_dir}</span>'
-        )
-
     added = 0
     cue_cache: dict[str, bool] = {}
-    for subdir in sorted(base.iterdir()):
-        if not subdir.is_dir():
+    for root, system, title, fname, fpath in library_roots.iter_rom_files(roots, cue_cache):
+        if fpath in existing_paths:
             continue
-        system = folder_to_system.get(subdir.name, subdir.name)
-        for f in sorted(subdir.rglob('*')):
-            if not f.is_file() or f.suffix.lower() not in ROM_EXTENSIONS:
-                continue
-            if is_disc_track(f, cue_cache):
-                continue   # .bin/.img track of a .cue disc — not a standalone ROM
-            file_path_str = str(f)
-            if file_path_str in existing_paths:
-                continue
-            entry = LibraryEntry(
-                game_title=_rom_title(f),
-                system=system,
-                file_name=f.name,
-                file_path=file_path_str,
-            )
-            session.add(entry)
-            existing_paths.add(file_path_str)
-            added += 1
+        entry = LibraryEntry(
+            game_title=title,
+            system=system,
+            file_name=fname,
+            file_path=fpath,
+            root_id=root.id,
+        )
+        session.add(entry)
+        existing_paths.add(fpath)
+        added += 1
 
     session.commit()
-    applog.log_action("library_scan", {"download_dir": download_dir, "added": added})
+    applog.log_action("library_scan", {"roots": len(roots), "added": added})
 
     if added:
         return HTMLResponse(

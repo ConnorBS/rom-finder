@@ -215,6 +215,26 @@ class InstalledExtension(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class LibraryRoot(SQLModel, table=True):
+    """A registered ROM directory. The library is the union of all roots (combined
+    view). Exactly one root is `is_primary` — the download target. New table → created
+    by SQLModel.metadata.create_all at startup; the primary is seeded from the legacy
+    `download_dir` setting in lifespan (services/library_roots.ensure_primary_and_backfill)."""
+    __tablename__ = "library_roots"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    path: str = Field(index=True, unique=True)   # absolute dir path
+    label: str = ""                              # display name ("Main", "Archive", "USB")
+    is_primary: bool = False                     # exactly one; downloads/moves default here
+    readonly: bool = False                       # scan/view only — never written/moved into or out of
+    position: int = 0                            # display order
+    # Per-directory folder->system map as JSON {folder_name: system}. NB direction:
+    # folder->system (NOT the legacy global folder_map's system->folder) — the natural
+    # shape for manual per-directory mapping + the scanner's direct lookup. Filing a
+    # download inverts it (services/library_roots.dest_folder_for_system).
+    folder_map: str = "{}"
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class LibraryEntry(SQLModel, table=True):
     """ROMs that have been downloaded and are tracked locally."""
     __tablename__ = "library"
@@ -223,6 +243,8 @@ class LibraryEntry(SQLModel, table=True):
     system: str
     file_name: str
     file_path: str  # unique — ux_library_path (migration 0008); idempotent imports
+    root_id: Optional[int] = Field(default=None, index=True)  # owning LibraryRoot (migration 0025);
+                                                              # set on scan / download-approval / move
     file_hash: Optional[str] = None
     hash_verified: bool = False
     ra_game_id: Optional[int] = None

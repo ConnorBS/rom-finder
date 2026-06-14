@@ -285,10 +285,9 @@ async def _do_approve_move(download_id: int) -> bool:
             session.commit()
             return False
 
-        download_dir = _get_setting(session, "download_dir", "/roms")
-        folder_map = app_settings.get_json(session, "folder_map", {})
-        folder_name = _resolve_folder(folder_map, download.system)
-        final_dir = Path(download_dir) / folder_name
+        from app.services import library_roots
+        base_dir, folder_name, target_root_id = library_roots.download_target(session, download.system)
+        final_dir = Path(base_dir) / folder_name
         src_path = Path(download.file_path)
         dest_path = final_dir / src_path.name
 
@@ -309,7 +308,8 @@ async def _do_approve_move(download_id: int) -> bool:
                 else:
                     await loop.run_in_executor(None, shutil.move, str(src_path), str(dest_path))
             if existing is None:
-                repository.create_library_entry_from_download(session, download, dest_path)
+                repository.create_library_entry_from_download(
+                    session, download, dest_path, root_id=target_root_id)
             repository.mark_wanted_verified(session, download.ra_game_id)
             applog.log_action("approve_download", {
                 "game": download.game_title, "file": dest_path.name,
@@ -511,12 +511,14 @@ async def _run_download(download_id: int) -> None:
         if not download:
             return
 
+        from app.services import library_roots
         use_review = _get_setting(session, "use_review_dir", "true") == "true"
         check_dir = _get_setting(session, "check_dir", "/rom-check")
-        download_dir = _get_setting(session, "download_dir", "/roms")
-        folder_map = app_settings.get_json(session, "folder_map", {})
-        folder_name = _resolve_folder(folder_map, download.system)
-        base_dir = check_dir if use_review else download_dir
+        # Final target = the primary root; staged downloads sit in check_dir first and
+        # get their root_id assigned on approval (so target_root_id is None while review-staged).
+        target_base, folder_name, primary_root_id = library_roots.download_target(session, download.system)
+        base_dir = check_dir if use_review else target_base
+        target_root_id = None if use_review else primary_root_id
         dest = Path(base_dir) / folder_name / download.file_name
         dest.parent.mkdir(parents=True, exist_ok=True)
 
@@ -612,7 +614,7 @@ async def _run_download(download_id: int) -> None:
             else:
                 download.status = DownloadStatus.completed
                 repository.create_library_entry_from_download(
-                    session, download, rom_path, file_hash=file_hash
+                    session, download, rom_path, file_hash=file_hash, root_id=target_root_id
                 )
                 repository.mark_wanted_verified(session, download.ra_game_id)
 

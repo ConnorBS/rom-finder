@@ -2,10 +2,30 @@
 
 ## Data Models (`models.py`)
 
+### `LibraryRoot` (table: `library_roots`)
+A registered ROM directory. The library is the **union** of all roots (combined collection view).
+```
+id, path (unique), label
+is_primary       — exactly one; the download/move-file target. Its path is kept == the
+                   download_dir setting (services/library_roots.reconcile_primary_path).
+readonly         — scan/view only — never written, moved into, or out of
+position         — display order
+folder_map       — JSON {folder_name: system}  ⚠ folder→system direction (NOT the legacy
+                   global folder_map's {system: folder}). The natural shape for manual
+                   per-directory mapping + the scanner's direct lookup; lets two folders in
+                   one dir map to one console. dest_folder_for_system inverts it for filing.
+created_at
+```
+**New table → `create_all`; no migration.** The primary is seeded from `download_dir` at startup
+(`library_roots.ensure_primary_and_backfill` in lifespan, which also migrates the reversed legacy
+global `folder_map` into the primary's map and backfills `LibraryEntry.root_id`).
+
 ### `LibraryEntry` (table: `library`)
 ROMs physically on disk.
 ```
 id, game_title, system, file_name, file_path
+root_id          — owning LibraryRoot id (migration 0025); set on scan / download-approval / move.
+                   NULL = legacy/unassigned (backfilled at startup by longest-prefix path match).
 file_hash        — MD5 or RA-hash string; None = not yet hashed
 hash_verified    — True once looked up against RA
 ra_game_id       — RA's numeric game ID, if known
@@ -158,7 +178,8 @@ and `subset_available` (a `subset_info` subset still unmastered) are filter cond
 ## Settings Keys
 
 ```
-download_dir            — root ROMs directory (system subfolders inside)
+download_dir            — PRIMARY ROMs directory (== the primary LibraryRoot.path, kept in
+                          sync). Additional directories are LibraryRoots, not settings.
 check_dir               — staging area for ROMs awaiting approval
 covers_dir              — where cover PNGs are saved (default: static/covers)
 saves_dir               — emulator save directory (optional); scanned READ-ONLY to flag
@@ -166,7 +187,9 @@ saves_dir               — emulator save directory (optional); scanned READ-ONL
 *_readonly              — locks: download_dir_readonly, check_dir_readonly, covers_dir_readonly
 ra_username / ra_api_key
 ra_enabled              — hash-verify downloads against RA after completion
-folder_map              — JSON: {system_name: folder_name} overrides DEFAULT_FOLDER_MAP
+folder_map              — LEGACY global JSON {system_name: folder_name}. Superseded by each
+                          LibraryRoot's per-directory folder_map (folder→system). Migrated into
+                          the primary root at seed time; no longer written by Settings (kept inert).
 cover_sources_order     — JSON array of source IDs in priority order
 cover_source_{id}_enabled / cover_source_{id}_api_key
 source_{id}_enabled     — ROM download sources

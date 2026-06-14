@@ -48,10 +48,10 @@ def _enabled_client(session: Session):
 
 
 def _staging_dir(session: Session, system: str) -> Path:
+    from app.services import library_roots
     use_review = _gs(session, "use_review_dir", "true") == "true"
-    base = _gs(session, "check_dir", "/rom-check") if use_review else _gs(session, "download_dir", "/roms")
-    folder_map = app_settings.get_json(session, "folder_map", {})
-    folder = folder_map.get(system) or DEFAULT_FOLDER_MAP.get(system, system)
+    target_base, folder, _ = library_roots.download_target(session, system)
+    base = _gs(session, "check_dir", "/rom-check") if use_review else target_base
     return Path(base) / folder
 
 
@@ -276,10 +276,12 @@ async def _ingest(ext_id: int, st: dict) -> str:
             g.last_hunt_at = datetime.utcnow()
             session.add(g)
         if not use_review:
+            from app.services import library_roots
+            _, _, lib_root_id = library_roots.download_target(session, system)
             session.add(LibraryEntry(
                 game_title=game_title, system=system, file_name=rom_path.name,
                 file_path=str(rom_path), file_hash=file_hash, hash_verified=True,
-                ra_game_id=verified_id, ra_matched=True,
+                ra_game_id=verified_id, ra_matched=True, root_id=lib_root_id,
             ))
         ext.status = "verified"
         ext.progress = 1.0
