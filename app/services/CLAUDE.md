@@ -162,6 +162,17 @@ achievement goal is enriched from `RAClient.get_achievements(game_id)` — canon
 image, so no download). Same task backs both `POST /api/goal` (extension) and `POST /goals/add` with
 an `achievement_id` (the page's achievement-count picker).
 
+### Hub import (`hubs.py`)
+`fetch_hub_games(hub_id)` paginates V2 `/hubs/{id}/games?include=system` (no DB session across the
+await) → `[{game_id, title, console, achievements, points, players}]` (`RAClientV2.games_from_payload`,
+extended to carry `achievementsPublished`/`pointsTotal`/`playersTotal`). `progress_bucket(award,
+num_awarded)` is a **pure, LOCAL** helper that classifies a game by the configured user's RA-mirror
+progress → `none`/`some`/`beaten`/`mastered` (mirrors `mastery._BEATEN_KINDS`; hardcore). `POST
+/wanted/import-hub` is now a **preview** (`routers/wanted`): it annotates each game with owned/wanted +
+the bucket and renders `partials/hub_preview.html` (filterable + per-game deselect). `POST
+/wanted/import-hub/add` adds only the kept games (base64(JSON) tokens, no second RA fetch). **V2 has no
+game-type (retail/hack) or set-type field** — those RA hub filters can't be reproduced from this API.
+
 ### Hash-aware subsets (`subsets.py`)
 Two layers. `refresh_subset_cache(game_ids=None)` is the **only RA-calling** part: for each owned game it enumerates subsets from the per-console `get_game_list` (same call autodiscover makes — so newly-published subsets are picked up on re-run) and pulls each subset's `get_game_hashes_full`, replacing `ra_subset_hash` wholesale (`game_ids=None`) or per-parent (scoped). `recompute_subset_flags(session)` is **LOCAL**: joins each ROM's hash against the cache + the mirror's subset mastery and writes `is_subset_rom` + `subset_info`. **Matching is by hash only** — a subset needing a patched ROM the user lacks never matches. Subset discovery rides the recurring RA passes: **autodiscover** runs the full owned sweep (catches new subsets on owned titles); **bulk verify** / `ra_verify.run_pass` / single `/library/{id}/verify-ra` run scoped refreshes for the games they matched; plus the manual **Detect subsets** button (`POST /collection/sync-subsets`). `sync-awards` (`POST /collection/sync-awards`) re-derives awards + flags locally.
 

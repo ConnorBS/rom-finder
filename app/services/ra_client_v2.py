@@ -61,7 +61,10 @@ class RAClientV2:
 
     @staticmethod
     def games_from_payload(payload: dict) -> list[dict]:
-        """Games from a `/hubs/{id}/games?include=system` page → [{game_id, title, console}]."""
+        """Games from a `/hubs/{id}/games?include=system` page →
+        [{game_id, title, console, achievements, points, players}]. The achievement
+        count drives the hub-import "has achievements" filter; V2 exposes no game-type
+        (retail/hack/…) field, so those RA filters aren't reproducible here."""
         inc = {(i.get("type"), str(i.get("id"))): i for i in (payload.get("included") or [])}
         out = []
         for d in (payload.get("data") or []):
@@ -74,7 +77,10 @@ class RAClientV2:
                     console = (sysrec.get("attributes") or {}).get("name", "")
             gid = d.get("id")
             out.append({"game_id": int(gid) if str(gid).isdigit() else 0,
-                        "title": a.get("title", ""), "console": console})
+                        "title": a.get("title", ""), "console": console,
+                        "achievements": int(a.get("achievementsPublished") or 0),
+                        "points": int(a.get("pointsTotal") or 0),
+                        "players": int(a.get("playersTotal") or 0)})
         return out
 
     # --- JSON:API payload parsers (static; tolerant of missing fields) ---------

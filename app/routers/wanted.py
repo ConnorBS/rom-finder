@@ -6,7 +6,7 @@ from pathlib import Path
 from datetime import datetime
 
 from app.db.database import get_session, engine
-from app.db.models import AppSetting, WantedGame, HuntStatus, HuntAttempt, LibraryEntry
+from app.db.models import AppSetting, WantedGame, HuntStatus, HuntAttempt, LibraryEntry, RAGameProgress
 from app.services import sources as source_registry
 from app.services import activity as activity_store
 from app.services.ra_client import SYSTEMS, RAClient
@@ -132,13 +132,16 @@ async def add_wanted(
 
 
 @router.post("/import-hub", response_class=HTMLResponse)
-async def import_hub(hub_ref: str = Form(...)):
-    """Bulk-add every game in an RA hub (V2) to Wanted. Async + no Depends(get_session):
-    fetch_hub_games does the paginated RA awaits, then we write rows in a short session.
-    Skips games already owned or already wanted. Covers are NOT auto-fetched (a hub can be
-    hundreds of games) — use the collection's Fetch-covers action."""
+async def import_hub(request: Request, hub_ref: str = Form(...)):
+    """PREVIEW an RA hub before importing: fetch every game (V2), annotate each LOCALLY
+    with the configured user's progress (RA mirror) + owned/already-wanted state, and
+    render a filterable, per-game deselectable list. The actual add is
+    POST /wanted/import-hub/add — only the games the user keeps checked.
+    Async + no Depends(get_session): fetch_hub_games does the paginated RA awaits, then
+    annotation happens in a short session with no connection held across the await."""
+    import base64
+    import json as _json
     from app.services import hubs
-    from app.services.title_utils import clean_title, canonical_system
 
     hub_id = hubs.parse_hub_ref(hub_ref)
     if not hub_id:
@@ -152,33 +155,102 @@ async def import_hub(hub_ref: str = Form(...)):
     if not games:
         return HTMLResponse('<span class="text-gray-400 text-xs">No games found in that hub — check the id.</span>')
 
-    added = skipped_existing = skipped_owned = 0
     with Session(engine) as session:
-        existing_wanted = {w.ra_game_id for w in session.exec(select(WantedGame)).all()}
-        owned = {e.ra_game_id for e in session.exec(
+        wanted_ids = {w.ra_game_id for w in session.exec(select(WantedGame)).all()}
+        owned_ids = {e.ra_game_id for e in session.exec(
             select(LibraryEntry).where(LibraryEntry.ra_game_id != None)  # noqa: E711
         ).all() if e.ra_game_id}
-        for g in games:
-            gid = g["game_id"]
-            if not gid:
-                continue
-            if gid in existing_wanted:
-                skipped_existing += 1
-                continue
-            if gid in owned:
-                skipped_owned += 1
-                continue
-            system = canonical_system(g["console"], None) or g["console"]
-            session.add(WantedGame(game_title=clean_title(g["title"]), system=system, ra_game_id=gid))
-            existing_wanted.add(gid)
-            added += 1
-        session.commit()
+        prog = {p.game_id: p for p in session.exec(select(RAGameProgress)).all()}
+
+    rows = []
+    n_ach = n_owned = n_wanted = 0
+    for g in games:
+        gid = g["game_id"]
+        if not gid:
+            continue
+        p = prog.get(gid)
+        award = p.highest_award_kind if p else ""
+        num_hc = p.num_awarded_hardcore if p else 0
+        owned = gid in owned_ids
+        wanted = gid in wanted_ids
+        if g["achievements"] > 0:
+            n_ach += 1
+        if owned:
+            n_owned += 1
+        if wanted:
+            n_wanted += 1
+        # Carry the data needed to create the WantedGame in the checkbox value so the
+        # add step needs no second RA fetch; base64(JSON) dodges any title delimiter.
+        token = base64.b64encode(_json.dumps(
+            {"i": gid, "t": g["title"], "c": g["console"]}).encode()).decode()
+        rows.append({
+            "game_id": gid, "title": g["title"], "console": g["console"],
+            "achievements": g["achievements"], "points": g["points"],
+            "award": award, "bucket": hubs.progress_bucket(award, num_hc),
+            "owned": owned, "wanted": wanted, "token": token,
+        })
+
+    # Default-selected = not owned, not already wanted (the JS then applies the
+    # has-achievements default on top). Seed the count so it reads sensibly even before
+    # the init script runs.
+    n_default = sum(1 for r in rows if not r["owned"] and not r["wanted"])
+    return templates.TemplateResponse(
+        request, "partials/hub_preview.html",
+        {"hub_id": hub_id, "rows": rows, "total": len(rows),
+         "n_ach": n_ach, "n_owned": n_owned, "n_wanted": n_wanted, "n_default": n_default},
+    )
+
+
+@router.post("/import-hub/add", response_class=HTMLResponse)
+async def import_hub_add(
+    games: list[str] = Form(default=[]),
+    hub_id: int = Form(default=0),
+    session: Session = Depends(get_session),
+):
+    """Add the games the user kept selected in the hub preview. `games` is a list of the
+    preview's base64(JSON {i,t,c}) tokens (only checked checkboxes are posted). Re-checks
+    owned/already-wanted server-side. Covers are NOT auto-fetched (a hub can be hundreds
+    of games) — run the collection's Fetch-covers action."""
+    import base64
+    import json as _json
+    from app.services.title_utils import clean_title, canonical_system
+
+    if not games:
+        return HTMLResponse('<span class="text-gray-400 text-xs">No games selected.</span>')
+
+    existing_wanted = {w.ra_game_id for w in session.exec(select(WantedGame)).all()}
+    owned = {e.ra_game_id for e in session.exec(
+        select(LibraryEntry).where(LibraryEntry.ra_game_id != None)  # noqa: E711
+    ).all() if e.ra_game_id}
+
+    added = skipped_existing = skipped_owned = 0
+    for tok in games:
+        try:
+            g = _json.loads(base64.b64decode(tok))
+            gid = int(g["i"])
+        except Exception:
+            continue
+        if not gid:
+            continue
+        if gid in existing_wanted:
+            skipped_existing += 1
+            continue
+        if gid in owned:
+            skipped_owned += 1
+            continue
+        system = canonical_system(g.get("c", ""), None) or g.get("c", "")
+        session.add(WantedGame(game_title=clean_title(g.get("t", "")), system=system, ra_game_id=gid))
+        existing_wanted.add(gid)
+        added += 1
+    session.commit()
+
     applog.log_action("import_hub", {"hub_id": hub_id, "added": added,
                                      "skipped_existing": skipped_existing, "skipped_owned": skipped_owned})
     return HTMLResponse(
-        f'<span class="text-green-400 text-xs">✓ Added {added} of {len(games)} game(s) from the hub '
-        f'— {skipped_existing} already wanted, {skipped_owned} already owned.</span>'
-        '<a href="/wanted" class="text-blue-400 text-xs hover:underline ml-2">Reload ↗</a>'
+        f'<span class="text-green-400 text-xs">✓ Added {added} selected game(s) to Wanted'
+        + (f' — {skipped_owned} already owned' if skipped_owned else '')
+        + (f', {skipped_existing} already wanted' if skipped_existing else '')
+        + '.</span><a href="/wanted" class="text-blue-400 text-xs hover:underline ml-2">Reload ↗</a>'
     )
 
 

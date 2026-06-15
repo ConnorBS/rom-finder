@@ -32,13 +32,14 @@
     <!-- Import hub panel -->
     <div id="hub-panel" class="hidden mb-6 bg-gray-900 border border-gray-800 rounded-lg p-5">
         <h2 class="text-sm font-semibold text-gray-300 mb-1">Import an RA hub</h2>
-        <p class="text-gray-500 text-xs mb-3">Paste an RA hub URL or ID — every game in it is added to Wanted (already-owned and already-wanted games are skipped). Covers fetch lazily; run "Fetch covers" on the collection after.</p>
+        <p class="text-gray-500 text-xs mb-3">Paste an RA hub URL or ID to <strong>preview</strong> its games. Filter (has achievements / your progress) and deselect any you don't want, then add the rest to Wanted. Already-owned and already-wanted games are pre-excluded. Covers fetch lazily; run "Fetch covers" on the collection after.</p>
         <form hx-post="/wanted/import-hub" hx-target="#hub-feedback" hx-swap="innerHTML"
-              class="flex flex-col sm:flex-row sm:items-center gap-3">
-            <input type="text" name="hub_ref" required placeholder="retroachievements.org/game/… or hub ID"
+              hx-indicator="#hub-loading" class="flex flex-col sm:flex-row sm:items-center gap-3">
+            <input type="text" name="hub_ref" required placeholder="retroachievements.org/hub/… or hub ID"
                    class="flex-1 bg-gray-800 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 placeholder-gray-600">
-            <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">Import hub</button>
+            <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">Preview hub →</button>
         </form>
+        <div id="hub-loading" class="htmx-indicator mt-2 text-xs text-gray-500">Fetching hub games…</div>
         <div id="hub-feedback" class="mt-3 text-sm"></div>
     </div>
     {% endif %}
@@ -169,6 +170,56 @@ function toggleAddPanel() {
         document.getElementById('add-query').focus();
     }
 }
+
+// ── Hub import preview: client-side filter + per-game (de)select ──────────────
+// The preview partial (partials/hub_preview.html) is swapped into #hub-feedback and
+// calls these (defined here so they're always loaded). A row hidden by a filter is
+// also unchecked so it isn't submitted.
+function hubRowVisible(row) {
+    var fAch  = document.getElementById('hub-f-ach').value;
+    var fProg = document.getElementById('hub-f-prog').value;
+    var hideOwned  = document.getElementById('hub-f-hideowned').checked;
+    var hideWanted = document.getElementById('hub-f-hidewanted').checked;
+    var hasAch = row.dataset.ach === '1';
+    var bucket = row.dataset.bucket;
+    if (fAch === 'yes' && !hasAch) return false;
+    if (fAch === 'no'  &&  hasAch) return false;
+    var progOK = (fProg === 'all')
+        || (fProg === 'none'      && bucket === 'none')
+        || (fProg === 'some'      && bucket === 'some')
+        || (fProg === 'notbeaten' && (bucket === 'none' || bucket === 'some'))
+        || (fProg === 'beaten'    && (bucket === 'beaten' || bucket === 'mastered'))
+        || (fProg === 'mastered'  && bucket === 'mastered');
+    if (!progOK) return false;
+    if (hideOwned  && row.dataset.owned  === '1') return false;
+    if (hideWanted && row.dataset.wanted === '1') return false;
+    return true;
+}
+function applyHubFilters() {
+    document.querySelectorAll('#hub-preview-root .hub-row').forEach(function(row) {
+        var vis = hubRowVisible(row);
+        row.style.display = vis ? '' : 'none';
+        if (!vis) { var c = row.querySelector('.hub-check'); if (c) c.checked = false; }
+    });
+    updateHubCount();
+}
+function hubSelectVisible(checked) {
+    document.querySelectorAll('#hub-preview-root .hub-row').forEach(function(row) {
+        if (row.style.display === 'none') return;
+        var c = row.querySelector('.hub-check'); if (c) c.checked = checked;
+    });
+    updateHubCount();
+}
+function updateHubCount() {
+    var n = 0;
+    document.querySelectorAll('#hub-preview-root .hub-row').forEach(function(row) {
+        if (row.style.display === 'none') return;
+        var c = row.querySelector('.hub-check'); if (c && c.checked) n++;
+    });
+    var el = document.getElementById('hub-sel-count'); if (el) el.textContent = n;
+    var btn = document.getElementById('hub-add-btn'); if (btn) btn.disabled = (n === 0);
+}
+function hubInitPreview() { applyHubFilters(); }
 
 // ── Filter / sort state ──────────────────────────────────────────────────────
 var _wlStatus = '';

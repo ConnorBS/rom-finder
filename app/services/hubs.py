@@ -16,6 +16,27 @@ from app.services.ra_client_v2 import RAClientV2
 
 _MAX_PAGES = 30   # 30 * 100 = 3000 games — a flood guard for pathological hubs.
 
+# RA returns "beaten-hardcore"/"beaten-softcore" for the beaten tiers; mirror
+# services/mastery._BEATEN_KINDS so the hub-import progress filter agrees with the
+# collection's Beaten/Mastered badges.
+_BEATEN_KINDS = ("beaten", "beaten-hardcore", "beaten-softcore", "completed")
+
+
+def progress_bucket(award: str, num_awarded: int) -> str:
+    """Classify a game by the configured user's progress (from the LOCAL RA mirror) for
+    the hub-import filters — zero RA calls:
+      'mastered' — hardcore 100%
+      'beaten'   — beaten/completed but not mastered
+      'some'     — has hardcore unlocks but no award yet
+      'none'     — nothing earned
+    """
+    award = (award or "").lower()
+    if award == "mastered":
+        return "mastered"
+    if award in _BEATEN_KINDS:
+        return "beaten"
+    return "some" if num_awarded > 0 else "none"
+
 
 def parse_hub_ref(text: str) -> int | None:
     """Hub id from a pasted URL or bare number (`/hub/123`, `/game/123`, `123`)."""

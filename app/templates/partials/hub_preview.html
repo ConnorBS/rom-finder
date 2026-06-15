@@ -1,0 +1,92 @@
+{# Hub-import preview: filter + per-game deselect, then add the kept games to Wanted.
+   Swapped into #hub-feedback by the Import-hub form. Filter/select JS lives in wanted.html. #}
+<div id="hub-preview-root" class="border border-gray-800 rounded-lg bg-gray-950 p-4">
+
+    <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mb-3 text-xs text-gray-400">
+        <span class="text-gray-200 font-medium">{{ total }} game{{ 's' if total != 1 }}</span>
+        <span>· {{ n_ach }} with achievements</span>
+        {% if n_owned %}<span>· {{ n_owned }} already owned</span>{% endif %}
+        {% if n_wanted %}<span>· {{ n_wanted }} already wanted</span>{% endif %}
+    </div>
+
+    <!-- Filters (RetroAchievements-style) -->
+    <div class="flex flex-wrap items-center gap-3 mb-3 text-xs">
+        <label class="flex items-center gap-1 text-gray-400">Has achievements
+            <select id="hub-f-ach" onchange="applyHubFilters()"
+                    class="bg-gray-800 border border-gray-700 text-gray-200 rounded px-2 py-1">
+                <option value="all">Both</option>
+                <option value="yes" selected>Yes</option>
+                <option value="no">No</option>
+            </select>
+        </label>
+        <label class="flex items-center gap-1 text-gray-400">Your progress
+            <select id="hub-f-prog" onchange="applyHubFilters()"
+                    class="bg-gray-800 border border-gray-700 text-gray-200 rounded px-2 py-1">
+                <option value="all">All</option>
+                <option value="none">Not started</option>
+                <option value="some">In progress (no award)</option>
+                <option value="notbeaten">Not beaten</option>
+                <option value="beaten">Beaten or higher</option>
+                <option value="mastered">Mastered</option>
+            </select>
+        </label>
+        <label class="flex items-center gap-1 text-gray-400">
+            <input type="checkbox" id="hub-f-hideowned" checked onchange="applyHubFilters()"> Hide owned
+        </label>
+        <label class="flex items-center gap-1 text-gray-400">
+            <input type="checkbox" id="hub-f-hidewanted" checked onchange="applyHubFilters()"> Hide already-wanted
+        </label>
+        <span class="text-gray-700">|</span>
+        <button type="button" onclick="hubSelectVisible(true)"
+                class="text-blue-400 hover:underline">Select all shown</button>
+        <button type="button" onclick="hubSelectVisible(false)"
+                class="text-blue-400 hover:underline">Clear</button>
+    </div>
+
+    <form hx-post="/wanted/import-hub/add" hx-target="#hub-add-result" hx-swap="innerHTML">
+        <input type="hidden" name="hub_id" value="{{ hub_id }}">
+        <div class="max-h-96 overflow-y-auto border border-gray-800 rounded">
+            <table class="w-full text-sm">
+                <tbody>
+                {% for r in rows %}
+                    <tr class="hub-row border-b border-gray-800/40 hover:bg-gray-900/60"
+                        data-ach="{{ 1 if r.achievements > 0 else 0 }}"
+                        data-bucket="{{ r.bucket }}"
+                        data-owned="{{ 1 if r.owned else 0 }}"
+                        data-wanted="{{ 1 if r.wanted else 0 }}">
+                        <td class="px-2 py-1 align-middle w-6">
+                            <input type="checkbox" class="hub-check" name="games" value="{{ r.token }}"
+                                   {% if not r.owned and not r.wanted %}checked{% endif %}
+                                   onchange="updateHubCount()">
+                        </td>
+                        <td class="px-2 py-1 align-middle">
+                            <a href="https://retroachievements.org/game/{{ r.game_id }}" target="_blank"
+                               class="text-gray-200 hover:text-blue-400">{{ r.title }}</a>
+                            {% if r.owned %}<span class="ml-1 text-[10px] text-emerald-400 border border-emerald-800 rounded px-1">owned</span>{% endif %}
+                            {% if r.wanted %}<span class="ml-1 text-[10px] text-amber-400 border border-amber-800 rounded px-1">wanted</span>{% endif %}
+                        </td>
+                        <td class="px-2 py-1 align-middle text-gray-500 whitespace-nowrap">{{ r.console }}</td>
+                        <td class="px-2 py-1 align-middle text-right whitespace-nowrap {{ 'text-gray-300' if r.achievements > 0 else 'text-gray-600' }}">
+                            {{ r.achievements }}🏆
+                        </td>
+                        <td class="px-2 py-1 align-middle text-right whitespace-nowrap w-20">
+                            {% if r.bucket == 'mastered' %}<span class="text-yellow-400 text-xs">🏅 Mastered</span>
+                            {% elif r.bucket == 'beaten' %}<span class="text-orange-400 text-xs">🏆 Beaten</span>
+                            {% elif r.bucket == 'some' %}<span class="text-sky-400 text-xs">▸ Started</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="flex items-center gap-3 mt-3">
+            <button type="submit" id="hub-add-btn"
+                    class="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+                + Add <span id="hub-sel-count">{{ n_default }}</span> selected to Wanted
+            </button>
+            <div id="hub-add-result" class="text-sm"></div>
+        </div>
+    </form>
+</div>
+<script>hubInitPreview();</script>
