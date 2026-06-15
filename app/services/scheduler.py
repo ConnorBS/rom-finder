@@ -92,7 +92,8 @@ async def run_scan() -> dict:
     applog.info("scheduler", f"Scan: {added} new ROMs — hashing + covers + RA verify")
 
     # --- Step 3: hash each new entry ---
-    loop = asyncio.get_event_loop()
+    # Hash with no session held across the await, committing each result on its own —
+    # a batch-long write txn holds SQLite's write lock and 500s concurrent writes.
     batch_id = "scan-hash-batch"
     activity_store.start_batch(
         batch_id,
@@ -100,26 +101,26 @@ async def run_scan() -> dict:
         added, "rehash", entry_ids=new_ids,
     )
     hashed = 0
-    with Session(engine) as session:
-        for eid in new_ids:
+    for (title, system, fname, fpath, root_id), eid in zip(new_files, new_ids):
+        p = Path(fpath)
+        if not p.exists():
+            activity_store.increment(batch_id)
+            continue
+        try:
+            h, _ = await ra_hash_or_fallback(p, system)
+        except Exception as exc:
+            applog.warning("scheduler", f"Hash failed for {fname}: {exc}")
+            activity_store.increment(batch_id)
+            continue
+        with Session(engine) as session:
             entry = session.get(LibraryEntry, eid)
-            if not entry:
-                activity_store.increment(batch_id)
-                continue
-            p = Path(entry.file_path)
-            if not p.exists():
-                activity_store.increment(batch_id)
-                continue
-            try:
-                h, _ = await ra_hash_or_fallback(p, entry.system)
+            if entry:
                 entry.file_hash = h
                 entry.hashed_at = datetime.utcnow()
                 session.add(entry)
+                session.commit()
                 hashed += 1
-            except Exception as exc:
-                applog.warning("scheduler", f"Hash failed for {entry.file_name}: {exc}")
-            activity_store.increment(batch_id)
-        session.commit()
+        activity_store.increment(batch_id)
 
     # --- Step 4: fetch covers ---
     if not covers_readonly:
@@ -137,21 +138,29 @@ async def run_scan() -> dict:
         from app.services.ra_client import RAClient
         ra = RAClient(ra_username, ra_api_key)
         with Session(engine) as session:
+            verify_targets = []
             for eid in new_ids:
                 entry = session.get(LibraryEntry, eid)
-                if not entry or not entry.file_hash:
-                    continue
-                try:
-                    match = await ra.lookup_hash(entry.file_hash)
-                    if match:
-                        entry.ra_matched = True
-                        entry.hash_verified = True
-                        entry.ra_game_id = entry.ra_game_id or match.get("ID")
-                        session.add(entry)
-                        verified += 1
-                except Exception as exc:
-                    applog.warning("scheduler", f"RA verify failed for {entry.file_name}: {exc}")
-            session.commit()
+                if entry and entry.file_hash:
+                    verify_targets.append((entry.id, entry.file_hash))
+        # Look up with no session held across the await; commit each match on its own.
+        for eid, file_hash in verify_targets:
+            try:
+                match = await ra.lookup_hash(file_hash)
+            except Exception as exc:
+                applog.warning("scheduler", f"RA verify failed for entry {eid}: {exc}")
+                continue
+            if not match:
+                continue
+            with Session(engine) as session:
+                entry = session.get(LibraryEntry, eid)
+                if entry:
+                    entry.ra_matched = True
+                    entry.hash_verified = True
+                    entry.ra_game_id = entry.ra_game_id or match.get("ID")
+                    session.add(entry)
+                    session.commit()
+                    verified += 1
 
     if added or hashed or verified:
         from app.services.duplicates import recompute_duplicates
@@ -181,7 +190,7 @@ async def run_hash_check() -> dict:
     backfilled = 0
     cleared = 0
     skipped = 0
-    to_hash: list[int] = []
+    to_hash: list[tuple[int, str, str]] = []  # (id, file_path, system)
 
     with Session(engine) as session:
         for entry in session.exec(select(LibraryEntry)).all():
@@ -206,7 +215,7 @@ async def run_hash_check() -> dict:
                         session.add(entry)
                         cleared += 1
             else:
-                to_hash.append(entry.id)
+                to_hash.append((entry.id, entry.file_path, entry.system))
 
         session.commit()
 
@@ -222,34 +231,37 @@ async def run_hash_check() -> dict:
     activity_store.start_batch(
         batch_id,
         f"Hashing {len(to_hash)} ROM{'s' if len(to_hash) != 1 else ''}",
-        len(to_hash), "rehash", entry_ids=to_hash,
+        len(to_hash), "rehash", entry_ids=[eid for eid, _, _ in to_hash],
     )
 
-    loop = asyncio.get_event_loop()
+    # Hash with NO session held across the await, then commit each result in its own
+    # short transaction. Holding one session open for the whole batch kept SQLite's
+    # write lock for minutes, so any concurrent write (e.g. the extension's
+    # Add-to-Wanted insert) failed with "database is locked" → HTTP 500.
     hashed = 0
-    with Session(engine) as session:
-        for eid in to_hash:
+    for eid, fpath, system in to_hash:
+        p = Path(fpath)
+        if not p.exists():
+            activity_store.increment(batch_id)
+            skipped += 1
+            continue
+        try:
+            h, _ = await ra_hash_or_fallback(p, system)
+        except Exception as exc:
+            applog.warning("scheduler", f"Hash failed for {fpath}: {exc}")
+            activity_store.increment(batch_id)
+            continue
+        with Session(engine) as session:
             entry = session.get(LibraryEntry, eid)
-            if not entry:
-                activity_store.increment(batch_id)
-                continue
-            p = Path(entry.file_path)
-            if not p.exists():
-                activity_store.increment(batch_id)
-                skipped += 1
-                continue
-            try:
-                h, _ = await ra_hash_or_fallback(p, entry.system)
+            if entry:
                 entry.file_hash = h
                 entry.hashed_at = datetime.utcnow()
                 entry.hash_verified = False
                 entry.ra_matched = False
                 session.add(entry)
+                session.commit()
                 hashed += 1
-            except Exception as exc:
-                applog.warning("scheduler", f"Hash failed for {entry.file_name}: {exc}")
-            activity_store.increment(batch_id)
-        session.commit()
+        activity_store.increment(batch_id)
 
     _set_last_run("sched_hash_last_run")
     applog.info("scheduler", f"Hash check — {backfilled} backfilled, {cleared} cleared, {hashed} hashed, {skipped} skipped")

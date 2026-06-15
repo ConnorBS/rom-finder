@@ -1058,7 +1058,6 @@ async def refresh_library_cover(
 # ---------------------------------------------------------------------------
 
 async def _do_rehash(entry_ids: list[int]) -> None:
-    import asyncio
     from app.services.hasher import hash_rom
     from app.services.rahasher import ra_hash_or_fallback
     from app.services import activity as activity_store
@@ -1071,46 +1070,57 @@ async def _do_rehash(entry_ids: list[int]) -> None:
         len(entry_ids), "rehash", entry_ids=entry_ids,
     )
 
-    loop = asyncio.get_event_loop()
+    # Read each entry, hash with NO session held across the await, then commit the
+    # result on its own. Holding one session across the whole batch kept SQLite's
+    # write lock for minutes, so concurrent writes (e.g. extension Add-to-Wanted)
+    # failed with "database is locked" → HTTP 500.
     processed = 0
-    with Session(engine) as session:
-        for eid in entry_ids:
-            if activity_store.is_cancelled(batch_id):
-                break
+    for eid in entry_ids:
+        if activity_store.is_cancelled(batch_id):
+            break
+        with Session(engine) as session:
             entry = session.get(LibraryEntry, eid)
             if not entry:
                 activity_store.complete_entry(batch_id, eid)
                 continue
-            p = Path(entry.file_path)
-            if not p.exists():
-                activity_store.complete_entry(batch_id, eid)
-                continue
-            try:
-                old_hash = entry.file_hash
-                result, used_rahasher = await ra_hash_or_fallback(p, entry.system)
-                applog.log_action("rehash_entry", {
-                    "game": entry.game_title,
-                    "system": entry.system,
-                    "hasher": "rahasher" if used_rahasher else "python_md5",
-                    "old_hash": old_hash or "none",
-                    "new_hash": result,
-                    "hash_changed": old_hash != result,
-                })
+            fpath, system = entry.file_path, entry.system
+            game_title, old_hash = entry.game_title, entry.file_hash
+        p = Path(fpath)
+        if not p.exists():
+            activity_store.complete_entry(batch_id, eid)
+            continue
+        try:
+            result, used_rahasher = await ra_hash_or_fallback(p, system)
+        except Exception as exc:
+            applog.warning("hash", f"Rehash failed for {fpath}: {exc}")
+            activity_store.complete_entry(batch_id, eid)
+            continue
+        applog.log_action("rehash_entry", {
+            "game": game_title,
+            "system": system,
+            "hasher": "rahasher" if used_rahasher else "python_md5",
+            "old_hash": old_hash or "none",
+            "new_hash": result,
+            "hash_changed": old_hash != result,
+        })
+        try:
+            file_size = p.stat().st_size
+        except OSError:
+            file_size = None
+        with Session(engine) as session:
+            entry = session.get(LibraryEntry, eid)
+            if entry:
                 entry.file_hash = result
                 entry.hashed_at = datetime.utcnow()
                 entry.hash_verified = False
                 entry.ra_matched = False
                 entry.ra_checked_at = None   # hash changed → the old RA check is void; re-check it
-                try:
-                    entry.file_size = p.stat().st_size
-                except OSError:
-                    pass
+                if file_size is not None:
+                    entry.file_size = file_size
                 session.add(entry)
+                session.commit()
                 processed += 1
-            except Exception as exc:
-                applog.warning("hash", f"Rehash failed for {entry.file_name}: {exc}")
-            activity_store.complete_entry(batch_id, eid)
-        session.commit()
+        activity_store.complete_entry(batch_id, eid)
     activity_store.finish(batch_id)
     applog.log_action("bulk_rehash_done", {"count": processed, "cancelled": activity_store.is_cancelled(batch_id)})
     _refresh_duplicates()
