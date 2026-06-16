@@ -78,6 +78,7 @@ class GoalObjective(str, Enum):
 class GoalStatus(str, Enum):
     active = "active"
     completed = "completed"
+    failed = "failed"      # manually marked failed; hidden unless "show failed", red ✗ overlay
 
 
 class Goal(SQLModel, table=True):
@@ -97,9 +98,17 @@ class Goal(SQLModel, table=True):
     achievement_desc: str = ""       # achievement goals: the achievement's description (from the RA API)
     points: int = 0                  # achievement goals: the achievement's RA point value (event header sums these)
     event_name: str = Field(default="", index=True)   # "" = ungrouped
+    category: str = ""               # sub-category within the event ("" = uncategorized); matches GoalCategory.name (migration 0026)
     deadline: Optional[datetime] = None   # midnight UTC of target day; None = no deadline
     status: str = GoalStatus.active
     auto: bool = False               # True once the RA evaluator (not the user) flipped it done
+    # Custom card art (migration 0026): an uploaded image OVERRIDES the cover/badge; else
+    # display_text (e.g. "+100 XP") renders large with `icon` (a tintable glyph) in
+    # `icon_color` centered below. Priority: custom_image > display_text+icon > cover > letter.
+    custom_image: str = ""           # relative path under static/, e.g. "covers/goal_42.png"
+    display_text: str = ""           # text shown instead of an image
+    icon: str = ""                   # one tintable glyph from GOAL_ICONS
+    icon_color: str = ""             # hex colour applied to the glyph (e.g. "#fbbf24")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     completed_at: Optional[datetime] = None
@@ -123,6 +132,21 @@ class GoalEvent(SQLModel, table=True):
     deadline: Optional[datetime] = None    # default deadline stamped on newly-synced achievement goals
     tiers_json: str = ""                   # JSON [{title,kind,points_required,badge_url}] award tiers (RA V2)
     last_synced_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class GoalCategory(SQLModel, table=True):
+    """A sub-category WITHIN an event — a titled, dated divider that goals are assigned to
+    (Goal.category == GoalCategory.name, scoped by event_name). Categories and uncategorized
+    games are ordered within the event by closest due date. New table → created by
+    create_all at startup; no migration needed."""
+    __tablename__ = "goal_categories"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    event_name: str = Field(index=True)    # the parent event's name (matches Goal.event_name)
+    name: str                              # the sub-category title (matches Goal.category)
+    deadline: Optional[datetime] = None    # the sub-category's own target date; None = no deadline
+    notes: str = ""                        # optional free text (light markdown) shown below the header; "" = no notes element
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 

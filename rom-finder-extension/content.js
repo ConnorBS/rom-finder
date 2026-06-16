@@ -311,6 +311,14 @@
 
   const addStatus = el('div', '', { fontSize: '11px', minHeight: '16px', marginBottom: '10px', color: '#94a3b8' });
 
+  // "Hunt immediately" toggle — when on, Add to Wanted also kicks off an auto-hunt.
+  const huntWrap = document.createElement('label');
+  applyStyles(huntWrap, { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#94a3b8', margin: '0 0 8px', cursor: 'pointer', userSelect: 'none' });
+  const huntChk = document.createElement('input'); huntChk.type = 'checkbox';
+  applyStyles(huntChk, { accentColor: '#2563eb', cursor: 'pointer' });
+  huntWrap.appendChild(huntChk);
+  huntWrap.appendChild(el('span', 'Hunt immediately after adding', {}));
+
   // Set Goal — its OWN floating button (🎯), stacked ABOVE the ROM Finder button, for a
   // GAME-level master/beat goal. Game pages only: on an /achievement/ page achievement.js
   // owns the Set Goal button (for the achievement), so content.js doesn't add a second one.
@@ -353,6 +361,12 @@
     applyStyles(gEvent, inStyle);
     const gEventList = document.createElement('datalist'); gEventList.id = 'rf-game-events';
     gBody.appendChild(gEvent); gBody.appendChild(gEventList);
+
+    field('Sub-category (optional)');
+    const gCat = document.createElement('input');
+    gCat.type = 'text'; gCat.placeholder = 'e.g. Week 1'; gCat.setAttribute('autocomplete', 'off');
+    applyStyles(gCat, inStyle);
+    gBody.appendChild(gCat);
 
     field('Deadline (optional)');
     const gDate = document.createElement('input'); gDate.type = 'date';
@@ -405,7 +419,8 @@
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             ra_game_id: gameId, game_title: effectiveTitle(), system: systemName, system_id: systemId,
-            objective: gObj.value, event_name: gEvent.value.trim(), deadline: gDate.value,
+            objective: gObj.value, event_name: gEvent.value.trim(), category: gCat.value.trim(),
+            deadline: gDate.value,
           }),
         });
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -497,6 +512,7 @@
   body.appendChild(gameInfoBlock);
   body.appendChild(subsetNote);
   body.appendChild(addBtn);
+  body.appendChild(huntWrap);
   body.appendChild(addStatus);
   body.appendChild(divider);
   body.appendChild(searchLabel);
@@ -611,21 +627,23 @@
           game_title: effectiveTitle(),
           system: systemName,
           system_id: systemId,
+          hunt: huntChk.checked,
         }),
       });
 
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json();
 
+      const huntMsg = data.hunting ? ' Hunting now — watch the Downloads page.' : '';
       if (data.status === 'exists') {
         addBtn.textContent = '✓ Already in Wanted';
         addBtn.style.background = '#1e3a1e';
-        addStatus.textContent = 'Already tracked in your Wanted list.';
+        addStatus.textContent = 'Already tracked in your Wanted list.' + huntMsg;
         addStatus.style.color = '#4ade80';
       } else {
-        addBtn.textContent = '✓ Added to Wanted';
+        addBtn.textContent = data.hunting ? '✓ Added — hunting' : '✓ Added to Wanted';
         addBtn.style.background = '#14532d';
-        addStatus.textContent = `Added "${data.game_title}" to your Wanted list.`;
+        addStatus.textContent = `Added "${data.game_title}" to your Wanted list.` + huntMsg;
         addStatus.style.color = '#4ade80';
       }
     } catch (err) {

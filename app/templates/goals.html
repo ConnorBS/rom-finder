@@ -45,10 +45,15 @@
             <input type="checkbox" id="goals-show-past" onchange="goalsApplyFilters()" {{ 'checked' if show_past_on }}
                    class="rounded border-gray-600 bg-gray-800"> Show past-deadline
         </label>
+        <label class="flex items-center gap-1.5 text-gray-400 text-xs cursor-pointer">
+            <input type="checkbox" id="goals-show-failed" onchange="goalsApplyFilters()" {{ 'checked' if show_failed_on }}
+                   class="rounded border-gray-600 bg-gray-800"> Show failed{% if hidden_failed %} <span class="text-gray-600">({{ hidden_failed }})</span>{% endif %}
+        </label>
     </div>
     <div id="goal-feedback-top" class="text-sm mb-3"></div>
 
     <datalist id="event-names">{% for e in event_names %}<option value="{{ e }}">{% endfor %}</datalist>
+    <datalist id="category-names">{% for c in category_names %}<option value="{{ c }}">{% endfor %}</datalist>
 
     <!-- Add Goal panel -->
     <div id="goal-panel" class="hidden mb-6 bg-gray-900 border border-gray-800 rounded-lg p-5">
@@ -253,6 +258,10 @@
                     <div class="flex-1 border-t border-gray-800 min-w-[2rem]"></div>
                     {% if group.name %}
                     <button type="button"
+                            onclick="document.getElementById('cat-add-{{ loop.index }}').classList.toggle('hidden')"
+                            class="text-gray-600 hover:text-emerald-300 text-xs transition-colors flex-shrink-0"
+                            title="Add a sub-category to this event">+ Category</button>
+                    <button type="button"
                             onclick="document.getElementById('event-edit-{{ loop.index }}').classList.toggle('hidden')"
                             class="text-gray-600 hover:text-blue-300 text-xs transition-colors flex-shrink-0"
                             title="Edit this event's link & deadline">✎ Edit</button>
@@ -279,6 +288,27 @@
                     </div>
                     <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1 rounded transition-colors">Save</button>
                 </form>
+                <!-- Add sub-category -->
+                <form id="cat-add-{{ loop.index }}" class="hidden mt-2 flex flex-wrap items-end gap-2 bg-gray-900/60 border border-gray-800 rounded-lg p-2"
+                      hx-post="/goals/category" hx-swap="none">
+                    <input type="hidden" name="event_name" value="{{ group.name }}">
+                    <div class="flex-1 min-w-[10rem]">
+                        <label class="block text-gray-500 text-xs mb-0.5">Sub-category title</label>
+                        <input type="text" name="name" required placeholder="e.g. Week 1"
+                               class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-gray-500 text-xs mb-0.5">Deadline</label>
+                        <input type="date" name="deadline"
+                               class="bg-gray-800 border border-gray-700 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500">
+                    </div>
+                    <div class="flex-1 min-w-[12rem]">
+                        <label class="block text-gray-500 text-xs mb-0.5">Notes (optional, **markdown**)</label>
+                        <textarea name="notes" rows="1" placeholder="Shown below the category…"
+                                  class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500"></textarea>
+                    </div>
+                    <button type="submit" class="bg-emerald-700 hover:bg-emerald-600 text-white text-xs px-3 py-1 rounded transition-colors">Add</button>
+                </form>
                 {% endif %}
                 {% if group.total %}
                 <div class="w-full bg-gray-800 rounded-full h-1 overflow-hidden mt-1.5">
@@ -304,16 +334,82 @@
                 {% endif %}
             </div>
 
-            <div class="event-grid">
-            {% if group.cards %}
-            <!-- All event cards in one flowing grid: achievements first, full games last -->
-            <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-                {% for card in group.cards %}
-                {% with goal=card.goal, progress=card.progress, overdue=card.overdue, days_left=card.days_left %}
-                {% include "partials/goal_card.html" %}
-                {% endwith %}
+            {% set ev_idx = loop.index %}
+            <div class="event-grid space-y-4">
+            {% if group.sections %}
+                {% for sec in group.sections %}
+                {% if sec.is_uncat %}
+                    {% if group.has_categories and sec.cards %}
+                    <div class="text-gray-600 text-xs uppercase tracking-wide">Ungrouped</div>
+                    {% endif %}
+                    {% if sec.cards %}
+                    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+                        {% for card in sec.cards %}
+                        {% with goal=card.goal, progress=card.progress, overdue=card.overdue, days_left=card.days_left %}{% include "partials/goal_card.html" %}{% endwith %}
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                {% else %}
+                    <div class="goal-cat" data-cat-key="{{ group.name }}::{{ sec.key }}">
+                        <!-- Sub-category header (click the name or chevron to collapse) -->
+                        <div class="flex items-center flex-wrap gap-x-2 gap-y-1 mb-1.5">
+                            <button type="button" onclick="toggleCatGrid(this)" class="cat-collapse-btn text-gray-500 hover:text-gray-200 transition-colors flex-shrink-0 leading-none"><span class="chev text-xs">▾</span></button>
+                            <button type="button" onclick="toggleCatGrid(this)" class="text-sm font-medium text-emerald-200/90 hover:text-white transition-colors">{{ sec.title }}</button>
+                            {% if sec.deadline %}
+                            {% set cat_done = sec.total and sec.done >= sec.total %}
+                            {% set cat_overdue = sec.deadline < now and not cat_done %}
+                            <span class="text-xs {% if cat_done %}text-green-400{% elif cat_overdue %}text-red-400{% else %}text-amber-400{% endif %}" title="Sub-category deadline">📅 {{ sec.deadline.strftime('%b %d, %Y') }}{% if cat_overdue %} · overdue{% endif %}</span>
+                            {% endif %}
+                            <span class="text-gray-600 text-xs">{{ sec.done }} of {{ sec.total }}</span>
+                            <div class="flex-1 border-t border-gray-800/70 min-w-[1rem]"></div>
+                            <button type="button" onclick="document.getElementById('cat-edit-{{ ev_idx }}-{{ loop.index }}').classList.toggle('hidden')"
+                                    class="text-gray-600 hover:text-blue-300 text-xs transition-colors flex-shrink-0" title="Edit sub-category (title, date, notes)">✎</button>
+                            <button type="button" hx-post="/goals/category/delete"
+                                    hx-vals='{"event_name": {{ group.name | tojson }}, "name": {{ sec.title | tojson }}}'
+                                    hx-confirm="Delete sub-category “{{ sec.title }}”? Its goals move back to ungrouped (they aren't deleted)."
+                                    class="text-gray-600 hover:text-red-400 text-xs transition-colors flex-shrink-0" title="Delete sub-category">🗑</button>
+                        </div>
+                        {% if sec.notes_html %}
+                        <div class="text-gray-400 text-xs mb-2 pl-5 leading-snug cursor-pointer hover:text-gray-300"
+                             onclick="document.getElementById('cat-edit-{{ ev_idx }}-{{ loop.index }}').classList.toggle('hidden')"
+                             title="Click to edit">{{ sec.notes_html | safe }}</div>
+                        {% endif %}
+                        <!-- Sub-category edit form (toggle) -->
+                        <form id="cat-edit-{{ ev_idx }}-{{ loop.index }}" class="hidden mb-2 ml-5 flex flex-wrap items-end gap-2 bg-gray-900/60 border border-gray-800 rounded-lg p-2"
+                              hx-post="/goals/category/edit" hx-swap="none">
+                            <input type="hidden" name="event_name" value="{{ group.name }}">
+                            <input type="hidden" name="old_name" value="{{ sec.title }}">
+                            <div>
+                                <label class="block text-gray-500 text-xs mb-0.5">Title</label>
+                                <input type="text" name="name" value="{{ sec.title }}" required
+                                       class="bg-gray-800 border border-gray-700 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500 w-32">
+                            </div>
+                            <div>
+                                <label class="block text-gray-500 text-xs mb-0.5">Deadline</label>
+                                <input type="date" name="deadline" value="{{ sec.category.deadline.strftime('%Y-%m-%d') if sec.category and sec.category.deadline else '' }}"
+                                       class="bg-gray-800 border border-gray-700 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500">
+                            </div>
+                            <div class="flex-1 min-w-[14rem]">
+                                <label class="block text-gray-500 text-xs mb-0.5">Notes (markdown: **bold** *italic* [link](url))</label>
+                                <textarea name="notes" rows="2"
+                                          class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500">{{ sec.category.notes if sec.category else '' }}</textarea>
+                            </div>
+                            <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1 rounded transition-colors">Save</button>
+                        </form>
+                        <div class="cat-grid">
+                            {% if sec.cards %}
+                            <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+                                {% for card in sec.cards %}
+                                {% with goal=card.goal, progress=card.progress, overdue=card.overdue, days_left=card.days_left %}{% include "partials/goal_card.html" %}{% endwith %}
+                                {% endfor %}
+                            </div>
+                            {% else %}
+                            <p class="text-gray-600 text-xs pl-5">No goals in this sub-category yet.</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                {% endif %}
                 {% endfor %}
-            </div>
             {% else %}
             <p class="text-gray-600 text-xs">No goals under this event yet.</p>
             {% endif %}
@@ -367,8 +463,36 @@ function goalsApplyFilters() {
     u.searchParams.set('sort', document.getElementById('goals-sort').value);
     u.searchParams.set('show_completed', document.getElementById('goals-show-completed').checked ? '1' : '0');
     u.searchParams.set('show_past', document.getElementById('goals-show-past').checked ? '1' : '0');
+    u.searchParams.set('show_failed', document.getElementById('goals-show-failed').checked ? '1' : '0');
     window.location = u.pathname + '?' + u.searchParams.toString();
 }
+
+// --- Collapsible sub-categories (click the name or chevron; state persisted) ---
+function rfCatKey(key) { return 'goalsCatCollapsed:' + key; }
+function _setCatGrid(cat, collapsed) {
+    var grid = cat.querySelector('.cat-grid');
+    var chev = cat.querySelector('.cat-collapse-btn .chev');
+    if (grid) grid.classList.toggle('hidden', collapsed);
+    if (chev) chev.textContent = collapsed ? '▸' : '▾';
+}
+function toggleCatGrid(btn) {
+    var cat = btn.closest('.goal-cat');
+    if (!cat) return;
+    var grid = cat.querySelector('.cat-grid');
+    var collapsed = !(grid && grid.classList.contains('hidden'));
+    _setCatGrid(cat, collapsed);
+    try { localStorage.setItem(rfCatKey(cat.getAttribute('data-cat-key')), collapsed ? '1' : '0'); } catch (e) {}
+}
+function applyGoalsCatCollapsed() {
+    document.querySelectorAll('#goals-groups .goal-cat[data-cat-key]').forEach(function (cat) {
+        var v = null;
+        try { v = localStorage.getItem(rfCatKey(cat.getAttribute('data-cat-key'))); } catch (e) {}
+        _setCatGrid(cat, v === '1');
+    });
+}
+document.addEventListener('DOMContentLoaded', applyGoalsCatCollapsed);
+document.addEventListener('live:updated', applyGoalsCatCollapsed);
+applyGoalsCatCollapsed();
 function toggleGoalPanel() {
     var p = document.getElementById('goal-panel');
     p.classList.toggle('hidden');

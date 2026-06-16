@@ -12,7 +12,7 @@ from sqlmodel import Session, select
 from datetime import datetime
 
 from app.db.database import engine
-from app.db.models import Goal, GoalEvent, GoalObjective, GoalStatus, RAAchievement, RAGameProgress
+from app.db.models import Goal, GoalEvent, GoalCategory, GoalObjective, GoalStatus, RAAchievement, RAGameProgress
 from app.services.goals import evaluate_goals, award_satisfies
 
 
@@ -198,11 +198,12 @@ def test_event_cards_sorted_achievements_first(fresh_engine):
                     objective=GoalObjective.custom, custom_text="finish", event_name="E")
     all_goals = [g_master, g_ach, g_custom]
     cards = [_card_ctx(g, {}, now) for g in all_goals]    # input order: master, ach, custom
-    grp = _build_group("E", cards, all_goals, None)
-    objs = [c["goal"].objective for c in grp["cards"]]
+    grp = _build_group("E", cards, all_goals, None, [])   # no sub-categories
+    # All uncategorized → one section; achievements first within it.
+    sec = [s for s in grp["sections"] if s["is_uncat"]][0]
+    objs = [c["goal"].objective for c in sec["cards"]]
     assert objs[0] == GoalObjective.achievement           # achievements at the top
     assert GoalObjective.achievement not in objs[1:]      # full games (master/custom) at the bottom
-    assert "subgroups" not in grp                         # no per-game column subdivision
 
 
 def test_looks_like_image():
@@ -301,11 +302,12 @@ def test_event_tally_stable_when_hiding_completed(fresh_engine):
                   achievement_id=2, points=7, event_name="E", status=GoalStatus.active)
     all_goals = [done, active]
     visible_cards = [_card_ctx(active, {}, now)]   # show_completed OFF → completed card filtered out
-    grp = _build_group("E", visible_cards, all_goals, None)
+    grp = _build_group("E", visible_cards, all_goals, None, [])
     assert grp["total"] == 2 and grp["done"] == 1            # tally from ALL goals, not visible
     assert grp["ach_total"] == 2 and grp["ach_done"] == 1
     assert grp["points_total"] == 12 and grp["points_done"] == 5
-    assert len(grp["cards"]) == 1                            # display still filtered
+    visible_total = sum(len(s["cards"]) for s in grp["sections"])
+    assert visible_total == 1                                # display still filtered
 
 
 # --- extension API ---------------------------------------------------------
@@ -874,3 +876,108 @@ def test_completed_achievement_goal_uses_unlocked_badge(client):
     html = client.get("/goals").text
     assert "Badge/193454.png" in html
     assert "Badge/193454_lock.png" not in html   # unlocked image when done
+
+
+# --- sub-categories, failed status, custom display (new) -------------------
+
+def test_render_notes_safe_markdown():
+    from app.routers.goals import _render_notes
+    assert _render_notes("") == ""
+    out = _render_notes("**b** *i* `c` <script>")
+    assert "<strong>b</strong>" in out and "<em>i</em>" in out
+    assert "&lt;script&gt;" in out                       # HTML escaped (XSS-safe)
+    link = _render_notes("[g](https://x.com)")
+    assert 'href="https://x.com"' in link and ">g</a>" in link
+
+
+def test_fail_hides_by_default_and_show_failed_reveals(client):
+    with Session(engine) as s:
+        g = Goal(game_title="Doomed", system="NES", objective=GoalObjective.custom,
+                 custom_text="do it", event_name="E")
+        s.add(g); s.commit(); s.refresh(g); gid = g.id
+    r = client.post(f"/goals/{gid}/fail")
+    assert r.status_code == 200
+    with Session(engine) as s:
+        assert s.get(Goal, gid).status == GoalStatus.failed
+    assert "✗ Failed" not in client.get("/goals").text              # hidden by default
+    assert "✗ Failed" in client.get("/goals?show_failed=1").text    # revealed
+    # reopen un-fails
+    client.post(f"/goals/{gid}/reopen")
+    with Session(engine) as s:
+        assert s.get(Goal, gid).status == GoalStatus.active
+
+
+def test_failed_goal_off_event_tally(fresh_engine):
+    from app.routers.goals import _build_group, _card_ctx
+    now = datetime.utcnow()
+    done = Goal(game_title="A", system="NES", objective=GoalObjective.custom, custom_text="x",
+                event_name="E", status=GoalStatus.completed)
+    failed = Goal(game_title="B", system="NES", objective=GoalObjective.custom, custom_text="x",
+                  event_name="E", status=GoalStatus.failed)
+    active = Goal(game_title="C", system="NES", objective=GoalObjective.custom, custom_text="x",
+                  event_name="E", status=GoalStatus.active)
+    all_goals = [done, failed, active]
+    cards = [_card_ctx(active, {}, now)]   # failed + completed hidden
+    grp = _build_group("E", cards, all_goals, None, [])
+    assert grp["total"] == 2 and grp["done"] == 1     # failed excluded from the tally
+    assert grp["failed_count"] == 1
+
+
+def test_category_crud_and_notes_rendered(client):
+    with Session(engine) as s:
+        g = Goal(game_title="G", system="NES", objective=GoalObjective.custom, custom_text="x",
+                 event_name="Ev", category="Week 1")
+        s.add(g); s.commit()
+    r = client.post("/goals/category", data={"event_name": "Ev", "name": "Week 1",
+                                             "deadline": "2030-01-01", "notes": "**important**"})
+    assert r.status_code == 200 and r.headers.get("HX-Refresh") == "true"
+    page = client.get("/goals").text
+    assert "Week 1" in page and "<strong>important</strong>" in page
+    assert "★" in page          # the tinted-icon picker renders on the page (not just on re-render)
+    # rename re-points the goal
+    client.post("/goals/category/edit", data={"event_name": "Ev", "old_name": "Week 1",
+                                              "name": "Week One", "deadline": "", "notes": ""})
+    with Session(engine) as s:
+        assert s.exec(select(Goal).where(Goal.category == "Week One")).first() is not None
+        assert s.exec(select(GoalCategory).where(GoalCategory.name == "Week One")).first() is not None
+    # delete reverts the goal to uncategorized (not deleted)
+    client.post("/goals/category/delete", data={"event_name": "Ev", "name": "Week One"})
+    with Session(engine) as s:
+        assert s.exec(select(GoalCategory)).first() is None
+        g = s.exec(select(Goal).where(Goal.game_title == "G")).first()
+        assert g is not None and g.category == ""
+
+
+def test_sections_interleave_by_due_date(fresh_engine):
+    from app.routers.goals import _build_group, _card_ctx
+    now = datetime.utcnow()
+    far = datetime(2030, 1, 1)
+    near = datetime(2026, 1, 1)
+    g_cat = Goal(game_title="A", system="NES", objective=GoalObjective.custom, custom_text="c",
+                 event_name="E", category="Late")
+    g_uncat = Goal(game_title="B", system="NES", objective=GoalObjective.custom, custom_text="c",
+                   event_name="E", deadline=near)
+    all_goals = [g_cat, g_uncat]
+    cards = [_card_ctx(g, {}, now) for g in all_goals]
+    cat = GoalCategory(event_name="E", name="Late", deadline=far)
+    grp = _build_group("E", cards, all_goals, None, [cat])
+    keys = [s["key"] for s in grp["sections"]]
+    assert keys.index("") < keys.index("Late")    # near-due uncategorized before the far-dated category
+
+
+def test_goal_edit_sets_custom_display(client):
+    with Session(engine) as s:
+        g = Goal(game_title="G", system="NES", objective=GoalObjective.custom, custom_text="x",
+                 event_name="Ev")
+        s.add(g); s.commit(); s.refresh(g); gid = g.id
+    client.post(f"/goals/{gid}/edit", data={"event_name": "Ev", "category": "Cat", "deadline": "",
+                                            "display_text": "+100 XP", "icon": "★", "icon_color": "#ff0000"})
+    with Session(engine) as s:
+        g = s.get(Goal, gid)
+        assert g.category == "Cat" and g.display_text == "+100 XP"
+        assert g.icon == "★" and g.icon_color == "#ff0000"
+    # an icon not in the curated set is rejected
+    client.post(f"/goals/{gid}/edit", data={"event_name": "Ev", "category": "", "deadline": "",
+                                            "display_text": "", "icon": "💀", "icon_color": ""})
+    with Session(engine) as s:
+        assert s.get(Goal, gid).icon == ""

@@ -86,11 +86,21 @@ objective        — GoalObjective: master | beaten | achievement | custom
 custom_text      — custom: freeform label ("finish level 5"); achievement: the achievement's title
 achievement_desc — achievement goals: the achievement's description (migration 0020), from the RA API
 event_name       — free-text grouping label ("" = ungrouped); indexed
+category         — sub-category WITHIN the event ("" = uncategorized); matches GoalCategory.name (migration 0026)
 deadline         — midnight-UTC datetime of the target day; None = no deadline
-status           — GoalStatus: active | completed
+status           — GoalStatus: active | completed | failed
 auto             — True once the RA evaluator (not the user) flipped it done
+custom_image     — uploaded card image (relative static path, "covers/goal_{id}.{ext}"); OVERRIDES cover/badge (migration 0026)
+display_text     — text shown instead of an image (e.g. "+100 XP") (migration 0026)
+icon             — one tintable glyph from goals.GOAL_ICONS, centered below display_text (migration 0026)
+icon_color       — hex colour applied to `icon` (migration 0026)
 created_at, updated_at, completed_at
 ```
+Card-art priority: `custom_image` > `display_text`+`icon` > RA cover/badge > letter. **`failed`**
+is set manually (no auto-fail; `evaluate_goals` only touches `active` goals); failed goals are
+hidden unless "Show failed" and render with a red ✗ overlay, and are EXCLUDED from an event's
+done/total tally (abandoned). Migration `0026_goal_custom_display` ALTER-adds `category`/`custom_image`/
+`display_text`/`icon`/`icon_color`; `status` is already VARCHAR so "failed" needs no migration.
 **New table → created by `create_all` at startup; NO migration** (migrations are only for
 ALTER/index on existing tables). **All auto-tracked objectives are HARDCORE-only** — `master`
 needs `highest_award_kind == "mastered"`, `beaten` needs `in ("beaten","mastered")`, and
@@ -121,6 +131,21 @@ Two kinds: **custom** (user-made, `auto_sync=False`, just a name + link) and **R
 `API_GetGameExtended` call; the nightly scheduler `eventsync` task re-syncs to grow AotW/random-
 roll events). New table → `create_all` (no migration). **Table is `goal_events` (plural)** so its
 auto-named index `ix_goal_events_name` doesn't collide with `goal.event_name`'s `ix_goal_event_name`.
+
+### `GoalCategory` (table: `goal_categories`)
+A **sub-category within an event** — a titled, dated divider that goals are assigned to
+(`Goal.category == GoalCategory.name`, scoped by `event_name`, by string not FK).
+```
+id, event_name (indexed)  — the parent event's name (matches Goal.event_name)
+name                      — the sub-category title (matches Goal.category)
+deadline                  — the sub-category's own target date; None = none
+notes                     — optional free text (light safe markdown via goals._render_notes), shown
+                            below the category header; "" = no notes element renders
+created_at, updated_at
+```
+New table → `create_all` (no migration). On the `/goals` page, categories AND the uncategorized
+games interleave **by closest due date**; each category is collapsible (click the name or chevron).
+Renaming a category re-points its goals; deleting it reverts its goals to uncategorized (not deleted).
 
 ### `Download` (table: `download`)
 Active/completed download queue entries.

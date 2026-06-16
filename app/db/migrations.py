@@ -205,6 +205,18 @@ def _m_0024_library_chd_codec(s: Session) -> None:
     _add_column(s, "library", "chd_codec", "VARCHAR", "''")
 
 
+def _m_0026_goal_custom_display(s: Session) -> None:
+    # Goal sub-category + custom card art (services/routers goals). The `goal` table was
+    # created by create_all, so these column-adds are needed for already-deployed DBs.
+    # GoalStatus gains "failed" but `status` is already a VARCHAR — no column change.
+    # goal_categories is a new table (create_all), so no migration for it.
+    _add_column(s, "goal", "category", "VARCHAR", "''")
+    _add_column(s, "goal", "custom_image", "VARCHAR", "''")
+    _add_column(s, "goal", "display_text", "VARCHAR", "''")
+    _add_column(s, "goal", "icon", "VARCHAR", "''")
+    _add_column(s, "goal", "icon_color", "VARCHAR", "''")
+
+
 def _m_0025_library_root_id(s: Session) -> None:
     # Which registered LibraryRoot (directory) a ROM lives in. NULL until backfilled by
     # services/library_roots.ensure_primary_and_backfill (lifespan), which longest-prefix
@@ -241,6 +253,7 @@ MIGRATIONS: list[tuple[str, "callable"]] = [
     ("0023_library_time_to_beat", _m_0023_library_time_to_beat),
     ("0024_library_chd_codec", _m_0024_library_chd_codec),
     ("0025_library_root_id", _m_0025_library_root_id),
+    ("0026_goal_custom_display", _m_0026_goal_custom_display),
 ]
 
 

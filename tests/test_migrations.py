@@ -75,7 +75,10 @@ def test_old_goal_table_gets_points_backfilled(fresh_engine):
             "created_at TIMESTAMP, updated_at TIMESTAMP, completed_at TIMESTAMP)"
         ))
         s.exec(text("INSERT INTO goal (game_title) VALUES ('Old Goal')"))
-        s.exec(text("DELETE FROM schema_migrations WHERE version = '0021_goal_points'"))
+        # This minimal table also predates the later goal-column migrations, so un-register
+        # them too and let run_migrations() ALTER-add every missing column.
+        s.exec(text("DELETE FROM schema_migrations WHERE version IN "
+                    "('0021_goal_points', '0026_goal_custom_display')"))
         s.commit()
 
     run_migrations()

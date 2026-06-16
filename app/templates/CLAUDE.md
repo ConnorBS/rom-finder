@@ -123,6 +123,19 @@ Titles link to the **source**: the achievement title → `retroachievements.org/
 and the game name (the "from {game}" line on achievement cards, or the title on game cards) →
 `retroachievements.org/game/{ra_game_id}` (plain text when the id is absent).
 
+**Sub-categories, failed & custom art:** each event group renders `group.sections` (categories +
+an uncategorized section, ordered by due date). A category sub-header is **collapsible** —
+`toggleCatGrid()` toggles its `.cat-grid` and persists `goalsCatCollapsed:<event>::<cat>` in
+`localStorage` (re-applied on load + `live:updated`), clicking the **name OR chevron**; its `notes_html`
+(safe markdown) renders below and is click-to-edit (toggles the inline `cat-edit` form → `POST /goals/category/edit`).
+The toolbar has a **Show failed** toggle (`?show_failed`). On the card (`goal_card.html`): a **failed**
+goal gets a red ✗ SVG overlay (`bg-black/30`) + red border; **card art priority** is `custom_image`
+(`/static/…`) > `display_text`+`icon` (tinted via inline `style="color:…"`, centered) > cover/badge >
+letter. The edit form gains a `category` (datalist `#category-names`), a `display_text` input + a
+`<input type=color>` + a `peer-checked` radio **icon picker** (from `goal_icons`), and a SEPARATE
+`hx-encoding="multipart/form-data"` image-upload form (+ "Remove uploaded image"). Single-card
+re-renders (`_render_card`) carry `goal_icons` via `_card_ctx`; the datalists live on the page.
+
 ## Cover Refresh Button
 
 Per-card "↻" hover button on collection and wanted cards.

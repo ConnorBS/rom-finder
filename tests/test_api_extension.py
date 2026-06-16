@@ -65,3 +65,41 @@ def test_add_wanted_passes_title_not_credentials_to_cover(client, monkeypatch):
     assert calls[0]["system"] == "GameCube"  # resolved server-side from system_id=16
     assert "MyRAUser" not in calls[0].values()
     assert "SECRETKEY" not in calls[0].values()
+
+
+def test_add_wanted_hunt_flag_starts_hunt(client, monkeypatch):
+    import app.services.hunter as hunter_mod
+    calls = []
+    monkeypatch.setattr(hunter_mod, "auto_hunt", lambda game_id: calls.append(game_id))
+    r = client.post("/api/wanted", json={
+        "ra_game_id": 55555, "game_title": "Hunt Me", "system": "NES",
+        "system_id": 7, "hunt": True,
+    })
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "added" and body["hunting"] is True
+    assert calls, "auto_hunt was not started for the hunt flag"
+
+
+def test_add_wanted_no_hunt_by_default(client, monkeypatch):
+    import app.services.hunter as hunter_mod
+    calls = []
+    monkeypatch.setattr(hunter_mod, "auto_hunt", lambda game_id: calls.append(game_id))
+    r = client.post("/api/wanted", json={
+        "ra_game_id": 55556, "game_title": "No Hunt", "system": "NES", "system_id": 7,
+    })
+    assert r.json().get("hunting") in (False, None)
+    assert not calls
+
+
+def test_add_goal_stores_category(client):
+    from sqlmodel import select
+    from app.db.models import Goal
+    r = client.post("/api/goal", json={
+        "ra_game_id": 4242, "game_title": "G", "system": "NES", "system_id": 7,
+        "objective": "beaten", "event_name": "Ev", "category": "Week 1",
+    })
+    assert r.status_code == 200 and r.json()["status"] == "added"
+    with Session(engine) as s:
+        g = s.exec(select(Goal).where(Goal.ra_game_id == 4242)).first()
+        assert g is not None and g.category == "Week 1" and g.event_name == "Ev"

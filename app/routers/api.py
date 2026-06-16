@@ -17,6 +17,7 @@ from app.db.models import (
     Download, DownloadStatus, LibraryEntry, AppLog, InstalledExtension,
 )
 from app.db import repository
+from app.services import activity as activity_store
 from app.services import sources as source_registry
 from app.services.cover_sources import registry as cover_source_registry
 from app.services.download_clients import registry as download_client_registry
@@ -338,6 +339,7 @@ class WantedAddRequest(BaseModel):
     game_title: str
     system: str = ""
     system_id: Optional[int] = None
+    hunt: bool = False               # if true, immediately start an auto-hunt after adding
 
 
 @router.post("/wanted")
@@ -348,7 +350,14 @@ async def api_add_wanted(
 ):
     existing = repository.wanted_by_ra_game_id(session, req.ra_game_id)
     if existing:
-        return {"status": "exists", "id": existing.id, "game_title": existing.game_title}
+        # Honour the hunt flag even when already tracked (unless a hunt is already running).
+        if req.hunt and existing.status != HuntStatus.verified:
+            from app.services.hunter import auto_hunt
+            if not any(t.task_id == f"hunt-{existing.id}" and not t.done
+                       for t in activity_store.get_active()):
+                background_tasks.add_task(auto_hunt, existing.id)
+        return {"status": "exists", "id": existing.id, "game_title": existing.game_title,
+                "hunting": req.hunt}
 
     # Resolve a canonical system name server-side: the RA console id is
     # authoritative; otherwise normalize a possibly-doubled scraped string
@@ -374,7 +383,11 @@ async def api_add_wanted(
         # image for every extension-added game.
         background_tasks.add_task(_fetch_cover, game.id, req.ra_game_id, game.game_title, system)
 
-    return {"status": "added", "id": game.id, "game_title": game.game_title}
+    if req.hunt:
+        from app.services.hunter import auto_hunt
+        background_tasks.add_task(auto_hunt, game.id)
+
+    return {"status": "added", "id": game.id, "game_title": game.game_title, "hunting": req.hunt}
 
 
 @router.get("/game-status")
@@ -409,6 +422,7 @@ class GoalAddRequest(BaseModel):
     achievement_id: Optional[int] = None
     achievement_title: str = ""      # hint for instant display; the server re-fetches authoritative data
     event_name: str = ""
+    category: str = ""               # optional sub-category within the event
     deadline: str = ""               # YYYY-MM-DD; "" = no deadline
 
 
@@ -447,6 +461,7 @@ async def api_add_goal(
         objective=objective,
         custom_text=req.achievement_title.strip() if objective == GoalObjective.achievement else "",
         event_name=req.event_name.strip(),
+        category=req.category.strip(),
         deadline=_parse_goal_deadline(req.deadline),
     )
     cover_file = Path(_get_setting(session, "covers_dir", "static/covers")) / f"{req.ra_game_id}.png"

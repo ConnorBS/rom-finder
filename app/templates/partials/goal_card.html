@@ -1,28 +1,48 @@
 {% set done = (goal.status == 'completed') %}
+{% set failed = (goal.status == 'failed') %}
 <div id="goal-{{ goal.id }}"
      class="goal-card bg-gray-900 border rounded-lg overflow-hidden flex flex-col group
-            {% if done %}border-green-900/60{% elif overdue %}border-red-900/60{% else %}border-gray-800{% endif %}"
+            {% if done %}border-green-900/60{% elif failed %}border-red-800/60{% elif overdue %}border-red-900/60{% else %}border-gray-800{% endif %}"
      data-status="{{ goal.status }}"
      data-event="{{ goal.event_name }}">
 
-    <!-- Cover -->
+    <!-- Cover / custom art -->
     <div class="relative bg-gray-800 aspect-[3/4] overflow-hidden">
-        {% if goal.cover_path %}
+        {% if goal.custom_image %}
+        {# Uploaded image overrides cover/badge (full colour; only `failed` dims it). #}
+        <img src="/static/{{ goal.custom_image }}" alt="{{ goal.display_text or goal.game_title }}"
+             class="w-full h-full object-cover {% if failed %}grayscale opacity-50{% endif %}">
+        {% elif goal.display_text or goal.icon %}
+        {# Text instead of an image (e.g. "+100 XP") with a tinted glyph centered below. #}
+        <div class="w-full h-full flex flex-col items-center justify-center gap-2 p-3 text-center {% if failed %}opacity-50{% endif %}">
+            {% if goal.display_text %}<span class="text-gray-100 text-xl font-bold leading-tight break-words">{{ goal.display_text }}</span>{% endif %}
+            {% if goal.icon %}<span class="text-4xl leading-none" style="color: {{ goal.icon_color or '#fbbf24' }}">{{ goal.icon }}</span>{% endif %}
+        </div>
+        {% elif goal.cover_path %}
         {% if goal.objective == 'achievement' %}
         {# Achievement: swap the LOCKED vs UNLOCKED badge image (RA appends _lock); no greyscale. #}
         {% set badge_src = goal.cover_path if done else (goal.cover_path[:-4] ~ '_lock.png' if goal.cover_path.endswith('.png') else goal.cover_path) %}
         <img src="{% if badge_src.startswith('http') %}{{ badge_src }}{% else %}/static/{{ badge_src }}{% endif %}"
              alt="{{ goal.custom_text or 'Achievement' }}"
-             class="w-full h-full object-contain p-3 bg-gray-900">
+             class="w-full h-full object-contain p-3 bg-gray-900 {% if failed %}grayscale opacity-50{% endif %}">
         {% else %}
         {# Game goal: greyscale the cover until done. #}
         <img src="{% if goal.cover_path.startswith('http') %}{{ goal.cover_path }}{% else %}/static/{{ goal.cover_path }}{% endif %}"
              alt="{{ goal.game_title }}"
-             class="w-full h-full object-cover {% if not done %}grayscale opacity-60{% endif %}">
+             class="w-full h-full object-cover {% if not done or failed %}grayscale{% endif %} {% if not done %}opacity-60{% endif %}">
         {% endif %}
         {% else %}
         <div class="w-full h-full flex items-center justify-center {% if not done %}opacity-50{% endif %}">
             <span class="text-gray-600 text-3xl font-bold select-none">{{ goal.game_title[0] | upper }}</span>
+        </div>
+        {% endif %}
+
+        {% if failed %}
+        <!-- Failed: red ✗ overlay -->
+        <div class="absolute inset-0 flex items-center justify-center bg-black/30 pointer-events-none">
+            <svg class="w-2/3 h-2/3 text-red-600/90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
         </div>
         {% endif %}
 
@@ -92,10 +112,12 @@
         </div>
         {% endif %}
 
-        <!-- Deadline state -->
+        <!-- Deadline / state -->
         <div class="mt-auto pt-1 text-xs">
             {% if done %}
             <span class="text-green-400">✓ Completed{% if goal.completed_at %} {{ goal.completed_at.strftime('%b %d') }}{% endif %}{% if goal.auto %} <span class="text-gray-600">(auto)</span>{% endif %}</span>
+            {% elif failed %}
+            <span class="text-red-400">✗ Failed{% if goal.deadline %} · was due {{ goal.deadline.strftime('%b %d') }}{% endif %}</span>
             {% elif goal.deadline and overdue %}
             <span class="text-red-400">⚠ Overdue — was due {{ goal.deadline.strftime('%b %d, %Y') }}</span>
             {% elif goal.deadline %}
@@ -106,31 +128,70 @@
         </div>
 
         <!-- Actions -->
-        <div class="flex gap-1.5 mt-1">
-            {% if done %}
+        <div class="flex flex-wrap gap-1.5 mt-1">
+            {% if done or failed %}
             <button class="flex-1 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-400 hover:text-white text-xs px-2 py-1 rounded transition-colors"
                     hx-post="/goals/{{ goal.id }}/reopen" hx-target="#goal-{{ goal.id }}" hx-swap="outerHTML">↺ Reopen</button>
-            {% elif goal.objective == 'custom' %}
+            {% else %}
+            {% if goal.objective == 'custom' %}
             <button class="flex-1 bg-green-900/40 hover:bg-green-900/60 border border-green-800 text-green-300 text-xs px-2 py-1 rounded transition-colors"
-                    hx-post="/goals/{{ goal.id }}/complete" hx-target="#goal-{{ goal.id }}" hx-swap="outerHTML">✓ Mark done</button>
+                    hx-post="/goals/{{ goal.id }}/complete" hx-target="#goal-{{ goal.id }}" hx-swap="outerHTML">✓ Done</button>
+            {% endif %}
+            <button class="flex-1 bg-gray-800 hover:bg-red-900/50 border border-gray-700 hover:border-red-800 text-gray-400 hover:text-red-300 text-xs px-2 py-1 rounded transition-colors"
+                    hx-post="/goals/{{ goal.id }}/fail" hx-target="#goal-{{ goal.id }}" hx-swap="outerHTML"
+                    title="Mark failed (hidden unless 'Show failed')">✗ Fail</button>
             {% endif %}
             <button class="flex-1 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-400 hover:text-white text-xs px-2 py-1 rounded transition-colors"
                     onclick="document.getElementById('goal-edit-{{ goal.id }}').classList.toggle('hidden')">✎ Edit</button>
         </div>
 
         <!-- Edit form (toggle) -->
-        <form id="goal-edit-{{ goal.id }}" class="hidden mt-1 space-y-1.5 border-t border-gray-800 pt-2"
-              hx-post="/goals/{{ goal.id }}/edit" hx-target="#goal-{{ goal.id }}" hx-swap="outerHTML">
-            <input type="text" name="event_name" value="{{ goal.event_name }}" placeholder="Event"
-                   list="event-names" autocomplete="off"
-                   class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500">
-            <input type="date" name="deadline" value="{{ goal.deadline.strftime('%Y-%m-%d') if goal.deadline else '' }}"
-                   class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500">
-            {% if goal.objective == 'custom' %}
-            <input type="text" name="custom_text" value="{{ goal.custom_text }}" placeholder="Objective"
-                   class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500">
+        <div id="goal-edit-{{ goal.id }}" class="hidden mt-1 space-y-1.5 border-t border-gray-800 pt-2">
+            <form hx-post="/goals/{{ goal.id }}/edit" hx-target="#goal-{{ goal.id }}" hx-swap="outerHTML" class="space-y-1.5">
+                <input type="text" name="event_name" value="{{ goal.event_name }}" placeholder="Event"
+                       list="event-names" autocomplete="off"
+                       class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500">
+                <input type="text" name="category" value="{{ goal.category }}" placeholder="Sub-category (optional)"
+                       list="category-names" autocomplete="off"
+                       class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500">
+                <input type="date" name="deadline" value="{{ goal.deadline.strftime('%Y-%m-%d') if goal.deadline else '' }}"
+                       class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500">
+                {% if goal.objective == 'custom' %}
+                <input type="text" name="custom_text" value="{{ goal.custom_text }}" placeholder="Objective"
+                       class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500">
+                {% endif %}
+                <!-- Custom display: text instead of image + a tinted icon below -->
+                <div class="flex items-center gap-1.5">
+                    <input type="text" name="display_text" value="{{ goal.display_text }}" placeholder='Display text (e.g. "+100 XP")'
+                           class="flex-1 min-w-0 bg-gray-800 border border-gray-700 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500">
+                    <input type="color" name="icon_color" value="{{ goal.icon_color or '#fbbf24' }}" title="Icon colour"
+                           class="w-7 h-7 bg-gray-800 border border-gray-700 rounded cursor-pointer flex-shrink-0">
+                </div>
+                <div class="flex flex-wrap gap-1">
+                    <label class="cursor-pointer" title="No icon">
+                        <input type="radio" name="icon" value="" {% if not goal.icon %}checked{% endif %} class="hidden peer">
+                        <span class="inline-flex w-6 h-6 items-center justify-center rounded border border-gray-700 text-gray-500 text-xs peer-checked:border-blue-500 peer-checked:bg-blue-500/20">∅</span>
+                    </label>
+                    {% for ic in goal_icons %}
+                    <label class="cursor-pointer">
+                        <input type="radio" name="icon" value="{{ ic }}" {% if goal.icon == ic %}checked{% endif %} class="hidden peer">
+                        <span class="inline-flex w-6 h-6 items-center justify-center rounded border border-gray-700 text-gray-300 peer-checked:border-blue-500 peer-checked:bg-blue-500/20">{{ ic }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
+                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white text-xs px-2 py-1 rounded transition-colors">Save</button>
+            </form>
+            <!-- Image upload (separate multipart form) -->
+            <form hx-post="/goals/{{ goal.id }}/image" hx-target="#goal-{{ goal.id }}" hx-swap="outerHTML"
+                  hx-encoding="multipart/form-data" class="flex items-center gap-1.5">
+                <input type="file" name="image" accept="image/png,image/jpeg,image/gif,image/webp"
+                       class="flex-1 min-w-0 text-xs text-gray-400 file:mr-2 file:py-0.5 file:px-2 file:rounded file:border-0 file:bg-gray-700 file:text-gray-200 file:text-xs">
+                <button type="submit" class="bg-gray-700 hover:bg-gray-600 text-gray-200 text-xs px-2 py-1 rounded flex-shrink-0">Upload</button>
+            </form>
+            {% if goal.custom_image %}
+            <button hx-post="/goals/{{ goal.id }}/image/clear" hx-target="#goal-{{ goal.id }}" hx-swap="outerHTML"
+                    class="w-full bg-gray-800 hover:bg-red-900/50 border border-gray-700 text-gray-400 hover:text-red-300 text-xs px-2 py-1 rounded transition-colors">Remove uploaded image</button>
             {% endif %}
-            <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white text-xs px-2 py-1 rounded transition-colors">Save</button>
-        </form>
+        </div>
     </div>
 </div>

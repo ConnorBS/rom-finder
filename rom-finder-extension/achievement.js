@@ -106,6 +106,8 @@
   eventList.id = 'rf-ach-events';
   eventInput.input.setAttribute('list', 'rf-ach-events');
   eventInput.input.setAttribute('autocomplete', 'off');
+  const catInput = inputField('Sub-category (optional)', 'text', 'e.g. Week 1');
+  catInput.input.setAttribute('autocomplete', 'off');
   const dateInput = inputField('Deadline (optional)', 'date', '');
 
   const addBtn = document.createElement('button');
@@ -124,6 +126,7 @@
   bodyEl.appendChild(idEl);
   bodyEl.appendChild(eventInput.wrap);
   bodyEl.appendChild(eventList);
+  bodyEl.appendChild(catInput.wrap);
   bodyEl.appendChild(dateInput.wrap);
   bodyEl.appendChild(addBtn);
   bodyEl.appendChild(statusEl);
@@ -201,6 +204,7 @@
           achievement_id: achievementId,
           achievement_title: achTitle || `Achievement #${achievementId}`,
           event_name: eventInput.input.value.trim(),
+          category: catInput.input.value.trim(),
           deadline: dateInput.input.value,   // YYYY-MM-DD or ""
         }),
       });
