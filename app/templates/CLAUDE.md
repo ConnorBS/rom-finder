@@ -112,8 +112,10 @@ goal then appears via the live morph. **`goal_card.html`** receives the per-goal
 Custom), a live progress bar + `🏆 earned/total` + award badge from the joined `RAGameProgress`
 row (absent when not started), and a three-state deadline line (green ✓ Completed / red ⚠ Overdue
 / amber-when-≤7d "📅 Due {date} (Nd)"). Actions: custom → "✓ Mark done"; completed → "↺ Reopen";
-all → "✎ Edit" (toggles an inline event/deadline[/custom_text] form posting `/goals/{id}/edit`)
-and a hover delete.
+all → "✎ Edit" (toggles an inline event/deadline[/custom_text] form posting `/goals/{id}/edit`),
+"⧉ Copy" (toggles an inline event+category form posting `/goals/{id}/copy` → clones the goal into
+another event/sub-category, leaving the original; event defaults to the source's so copying to a
+sibling sub-category is one field; returns `HX-Refresh`), and a hover delete.
 
 **Cover / locked state (per objective):** an **achievement** goal shows the achievement BADGE and
 swaps the **locked vs unlocked** image by completion — RA appends `_lock` before `.png`, so an

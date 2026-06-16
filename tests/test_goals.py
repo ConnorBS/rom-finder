@@ -452,6 +452,47 @@ def test_complete_reopen_edit_delete(client):
         assert s.get(Goal, gid) is None
 
 
+def test_copy_goal_clones_into_another_group(client):
+    # A completed custom goal with display-text art, in an event + sub-category.
+    with Session(engine) as s:
+        g = Goal(game_title="Blob Attack", system="Arduboy", objective=GoalObjective.custom,
+                 custom_text="Earn 100 xp", display_text="+100 XP", icon="✚", icon_color="#22c55e",
+                 event_name="Challenge League 2026", category="Logram Gym 1: drisc",
+                 status=GoalStatus.completed, completed_at=datetime.utcnow(), auto=False)
+        s.add(g); s.commit(); s.refresh(g); gid = g.id
+
+    r = client.post(f"/goals/{gid}/copy", data={
+        "event_name": "Challenge League 2026", "category": "Antico Gym 1: Hotscrock"})
+    assert r.status_code == 200 and r.headers.get("HX-Refresh") == "true"
+
+    with Session(engine) as s:
+        assert len(s.exec(select(Goal)).all()) == 2                  # original stays + the copy
+        copy = s.exec(select(Goal).where(Goal.category == "Antico Gym 1: Hotscrock")).first()
+        assert copy.id != gid
+        assert copy.event_name == "Challenge League 2026"
+        # tracking + art fields cloned …
+        assert copy.custom_text == "Earn 100 xp" and copy.display_text == "+100 XP"
+        assert copy.icon == "✚" and copy.icon_color == "#22c55e"
+        # … but the copy starts fresh (not carried-over completed/auto).
+        assert copy.status == GoalStatus.active and copy.auto is False and copy.completed_at is None
+        assert s.get(Goal, gid).category == "Logram Gym 1: drisc"   # original untouched
+
+
+def test_copy_goal_dedups_within_same_target_group(client):
+    with Session(engine) as s:
+        g = Goal(game_title="Gex", system="PlayStation", ra_game_id=500,
+                 objective=GoalObjective.beaten, event_name="Challenge League 2026",
+                 category="Logram Gym 1: drisc")
+        s.add(g); s.commit(); s.refresh(g); gid = g.id
+    # Copy to a different event …
+    client.post(f"/goals/{gid}/copy", data={"event_name": "Collectathon", "category": ""})
+    # … then copy to the SAME group again → de-duped (no third row).
+    client.post(f"/goals/{gid}/copy", data={"event_name": "Collectathon", "category": ""})
+    with Session(engine) as s:
+        assert len(s.exec(select(Goal).where(Goal.event_name == "Collectathon")).all()) == 1
+        assert len(s.exec(select(Goal)).all()) == 2   # original + one copy only
+
+
 # --- status + changes signals ---------------------------------------------
 
 def test_status_goals_section(client):

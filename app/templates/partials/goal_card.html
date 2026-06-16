@@ -143,6 +143,9 @@
             {% endif %}
             <button class="flex-1 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-400 hover:text-white text-xs px-2 py-1 rounded transition-colors"
                     onclick="document.getElementById('goal-edit-{{ goal.id }}').classList.toggle('hidden')">✎ Edit</button>
+            <button class="flex-1 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-400 hover:text-white text-xs px-2 py-1 rounded transition-colors"
+                    onclick="document.getElementById('goal-copy-{{ goal.id }}').classList.toggle('hidden')"
+                    title="Copy to another event / sub-category">⧉ Copy</button>
         </div>
 
         <!-- Edit form (toggle) -->
@@ -192,6 +195,20 @@
             <button hx-post="/goals/{{ goal.id }}/image/clear" hx-target="#goal-{{ goal.id }}" hx-swap="outerHTML"
                     class="w-full bg-gray-800 hover:bg-red-900/50 border border-gray-700 text-gray-400 hover:text-red-300 text-xs px-2 py-1 rounded transition-colors">Remove uploaded image</button>
             {% endif %}
+        </div>
+
+        <!-- Copy form (toggle) — clones this goal into another event / sub-category; original stays put -->
+        <div id="goal-copy-{{ goal.id }}" class="hidden mt-1 space-y-1.5 border-t border-gray-800 pt-2">
+            <p class="text-gray-500 text-xs leading-tight">Copy to another event / sub-category — the original stays here.</p>
+            <form hx-post="/goals/{{ goal.id }}/copy" class="space-y-1.5">
+                <input type="text" name="event_name" value="{{ goal.event_name }}" placeholder="Event"
+                       list="event-names" autocomplete="off"
+                       class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500">
+                <input type="text" name="category" placeholder="Sub-category (optional)"
+                       list="category-names" autocomplete="off"
+                       class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500">
+                <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-2 py-1 rounded transition-colors">⧉ Copy here</button>
+            </form>
         </div>
     </div>
 </div>

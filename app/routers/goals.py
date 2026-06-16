@@ -645,6 +645,77 @@ async def edit_goal(
     return _render_card(request, goal, session)
 
 
+# Fields cloned when copying a goal to another event / sub-category. The tracking fields
+# (objective / ra_game_id / achievement_id / custom_text / …) are kept identical so the
+# copy still auto-completes from the RA mirror; the copy starts `active` (auto-goals
+# self-heal to completed on the next evaluate_goals pass). event_name / category / status /
+# auto / completed_at / timestamps / custom_image are set explicitly, not cloned.
+_COPY_FIELDS = (
+    "game_title", "system", "ra_game_id", "achievement_id", "cover_path",
+    "objective", "custom_text", "achievement_desc", "points", "deadline",
+    "display_text", "icon", "icon_color",
+)
+
+
+@router.post("/{goal_id}/copy", response_class=HTMLResponse)
+async def copy_goal(
+    goal_id: int,
+    event_name: str = Form(default=""),
+    category: str = Form(default=""),
+    session: Session = Depends(get_session),
+):
+    """Clone a goal into another event / sub-category, leaving the original in place.
+    No-ops if an identical goal already lives in the target group (so copying onto itself,
+    or re-copying, can't create an exact duplicate). Returns HX-Refresh so the new card
+    lands in its proper group."""
+    src = session.get(Goal, goal_id)
+    if not src:
+        return HTMLResponse("", headers={"HX-Refresh": "true"})
+    event_name = event_name.strip()
+    category = category.strip()
+    # Don't create an exact duplicate within the SAME target group (NULL id/ach compares
+    # render as IS NULL, so custom goals are matched on their text instead).
+    existing = session.exec(
+        select(Goal).where(
+            Goal.event_name == event_name,
+            Goal.category == category,
+            Goal.objective == src.objective,
+            Goal.ra_game_id == src.ra_game_id,
+            Goal.achievement_id == src.achievement_id,
+            Goal.custom_text == src.custom_text,
+            Goal.display_text == src.display_text,
+        )
+    ).first()
+    if existing:
+        return HTMLResponse("", headers={"HX-Refresh": "true"})
+    now = datetime.utcnow()
+    clone = Goal(event_name=event_name, category=category, status=GoalStatus.active,
+                 auto=False, created_at=now, updated_at=now)
+    for f in _COPY_FIELDS:
+        setattr(clone, f, getattr(src, f))
+    session.add(clone)
+    session.commit()
+    session.refresh(clone)
+    # Copy any uploaded card image to the clone's OWN file, so editing/clearing the
+    # source's image later can't break the copy (both would otherwise share goal_{src}.*).
+    if src.custom_image and app_settings.get(session, "covers_dir_readonly", "false") != "true":
+        covers_dir = Path(app_settings.get(session, "covers_dir", "static/covers"))
+        src_file = covers_dir / Path(src.custom_image).name
+        if src_file.exists():
+            dest = covers_dir / f"goal_{clone.id}{src_file.suffix}"
+            try:
+                covers_dir.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes(src_file.read_bytes())
+                clone.custom_image = f"covers/{dest.name}"
+                session.add(clone)
+                session.commit()
+            except OSError:
+                pass
+    applog.log_action("copy_goal", {"src": goal_id, "new": clone.id,
+                                    "event": event_name, "category": category})
+    return HTMLResponse("", headers={"HX-Refresh": "true"})
+
+
 @router.post("/{goal_id}/image", response_class=HTMLResponse)
 async def upload_goal_image(
     request: Request,
