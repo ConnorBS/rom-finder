@@ -70,13 +70,24 @@ def _parse_deadline(value: str) -> datetime | None:
         return None
 
 
-def _card_ctx(goal: Goal, progress_by_id: dict, now: datetime) -> dict:
-    """Per-goal render context: the matched RA progress row + deadline state + the icon set."""
+def _category_names_for_event(session: Session, event_name: str) -> list[str]:
+    """Sub-category names belonging to ONE event (its GoalCategory rows + any names goals
+    reference) — so a goal card's category dropdown is scoped to its own event, not global."""
+    names = {c.name for c in session.exec(
+        select(GoalCategory).where(GoalCategory.event_name == event_name)).all()}
+    names |= {g.category for g in session.exec(
+        select(Goal).where(Goal.event_name == event_name)).all() if g.category}
+    return sorted(names)
+
+
+def _card_ctx(goal: Goal, progress_by_id: dict, now: datetime, event_cats: list | None = None) -> dict:
+    """Per-goal render context: the matched RA progress row + deadline state + the icon set +
+    the goal's own event's sub-category names (the per-event category datalist)."""
     progress = progress_by_id.get(goal.ra_game_id) if goal.ra_game_id else None
     overdue = bool(goal.status == GoalStatus.active and goal.deadline and goal.deadline < now)
     days_left = (goal.deadline.date() - now.date()).days if goal.deadline else None
     return {"goal": goal, "progress": progress, "overdue": overdue, "days_left": days_left,
-            "now": now, "goal_icons": GOAL_ICONS}
+            "now": now, "goal_icons": GOAL_ICONS, "event_categories": event_cats or []}
 
 
 # ---------------------------------------------------------------------------
@@ -140,9 +151,19 @@ async def goals_page(
         return (g.created_at or _far, g.id)  # 'event' → stable by creation within the group
     visible.sort(key=_card_key)
 
+    # Per-event sub-category names (event-scoped datalist for each card's category field).
+    cat_names_by_event: dict[str, list] = {}
+    for c in session.exec(select(GoalCategory)).all():
+        cat_names_by_event.setdefault(c.event_name or "", []).append(c.name)
+    for g in all_goals:
+        if g.category:
+            cat_names_by_event.setdefault(g.event_name or "", []).append(g.category)
+    cat_names_by_event = {k: sorted(set(v)) for k, v in cat_names_by_event.items()}
+
     grouped: dict[str, list] = {}
     for g in visible:
-        grouped.setdefault(g.event_name or "", []).append(_card_ctx(g, progress_by_id, now))
+        grouped.setdefault(g.event_name or "", []).append(
+            _card_ctx(g, progress_by_id, now, cat_names_by_event.get(g.event_name or "", [])))
     # ALL goals per event (filter-independent) so an event's tally/total never moves when
     # completed/past/failed goals are hidden — only which cards render changes.
     all_by_event: dict[str, list] = {}
@@ -172,8 +193,6 @@ async def goals_page(
                            event_rows.get(e), cats_by_event.get(e, []))
               for e in ordered_events]
     event_names = sorted(set([g.event_name for g in all_goals if g.event_name]) | set(event_rows))
-    category_names = sorted({c.name for c in session.exec(select(GoalCategory)).all()}
-                            | {g.category for g in all_goals if g.category})
 
     applog.log_navigation("goals", {"goal_count": len(all_goals), "events": len(event_rows)})
     return templates.TemplateResponse(
@@ -190,7 +209,6 @@ async def goals_page(
             "show_failed_on": show_failed_on,
             "sort": sort,
             "event_names": event_names,
-            "category_names": category_names,
             "goal_icons": GOAL_ICONS,
             "systems": sorted(SYSTEMS.items(), key=lambda x: x[1]),
             "ra_configured": _ra_configured(session),
@@ -474,45 +492,70 @@ async def delete_event(name: str = Form(...), session: Session = Depends(get_ses
 # Sub-categories within an event
 # ---------------------------------------------------------------------------
 
+def _parse_ra_id(value: str) -> int | None:
+    value = (value or "").strip()
+    return int(value) if value.isdigit() and int(value) > 0 else None
+
+
 @router.post("/category", response_class=HTMLResponse)
 async def create_category(
+    background_tasks: BackgroundTasks,
     event_name: str = Form(...),
-    name: str = Form(...),
+    name: str = Form(default=""),
     deadline: str = Form(default=""),
     notes: str = Form(default=""),
+    ra_game_id: str = Form(default=""),
+    system: str = Form(default=""),
     session: Session = Depends(get_session),
 ):
-    """Create (or update) a sub-category within an event."""
+    """Create (or update) a sub-category within an event. Optionally back it with an RA game
+    (by id or manual search): the category takes the game's title (when no title was typed),
+    console, box art, and a link to its RA page."""
     event_name = event_name.strip()
     name = name.strip()
+    ra_id = _parse_ra_id(ra_game_id)
+    if not name and ra_id is None:
+        return HTMLResponse('<span class="text-red-400 text-xs">Sub-category title (or an RA game) required.</span>')
+    # Without a typed title, a placeholder stands in until background enrichment fills the game name.
     if not name:
-        return HTMLResponse('<span class="text-red-400 text-xs">Category name required.</span>')
+        name = f"Game #{ra_id}"
     cat = session.exec(select(GoalCategory).where(
         GoalCategory.event_name == event_name, GoalCategory.name == name)).first()
     if cat is None:
         cat = GoalCategory(event_name=event_name, name=name)
     cat.deadline = _parse_deadline(deadline)
     cat.notes = notes.strip()
+    cat.ra_game_id = ra_id
+    cat.system = system.strip() if ra_id is not None else ""
+    cat.cover_path = cat.cover_path if ra_id is not None else ""
     cat.updated_at = datetime.utcnow()
     session.add(cat)
     session.commit()
-    applog.log_action("create_category", {"event": event_name, "name": name})
+    session.refresh(cat)
+    applog.log_action("create_category", {"event": event_name, "name": name, "ra_game_id": ra_id})
+    if ra_id is not None:
+        background_tasks.add_task(_enrich_category, cat.id, ra_id, name.startswith("Game #"))
     return HTMLResponse("", headers={"HX-Refresh": "true"})
 
 
 @router.post("/category/edit", response_class=HTMLResponse)
 async def edit_category(
+    background_tasks: BackgroundTasks,
     event_name: str = Form(...),
     old_name: str = Form(...),
     name: str = Form(...),
     deadline: str = Form(default=""),
     notes: str = Form(default=""),
+    ra_game_id: str = Form(default=""),
+    system: str = Form(default=""),
     session: Session = Depends(get_session),
 ):
-    """Edit a sub-category — rename (re-points its goals to the new name), date, notes."""
+    """Edit a sub-category — rename (re-points its goals to the new name), date, notes, and the
+    optional backing RA game (attach/clear by id or manual search)."""
     event_name = event_name.strip()
     old_name = old_name.strip()
     name = name.strip() or old_name
+    ra_id = _parse_ra_id(ra_game_id)
     cat = session.exec(select(GoalCategory).where(
         GoalCategory.event_name == event_name, GoalCategory.name == old_name)).first()
     if cat is None:
@@ -520,6 +563,11 @@ async def edit_category(
     cat.name = name
     cat.deadline = _parse_deadline(deadline)
     cat.notes = notes.strip()
+    game_changed = (ra_id != cat.ra_game_id)
+    cat.ra_game_id = ra_id
+    cat.system = system.strip() if ra_id is not None else ""
+    if ra_id is None:
+        cat.cover_path = ""              # game detached → drop its box art
     cat.updated_at = datetime.utcnow()
     session.add(cat)
     if name != old_name:
@@ -528,7 +576,10 @@ async def edit_category(
             g.category = name
             session.add(g)
     session.commit()
-    applog.log_action("edit_category", {"event": event_name, "name": name})
+    session.refresh(cat)
+    applog.log_action("edit_category", {"event": event_name, "name": name, "ra_game_id": ra_id})
+    if ra_id is not None and game_changed:
+        background_tasks.add_task(_enrich_category, cat.id, ra_id, False)
     return HTMLResponse("", headers={"HX-Refresh": "true"})
 
 
@@ -792,7 +843,8 @@ def _render_card(request: Request, goal: Goal, session: Session) -> HTMLResponse
             progress_by_id[goal.ra_game_id] = row
     return templates.TemplateResponse(
         request, "partials/goal_card.html",
-        _card_ctx(goal, progress_by_id, datetime.utcnow()),
+        _card_ctx(goal, progress_by_id, datetime.utcnow(),
+                  _category_names_for_event(session, goal.event_name or "")),
     )
 
 
@@ -900,17 +952,14 @@ async def _enrich_achievement_goal(goal_id: int, game_id: int, achievement_id: i
             s.commit()
 
 
-async def _fetch_cover_goal(goal_id: int, ra_game_id: int, game_title: str, system: str) -> None:
-    """Fetch cover art for a goal's game (first enabled source wins), reusing the
-    shared covers/{ra_game_id}.png filename. Mirrors wanted._fetch_cover."""
+async def _fetch_game_cover_file(ra_game_id: int, game_title: str, system: str) -> bool:
+    """Fetch box art for a game (first enabled cover source wins) into the shared
+    covers/{ra_game_id}.png filename. Returns True if a cover was written. No activity
+    tracking or DB stamping — the callers (_fetch_cover_goal / _enrich_category) own those."""
     import json as _json
     from sqlmodel import Session as SyncSession
     from app.db.models import AppSetting
     from app.services import cover_sources as cover_source_registry
-    from app.services import activity as activity_store
-
-    task_id = f"cover-goal-{goal_id}"
-    activity_store.start(task_id, f"Cover art: {game_title}", task_type="cover")
 
     with SyncSession(engine) as s:
         def _gs(key: str, default: str = "") -> str:
@@ -919,8 +968,7 @@ async def _fetch_cover_goal(goal_id: int, ra_game_id: int, game_title: str, syst
 
         covers_dir = Path(_gs("covers_dir", "static/covers"))
         if _gs("covers_dir_readonly", "false") == "true":
-            activity_store.finish(task_id)
-            return
+            return False
 
         config: dict = {"ra_username": _gs("ra_username"), "ra_api_key": _gs("ra_api_key")}
         for src in cover_source_registry.all_sources():
@@ -943,8 +991,6 @@ async def _fetch_cover_goal(goal_id: int, ra_game_id: int, game_title: str, syst
             ordered = all_srcs
         enabled_srcs = [x for x in ordered if _gs(f"cover_source_{x.source_id}_enabled", "false") == "true"]
 
-    covers_dir.mkdir(parents=True, exist_ok=True)
-
     image_bytes: bytes | None = None
     for src in enabled_srcs:
         try:
@@ -954,9 +1000,23 @@ async def _fetch_cover_goal(goal_id: int, ra_game_id: int, game_title: str, syst
         except Exception:
             continue
 
+    if image_bytes:
+        covers_dir.mkdir(parents=True, exist_ok=True)
+        (covers_dir / f"{ra_game_id}.png").write_bytes(image_bytes)
+        return True
+    return False
+
+
+async def _fetch_cover_goal(goal_id: int, ra_game_id: int, game_title: str, system: str) -> None:
+    """Fetch cover art for a goal's game (first enabled source wins), reusing the
+    shared covers/{ra_game_id}.png filename. Mirrors wanted._fetch_cover."""
+    from sqlmodel import Session as SyncSession
+    from app.services import activity as activity_store
+
+    task_id = f"cover-goal-{goal_id}"
+    activity_store.start(task_id, f"Cover art: {game_title}", task_type="cover")
     try:
-        if image_bytes:
-            (covers_dir / f"{ra_game_id}.png").write_bytes(image_bytes)
+        if await _fetch_game_cover_file(ra_game_id, game_title, system):
             with SyncSession(engine) as session:
                 goal = session.get(Goal, goal_id)
                 if goal:
@@ -966,3 +1026,65 @@ async def _fetch_cover_goal(goal_id: int, ra_game_id: int, game_title: str, syst
                     session.commit()
     finally:
         activity_store.finish(task_id)
+
+
+async def _enrich_category(category_id: int, ra_game_id: int, need_name: bool) -> None:
+    """Fill a sub-category's attached-game identity from RA: its title (only when no title
+    was typed — `need_name`), console, and box art. The box art reuses any cover already on
+    disk for this game; otherwise it's fetched via the cover sources. Renaming the category
+    re-points its goals (Goal.category is the join key)."""
+    from sqlmodel import Session as SyncSession
+    from app.services import activity as activity_store
+
+    # Resolve title (only when none was typed) + console from RA. The console is filled
+    # whenever the category doesn't already carry one (e.g. the by-id path with a typed title).
+    with SyncSession(engine) as s:
+        username = app_settings.get(s, "ra_username")
+        api_key = app_settings.get(s, "ra_api_key")
+        cat0 = s.get(GoalCategory, category_id)
+        need_system = bool(cat0 and not cat0.system)
+    title = system = ""
+    if (need_name or need_system) and username and api_key:
+        try:
+            info = await RAClient(username, api_key).get_game_info(ra_game_id)
+            title = (info.get("Title") or "").strip()
+            system = (info.get("ConsoleName") or "").strip()
+        except Exception as exc:
+            applog.warning("system", f"Category game enrich failed (game {ra_game_id}): {exc}")
+
+    # Box art: reuse an on-disk cover if present, else fetch one.
+    task_id = f"cover-cat-{category_id}"
+    activity_store.start(task_id, f"Category art: {title or ra_game_id}", task_type="cover")
+    have_cover = False
+    try:
+        with SyncSession(engine) as s:
+            covers_dir = Path(app_settings.get(s, "covers_dir", "static/covers"))
+            existing = s.get(GoalCategory, category_id)
+            cat_title = title or (existing.name if existing else "")
+        if (covers_dir / f"{ra_game_id}.png").exists():
+            have_cover = True
+        elif await _fetch_game_cover_file(ra_game_id, cat_title, system):
+            have_cover = True
+    finally:
+        activity_store.finish(task_id)
+
+    with SyncSession(engine) as s:
+        cat = s.get(GoalCategory, category_id)
+        if not cat:
+            return
+        old_name = cat.name
+        if need_name and title:
+            cat.name = title
+        if system:
+            cat.system = system
+        if have_cover:
+            cat.cover_path = f"covers/{ra_game_id}.png"
+        cat.updated_at = datetime.utcnow()
+        s.add(cat)
+        # Re-point goals if the placeholder name was replaced with the real game title.
+        if need_name and title and title != old_name:
+            for g in s.exec(select(Goal).where(
+                    Goal.event_name == cat.event_name, Goal.category == old_name)).all():
+                g.category = title
+                s.add(g)
+        s.commit()

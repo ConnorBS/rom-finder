@@ -989,6 +989,46 @@ def test_category_crud_and_notes_rendered(client):
         assert g is not None and g.category == ""
 
 
+def test_category_game_attach(client):
+    # Attaching an RA game to a sub-category stores its id + console; the header links to RA.
+    r = client.post("/goals/category", data={
+        "event_name": "Ev", "name": "Sonic the Hedgehog", "deadline": "", "notes": "",
+        "ra_game_id": "1", "system": "Genesis/Mega Drive"})
+    assert r.status_code == 200 and r.headers.get("HX-Refresh") == "true"
+    with Session(engine) as s:
+        cat = s.exec(select(GoalCategory).where(GoalCategory.name == "Sonic the Hedgehog")).first()
+        assert cat is not None and cat.ra_game_id == 1 and cat.system == "Genesis/Mega Drive"
+    # The page renders an RA link for the game-backed category + the in-form game picker
+    # (the macro can see the `systems` render context).
+    page = client.get("/goals").text
+    assert "retroachievements.org/game/1" in page
+    assert 'id="cat-sys-add-' in page and page.split('id="cat-sys-add-', 1)[1].count("<option") > 5
+    # Editing can detach the game (clears id/cover).
+    client.post("/goals/category/edit", data={
+        "event_name": "Ev", "old_name": "Sonic the Hedgehog", "name": "Sonic the Hedgehog",
+        "deadline": "", "notes": "", "ra_game_id": "", "system": ""})
+    with Session(engine) as s:
+        cat = s.exec(select(GoalCategory).where(GoalCategory.name == "Sonic the Hedgehog")).first()
+        assert cat.ra_game_id is None and cat.cover_path == ""
+
+
+def test_category_datalist_is_event_scoped(client):
+    # Each goal card's category datalist lists ONLY its own event's sub-categories.
+    with Session(engine) as s:
+        g = Goal(game_title="A", system="NES", objective=GoalObjective.custom, custom_text="x",
+                 event_name="EvA")
+        s.add(g)
+        s.add(GoalCategory(event_name="EvA", name="CatA"))
+        s.add(GoalCategory(event_name="EvB", name="CatB"))
+        s.commit(); s.refresh(g); gid = g.id
+    page = client.get("/goals").text
+    # Isolate THIS card's datalist and assert it carries EvA's category, not EvB's.
+    marker = f'<datalist id="category-names-{gid}">'
+    assert marker in page
+    dl = page.split(marker, 1)[1].split("</datalist>", 1)[0]
+    assert 'value="CatA"' in dl and 'value="CatB"' not in dl
+
+
 def test_sections_interleave_by_due_date(fresh_engine):
     from app.routers.goals import _build_group, _card_ctx
     now = datetime.utcnow()

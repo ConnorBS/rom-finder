@@ -93,7 +93,10 @@ under it + its `GoalEvent` and returns `HX-Refresh`.
 ## Goals page — collapsible event groups
 
 Each event `<section>` (in `#goals-groups`, keyed by `data-event-key`) has a ▾/▸ chevron
-(`.event-collapse-btn`) that toggles its `.event-grid` (`hidden`) so you can navigate by headers;
+(`.event-collapse-btn`) **and the `<h2>` event title itself** (both `onclick="toggleEventGrid(this)"`)
+that toggle its `.event-grid` (`hidden`) — clicking the title collapses/expands the event (the title
+was previously inert, so on mobile, where the small chevron is hard to tap, "tapping the title did
+nothing"; now both work). You can navigate by headers;
 a header **Collapse all / Expand all** pair calls `setAllGoalsCollapsed()`. Collapsed state persists
 in `localStorage` (`goalsCollapsed:<event-name>`) and is re-applied on load AND on the **`live:updated`**
 event (so an in-place morph doesn't blow it away — idiomorph drops the `hidden` class since the server
@@ -130,10 +133,18 @@ an uncategorized section, ordered by due date). A category sub-header is **colla
 `toggleCatGrid()` toggles its `.cat-grid` and persists `goalsCatCollapsed:<event>::<cat>` in
 `localStorage` (re-applied on load + `live:updated`), clicking the **name OR chevron**; its `notes_html`
 (safe markdown) renders below and is click-to-edit (toggles the inline `cat-edit` form → `POST /goals/category/edit`).
+A category can be **backed by an RA game** — the add/edit sub-category form embeds the `cat_game_search(key)`
+macro (a console `<select>` + title search → `GET /ra/search?mode=category`, plus a plain "RA game ID" field
+for the by-id path). A result's **Use →** button calls `selectCategoryGame(btn, id, title, system)` which
+fills the *closest form*'s hidden `name`/`ra_game_id`/`system` (so every event's form works independently).
+When set, the sub-category header shows the game's **box-art thumbnail** + **console·↗** link to
+`retroachievements.org/game/{ra_game_id}` (the cover/title/console land in the background via `_enrich_category`).
+
 The toolbar has a **Show failed** toggle (`?show_failed`). On the card (`goal_card.html`): a **failed**
 goal gets a red ✗ SVG overlay (`bg-black/30`) + red border; **card art priority** is `custom_image`
 (`/static/…`) > `display_text`+`icon` (tinted via inline `style="color:…"`, centered) > cover/badge >
-letter. The edit form gains a `category` (datalist `#category-names`), a `display_text` input + a
+letter. The edit form gains a `category` (**per-event datalist `#category-names-{goal.id}`**, built from
+the card's `event_categories` — scoped to the goal's own event, not a global list), a `display_text` input + a
 `<input type=color>` + a `peer-checked` radio **icon picker** (from `goal_icons`), and a SEPARATE
 `hx-encoding="multipart/form-data"` image-upload form (+ "Remove uploaded image"). Single-card
 re-renders (`_render_card`) carry `goal_icons` via `_card_ctx`; the datalists live on the page.

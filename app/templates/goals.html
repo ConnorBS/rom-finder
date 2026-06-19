@@ -1,6 +1,29 @@
 {% extends "base.html" %}
 {% block title %}Goals — ROM Finder{% endblock %}
 {% block live_scope %}goals{% endblock %}
+
+{# Reusable RA game picker for a sub-category form (add or edit). Fills the form's
+   name / ra_game_id / system fields via selectCategoryGame (closest-form, so it works
+   for every event's form independently). #}
+{% macro cat_game_search(key) %}
+<div class="w-full border border-gray-800 rounded p-2 bg-gray-900/40">
+    <p class="text-gray-500 text-xs mb-1.5">Attach an RA game (optional) — its title, console, box art &amp; RA link become this sub-category. Search by title, or just paste the game ID below.</p>
+    <div class="flex flex-col sm:flex-row gap-2">
+        <select id="cat-sys-{{ key }}" name="system_id"
+                class="bg-gray-800 border border-gray-700 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500 w-full sm:w-44"
+                hx-get="/ra/search" hx-target="#cat-res-{{ key }}" hx-include="#cat-q-{{ key }}" hx-vals='{"mode": "category"}' hx-trigger="change">
+            <option value="">Console…</option>
+            {% for id, name in systems %}<option value="{{ id }}">{{ name }}</option>{% endfor %}
+        </select>
+        <input type="search" id="cat-q-{{ key }}" name="q" placeholder="Search game title…" autocomplete="off"
+               onkeydown="if(event.key==='Enter'){event.preventDefault();}"
+               class="flex-1 bg-gray-800 border border-gray-700 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500 placeholder-gray-600"
+               hx-get="/ra/search" hx-target="#cat-res-{{ key }}" hx-trigger="input changed delay:400ms, search" hx-include="#cat-sys-{{ key }}" hx-vals='{"mode": "category"}'>
+    </div>
+    <div id="cat-res-{{ key }}" class="mt-1.5 max-h-48 overflow-y-auto"></div>
+</div>
+{% endmacro %}
+
 {% block content %}
 <div class="p-4 sm:p-6 max-w-7xl mx-auto">
 
@@ -53,7 +76,6 @@
     <div id="goal-feedback-top" class="text-sm mb-3"></div>
 
     <datalist id="event-names">{% for e in event_names %}<option value="{{ e }}">{% endfor %}</datalist>
-    <datalist id="category-names">{% for c in category_names %}<option value="{{ c }}">{% endfor %}</datalist>
 
     <!-- Add Goal panel -->
     <div id="goal-panel" class="hidden mb-6 bg-gray-900 border border-gray-800 rounded-lg p-5">
@@ -232,7 +254,8 @@
             <div class="mb-3">
                 <div class="flex items-center flex-wrap gap-x-3 gap-y-1">
                     <button type="button" onclick="toggleEventGrid(this)" class="event-collapse-btn text-gray-500 hover:text-gray-200 transition-colors flex-shrink-0 leading-none" title="Collapse / expand this event"><span class="chev text-xs">▾</span></button>
-                    <h2 class="text-sm font-semibold {% if group.name %}text-gray-200{% else %}text-gray-500{% endif %}">{{ group.name or 'No event' }}</h2>
+                    <h2 onclick="toggleEventGrid(this)" title="Collapse / expand this event"
+                        class="text-sm font-semibold cursor-pointer select-none hover:text-white transition-colors {% if group.name %}text-gray-200{% else %}text-gray-500{% endif %}">{{ group.name or 'No event' }}</h2>
                     {% if group.event_image %}
                     <a href="{{ group.event.url }}" target="_blank" rel="noopener noreferrer" title="Open image">
                         <img src="{{ group.event.url }}" alt="{{ group.name }}" loading="lazy"
@@ -292,10 +315,17 @@
                 <form id="cat-add-{{ loop.index }}" class="hidden mt-2 flex flex-wrap items-end gap-2 bg-gray-900/60 border border-gray-800 rounded-lg p-2"
                       hx-post="/goals/category" hx-swap="none">
                     <input type="hidden" name="event_name" value="{{ group.name }}">
+                    <input type="hidden" name="system" value="">
+                    {{ cat_game_search('add-' ~ loop.index) }}
                     <div class="flex-1 min-w-[10rem]">
                         <label class="block text-gray-500 text-xs mb-0.5">Sub-category title</label>
-                        <input type="text" name="name" required placeholder="e.g. Week 1"
+                        <input type="text" name="name" placeholder="e.g. Week 1 (or filled by the game above)"
                                class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-gray-500 text-xs mb-0.5">RA game ID</label>
+                        <input type="text" name="ra_game_id" inputmode="numeric" placeholder="optional"
+                               class="w-24 bg-gray-800 border border-gray-700 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500">
                     </div>
                     <div>
                         <label class="block text-gray-500 text-xs mb-0.5">Deadline</label>
@@ -345,7 +375,7 @@
                     {% if sec.cards %}
                     <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
                         {% for card in sec.cards %}
-                        {% with goal=card.goal, progress=card.progress, overdue=card.overdue, days_left=card.days_left %}{% include "partials/goal_card.html" %}{% endwith %}
+                        {% with goal=card.goal, progress=card.progress, overdue=card.overdue, days_left=card.days_left, event_categories=card.event_categories %}{% include "partials/goal_card.html" %}{% endwith %}
                         {% endfor %}
                     </div>
                     {% endif %}
@@ -354,7 +384,17 @@
                         <!-- Sub-category header (click the name or chevron to collapse) -->
                         <div class="flex items-center flex-wrap gap-x-2 gap-y-1 mb-1.5">
                             <button type="button" onclick="toggleCatGrid(this)" class="cat-collapse-btn text-gray-500 hover:text-gray-200 transition-colors flex-shrink-0 leading-none"><span class="chev text-xs">▾</span></button>
+                            {% if sec.category and sec.category.ra_game_id and sec.category.cover_path %}
+                            <a href="https://retroachievements.org/game/{{ sec.category.ra_game_id }}" target="_blank" rel="noopener noreferrer" title="Open {{ sec.title }} on RetroAchievements" class="flex-shrink-0">
+                                <img src="/static/{{ sec.category.cover_path }}" alt="{{ sec.title }}" loading="lazy"
+                                     class="h-7 w-auto rounded border border-gray-700 hover:border-gray-500 transition-colors">
+                            </a>
+                            {% endif %}
                             <button type="button" onclick="toggleCatGrid(this)" class="text-sm font-medium text-emerald-200/90 hover:text-white transition-colors">{{ sec.title }}</button>
+                            {% if sec.category and sec.category.ra_game_id %}
+                            <a href="https://retroachievements.org/game/{{ sec.category.ra_game_id }}" target="_blank" rel="noopener noreferrer"
+                               class="text-xs text-gray-500 hover:text-blue-300 transition-colors flex-shrink-0" title="Open on RetroAchievements">{% if sec.category.system %}{{ sec.category.system }} {% endif %}↗</a>
+                            {% endif %}
                             {% if sec.deadline %}
                             {% set cat_done = sec.total and sec.done >= sec.total %}
                             {% set cat_overdue = sec.deadline < now and not cat_done %}
@@ -379,10 +419,17 @@
                               hx-post="/goals/category/edit" hx-swap="none">
                             <input type="hidden" name="event_name" value="{{ group.name }}">
                             <input type="hidden" name="old_name" value="{{ sec.title }}">
+                            <input type="hidden" name="system" value="{{ sec.category.system if sec.category else '' }}">
+                            {{ cat_game_search('edit-' ~ ev_idx ~ '-' ~ loop.index) }}
                             <div>
                                 <label class="block text-gray-500 text-xs mb-0.5">Title</label>
                                 <input type="text" name="name" value="{{ sec.title }}" required
                                        class="bg-gray-800 border border-gray-700 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500 w-32">
+                            </div>
+                            <div>
+                                <label class="block text-gray-500 text-xs mb-0.5">RA game ID</label>
+                                <input type="text" name="ra_game_id" inputmode="numeric" value="{{ sec.category.ra_game_id if sec.category and sec.category.ra_game_id else '' }}" placeholder="optional"
+                                       class="w-24 bg-gray-800 border border-gray-700 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500">
                             </div>
                             <div>
                                 <label class="block text-gray-500 text-xs mb-0.5">Deadline</label>
@@ -400,7 +447,7 @@
                             {% if sec.cards %}
                             <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
                                 {% for card in sec.cards %}
-                                {% with goal=card.goal, progress=card.progress, overdue=card.overdue, days_left=card.days_left %}{% include "partials/goal_card.html" %}{% endwith %}
+                                {% with goal=card.goal, progress=card.progress, overdue=card.overdue, days_left=card.days_left, event_categories=card.event_categories %}{% include "partials/goal_card.html" %}{% endwith %}
                                 {% endfor %}
                             </div>
                             {% else %}
@@ -519,6 +566,18 @@ function prepImportEvent(gameId, gameTitle) {
     document.getElementById('event-ref').value = gameId;
     document.getElementById('event-name-in').value = gameTitle || '';
     document.getElementById('event-ref').scrollIntoView({behavior: 'smooth', block: 'center'});
+}
+// Fill the sub-category form a search result belongs to (closest form), so every event's
+// add/edit form works independently — title → name, plus the hidden id + system fields.
+function selectCategoryGame(btn, id, title, system) {
+    var form = btn.closest('form');
+    if (!form) return;
+    var set = function (n, v) { var el = form.querySelector('[name="' + n + '"]'); if (el) el.value = v; };
+    set('name', title);
+    set('ra_game_id', id);
+    set('system', system);
+    var res = form.querySelector('[id^="cat-res-"]');
+    if (res) res.innerHTML = '<p class="text-emerald-400 text-xs">✓ ' + title + ' · ' + system + '</p>';
 }
 function selectGoalGame(id, title, system) {
     document.getElementById('goal-ra-id').value = id;

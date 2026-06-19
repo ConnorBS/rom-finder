@@ -1,5 +1,7 @@
 {% set done = (goal.status == 'completed') %}
 {% set failed = (goal.status == 'failed') %}
+{# Event-scoped sub-category suggestions — each card lists only ITS event's categories. #}
+<datalist id="category-names-{{ goal.id }}">{% for c in event_categories %}<option value="{{ c }}">{% endfor %}</datalist>
 <div id="goal-{{ goal.id }}"
      class="goal-card bg-gray-900 border rounded-lg overflow-hidden flex flex-col group
             {% if done %}border-green-900/60{% elif failed %}border-red-800/60{% elif overdue %}border-red-900/60{% else %}border-gray-800{% endif %}"
@@ -155,7 +157,7 @@
                        list="event-names" autocomplete="off"
                        class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500">
                 <input type="text" name="category" value="{{ goal.category }}" placeholder="Sub-category (optional)"
-                       list="category-names" autocomplete="off"
+                       list="category-names-{{ goal.id }}" autocomplete="off"
                        class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500">
                 <input type="date" name="deadline" value="{{ goal.deadline.strftime('%Y-%m-%d') if goal.deadline else '' }}"
                        class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500">
@@ -205,7 +207,7 @@
                        list="event-names" autocomplete="off"
                        class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500">
                 <input type="text" name="category" placeholder="Sub-category (optional)"
-                       list="category-names" autocomplete="off"
+                       list="category-names-{{ goal.id }}" autocomplete="off"
                        class="w-full bg-gray-800 border border-gray-700 text-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500">
                 <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-2 py-1 rounded transition-colors">⧉ Copy here</button>
             </form>
