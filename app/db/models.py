@@ -147,6 +147,12 @@ class GoalCategory(SQLModel, table=True):
     name: str                              # the sub-category title (matches Goal.category)
     deadline: Optional[datetime] = None    # the sub-category's own target date; None = no deadline
     notes: str = ""                        # optional free text (light markdown) shown below the header; "" = no notes element
+    # Optional RA game backing the sub-category (migration 0027): when set, the category
+    # takes the game's identity — box art (cover_path), console (system), and a link to
+    # retroachievements.org/game/{ra_game_id}. Attached by id or by manual search.
+    ra_game_id: Optional[int] = Field(default=None, index=True)
+    system: str = ""                       # the attached game's console (display name)
+    cover_path: str = ""                   # "covers/{ra_game_id}.png" (box art) when a game is attached
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 

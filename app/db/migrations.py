@@ -217,6 +217,14 @@ def _m_0026_goal_custom_display(s: Session) -> None:
     _add_column(s, "goal", "icon_color", "VARCHAR", "''")
 
 
+def _m_0027_goalcategory_game(s: Session) -> None:
+    # Optional RA game backing a sub-category (routers/services goals). The goal_categories
+    # table was created by create_all, so already-deployed DBs need these column-adds.
+    _add_column(s, "goal_categories", "ra_game_id", "INTEGER", None)
+    _add_column(s, "goal_categories", "system", "VARCHAR", "''")
+    _add_column(s, "goal_categories", "cover_path", "VARCHAR", "''")
+
+
 def _m_0025_library_root_id(s: Session) -> None:
     # Which registered LibraryRoot (directory) a ROM lives in. NULL until backfilled by
     # services/library_roots.ensure_primary_and_backfill (lifespan), which longest-prefix
@@ -254,6 +262,7 @@ MIGRATIONS: list[tuple[str, "callable"]] = [
     ("0024_library_chd_codec", _m_0024_library_chd_codec),
     ("0025_library_root_id", _m_0025_library_root_id),
     ("0026_goal_custom_display", _m_0026_goal_custom_display),
+    ("0027_goalcategory_game", _m_0027_goalcategory_game),
 ]
 
 

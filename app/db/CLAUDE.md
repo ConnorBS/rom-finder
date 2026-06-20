@@ -141,11 +141,19 @@ name                      — the sub-category title (matches Goal.category)
 deadline                  — the sub-category's own target date; None = none
 notes                     — optional free text (light safe markdown via goals._render_notes), shown
                             below the category header; "" = no notes element renders
+ra_game_id                — optional RA game backing the category (migration 0027); when set the
+                            category takes the game's identity
+system                    — the attached game's console (display)
+cover_path                — "covers/{ra_game_id}.png" box art for the attached game
 created_at, updated_at
 ```
-New table → `create_all` (no migration). On the `/goals` page, categories AND the uncategorized
-games interleave **by closest due date**; each category is collapsible (click the name or chevron).
-Renaming a category re-points its goals; deleting it reverts its goals to uncategorized (not deleted).
+New table → `create_all`; **migration 0027 ALTER-adds `ra_game_id`/`system`/`cover_path`** to
+already-deployed DBs. On the `/goals` page, categories AND the uncategorized games interleave **by
+closest due date**; each category is collapsible (click the name or chevron). Renaming a category
+re-points its goals; deleting it reverts its goals to uncategorized (not deleted). **A category can be
+backed by an RA game** (attached by id or manual search): its title (when none was typed), console, box
+art, and a link to `retroachievements.org/game/{ra_game_id}` are filled in the background by
+`routers/goals._enrich_category` — the header then shows the box-art thumbnail + console·↗ link.
 
 ### `Download` (table: `download`)
 Active/completed download queue entries.

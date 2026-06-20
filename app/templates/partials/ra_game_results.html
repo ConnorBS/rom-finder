@@ -41,6 +41,15 @@
                 data-system="{{ system_name }}"
                 class="flex-shrink-0 bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1.5 rounded-md transition-colors"
             >Select →</button>
+            {% elif mode == 'category' %}
+            <!-- Category mode: pick this game into the sub-category form it lives in -->
+            <button
+                type="button"
+                onclick="selectCategoryGame(this, {{ game.ID }}, this.dataset.title, this.dataset.system)"
+                data-title="{{ game.Title }}"
+                data-system="{{ system_name }}"
+                class="flex-shrink-0 bg-emerald-700 hover:bg-emerald-600 text-white text-xs px-3 py-1.5 rounded-md transition-colors"
+            >Use →</button>
             {% elif mode == 'add' %}
             <!-- Add to Wanted (ROM hunt) OR add as a Goal (master/beat to track) -->
             <div class="flex-shrink-0 flex flex-col items-stretch gap-1.5">
