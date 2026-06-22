@@ -70,6 +70,41 @@ _MAX_DOWNLOAD_RETRIES = 3
 # ("search == hunt"). Kept under the old name for the existing import/test.
 _significant_terms = significant_terms
 
+# Max seconds to wait on a single download attempt, and how often to re-check the
+# cancel flag while it runs.
+_DOWNLOAD_TIMEOUT = 300
+_CANCEL_POLL = 2.0
+
+
+class _HuntCancelled(Exception):
+    """Raised when the user cancels the hunt while a download is in flight, so the
+    in-progress attempt aborts at once instead of running to the 5-min timeout."""
+
+
+async def _download_with_cancel(coro_factory, task_id: str) -> None:
+    """Run a source download but poll the cancel flag every `_CANCEL_POLL` seconds,
+    so a user Cancel stops the in-flight download promptly (was: only checked
+    between candidates, so Cancel did nothing until the current 5-min attempt
+    finished). Raises `_HuntCancelled` on cancel, RuntimeError on timeout, or
+    re-raises whatever the download itself raised."""
+    loop = asyncio.get_event_loop()
+    task = asyncio.ensure_future(coro_factory())
+    start = loop.time()
+    while True:
+        done, _ = await asyncio.wait({task}, timeout=_CANCEL_POLL)
+        if task in done:
+            task.result()  # re-raise any download error
+            return
+        if activity_store.is_cancelled(task_id) or loop.time() - start > _DOWNLOAD_TIMEOUT:
+            task.cancel()
+            try:
+                await task
+            except BaseException:
+                pass
+            if activity_store.is_cancelled(task_id):
+                raise _HuntCancelled()
+            raise RuntimeError("Download timed out after 5 minutes")
+
 
 def _file_score(file_name: str, ra_stems: set[str], title_terms: set[str]) -> int:
     """Score a candidate by likelihood of being the right dump.
@@ -437,14 +472,10 @@ async def auto_hunt(wanted_id: int) -> None:
                     "wanted_id": wanted_id, "source": src.source_id,
                     "identifier": identifier, "score": score, "url": source_url,
                 })
-                try:
-                    await asyncio.wait_for(
-                        src.download_file(source_url, dest, on_progress),
-                        timeout=300,  # 5 min max per attempt
-                    )
-                except asyncio.TimeoutError:
-                    applog.warning("hunt", f"Download timed out (5 min): {file_name}", {"wanted_id": wanted_id})
-                    raise RuntimeError("Download timed out after 5 minutes")
+                await _download_with_cancel(
+                    lambda: src.download_file(source_url, dest, on_progress),
+                    task_id,
+                )
 
                 _set_dl_status(DownloadStatus.hashing)
                 rom_path = dest
@@ -544,6 +575,21 @@ async def auto_hunt(wanted_id: int) -> None:
                                 {"wanted_id": wanted_id, "url": source_url})
                     _cleanup(dest, rom_path)
 
+            except _HuntCancelled:
+                # User hit Cancel mid-download: abort this attempt, drop its transient
+                # progress card (no HuntAttempt — it wasn't really tried), and stop the
+                # hunt. The post-loop cancel check marks the game exhausted; crucially
+                # we must NOT fall through to the torrent/usenet external fallback.
+                _cleanup(dest, rom_path)
+                with Session(engine) as session:
+                    d = session.get(Download, dl_id)
+                    if d is not None:
+                        session.delete(d)
+                        session.commit()
+                applog.info("hunt", f"Hunt cancelled mid-download by user: {game_title}",
+                            {"wanted_id": wanted_id})
+                break
+
             except Exception as exc:
                 result_code = "download_failed"
                 applog.warning("hunt", f"Attempt failed ({src.source_id}): {exc}", {
@@ -572,6 +618,15 @@ async def auto_hunt(wanted_id: int) -> None:
             if source_url:
                 past_urls.add(source_url)
 
+        # A user Cancel stops the hunt here — do NOT hand the game off to the
+        # torrent/usenet last-resort client (that would park it in awaiting_external
+        # and the scheduler poll would keep "searching" with no way to cancel from
+        # the queue — the reported bug).
+        if activity_store.is_cancelled(task_id):
+            applog.info("hunt", f"Auto-hunt cancelled by user — stopped: {game_title}",
+                        {"wanted_id": wanted_id, "tried": tried})
+            _mark_exhausted(wanted_id)
+            return
         if tried == 0:
             applog.info("hunt", f"All candidates already attempted: {game_title}", {"wanted_id": wanted_id})
         if await _try_external():
@@ -587,9 +642,19 @@ async def auto_hunt(wanted_id: int) -> None:
         activity_store.finish(task_id)
         # Safety net: drop any transient hunt Download row that never reached a
         # terminal state (e.g. a crash mid-attempt or a user cancel), so the
-        # downloads page isn't left with a stuck "downloading" card.
+        # downloads page isn't left with a stuck "downloading" card. EXCLUDE rows
+        # owned by a live ExternalDownload — when the hunt hands off to the
+        # torrent/usenet client it deliberately creates a long-lived `downloading`
+        # card (same hunt_task_id) that the scheduler poll drives; deleting it here
+        # left the external job running with no card to track or cancel.
         try:
+            from app.db.models import ExternalDownload
             with Session(engine) as s:
+                ext_dl_ids = set(s.exec(
+                    select(ExternalDownload.download_id).where(
+                        ExternalDownload.status.in_(["submitted", "metadata", "downloading", "verifying"])
+                    )
+                ).all())
                 stale = s.exec(
                     select(Download).where(
                         Download.hunt_task_id == task_id,
@@ -600,9 +665,13 @@ async def auto_hunt(wanted_id: int) -> None:
                         ]),
                     )
                 ).all()
+                removed = False
                 for d in stale:
+                    if d.id in ext_dl_ids:
+                        continue
                     s.delete(d)
-                if stale:
+                    removed = True
+                if removed:
                     s.commit()
         except Exception:
             pass

@@ -129,3 +129,73 @@ def test_max_candidates_cap_raised():
     # Flood-guard kept, but raised so an exhaustive multi-source/region candidate
     # list isn't truncated before a verified dump is reached.
     assert hunter._MAX_CANDIDATES >= 40
+
+
+def test_cancel_between_candidates_skips_external(fresh_engine, tmp_path, monkeypatch):
+    """A cancelled hunt must NOT fall through to the torrent/usenet last-resort
+    fallback — that was what left the game 'awaiting_external', polled forever with
+    no way to cancel from the queue (the reported bug)."""
+    from app.services import activity as activity_store
+    wid = _seed(tmp_path)
+    _FakeRA.match_id = None
+    _patch(monkeypatch, file_hash="deadbeef")
+
+    called = {"external": False}
+
+    async def _spy_submit(*a, **k):
+        called["external"] = True
+        return False
+    monkeypatch.setattr("app.services.external_hunt.submit_external", _spy_submit)
+
+    # User cancels before the candidate loop even starts.
+    activity_store.cancel(f"hunt-{wid}")
+    asyncio.run(hunter.auto_hunt(wid))
+
+    assert called["external"] is False, "cancel must not trigger the external fallback"
+    with Session(engine) as s:
+        assert s.exec(select(Download)).all() == [], "no orphaned transient download row"
+        assert s.get(WantedGame, wid).status == HuntStatus.exhausted
+    # finish() must clear the cancel flag so a later re-hunt isn't auto-cancelled.
+    assert activity_store.is_cancelled(f"hunt-{wid}") is False
+
+
+def test_cancel_mid_download_aborts_attempt(fresh_engine, tmp_path, monkeypatch):
+    """Cancelling while a download is in flight aborts that attempt promptly (not
+    after the 5-min timeout), deletes its transient card, records NO HuntAttempt,
+    and stops the hunt without the external fallback."""
+    from app.services import activity as activity_store
+    wid = _seed(tmp_path)
+    _FakeRA.match_id = None
+    monkeypatch.setattr(hunter, "_CANCEL_POLL", 0.01)
+
+    task_id = f"hunt-{wid}"
+
+    class _SlowSource(_FakeSource):
+        async def download_file(self, url, dest, progress_callback=None):
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            activity_store.cancel(task_id)   # user hits Cancel mid-download
+            await asyncio.sleep(5)           # the cancel poll aborts this first
+            dest.write_bytes(self._content)
+
+    src = _SlowSource()
+    monkeypatch.setattr(hunter, "_enabled_srcs", lambda session: [src])
+    monkeypatch.setattr(hunter, "RAClient", _FakeRA)
+
+    async def _fake_hash(path, system):
+        return "deadbeef", True
+    monkeypatch.setattr(hunter, "ra_hash_or_fallback", _fake_hash)
+
+    called = {"external": False}
+
+    async def _spy_submit(*a, **k):
+        called["external"] = True
+        return False
+    monkeypatch.setattr("app.services.external_hunt.submit_external", _spy_submit)
+
+    asyncio.run(hunter.auto_hunt(wid))
+
+    assert called["external"] is False
+    with Session(engine) as s:
+        assert s.exec(select(Download)).all() == [], "cancelled attempt leaves no card"
+        assert s.exec(select(HuntAttempt)).all() == [], "a cancelled attempt is not a real try"
+        assert s.get(WantedGame, wid).status == HuntStatus.exhausted

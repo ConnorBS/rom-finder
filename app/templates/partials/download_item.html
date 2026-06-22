@@ -124,7 +124,7 @@
                 hx-post="/activity/cancel/{{ download.hunt_task_id }}"
                 hx-swap="none"
                 class="text-gray-500 hover:text-red-400 text-xs border border-gray-700 hover:border-red-700 px-2 py-1 rounded transition-colors"
-                title="Stop this hunt — the current download finishes first, then no further attempts"
+                title="Stop this hunt — aborts the in-flight download and makes no further attempts (no torrent/usenet fallback)"
             >Cancel</button>
             {% endif %}
 
