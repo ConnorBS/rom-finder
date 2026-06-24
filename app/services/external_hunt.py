@@ -256,6 +256,17 @@ async def _ingest(ext_id: int, st: dict) -> str:
             return await _fail(ext_id, "downloaded dump did not hash-verify", delete_files=True)
         dl_status = DownloadStatus.pending_approval if use_review else DownloadStatus.completed
         d = session.get(Download, dl_id) if dl_id else None
+        if d is None and dl_id:
+            # The progress card was deleted while the job ran (a user cancel from the
+            # Downloads page). Don't resurrect it — treat as cancelled: remove the
+            # just-staged file and fail the external job (also cleans the client copy).
+            applog.info("hunt", f"External: progress card removed for {game_title} — treating as cancelled",
+                        {"wanted_id": wanted_id})
+            try:
+                rom_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            return await _fail(ext_id, "download cancelled by user (card removed)", delete_files=True)
         if d is None:
             d = Download(source_id=ext.client_id, source_url="")
             session.add(d)

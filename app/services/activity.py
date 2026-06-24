@@ -69,6 +69,15 @@ def is_cancelled(task_id: str) -> bool:
     return task_id in _cancelled
 
 
+def is_active(task_id: str) -> bool:
+    """True if a not-yet-finished task with this id is currently tracked in memory.
+    False once the owning coroutine has gone (e.g. killed by a restart) — the Cancel
+    endpoint uses this to decide whether a hunt is live (it'll self-clean) or an
+    orphan that must be reaped directly."""
+    t = _tasks.get(task_id)
+    return bool(t and not t.done)
+
+
 def finish(task_id: str) -> None:
     if task_id in _tasks:
         _tasks[task_id].done = True

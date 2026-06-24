@@ -166,6 +166,58 @@ def _mark_exhausted(wanted_id: int) -> None:
             session.commit()
 
 
+# ExternalDownload states whose Download card the scheduler poller still drives —
+# those transient hunt rows are NOT orphans, so the reaper must leave them alone.
+_EXT_NON_TERMINAL = ("submitted", "metadata", "downloading", "verifying")
+
+
+def reap_orphaned_hunt_downloads(task_id: str | None = None) -> int:
+    """Delete transient hunt `Download` cards stuck in a non-terminal state with no
+    live hunt driving them; returns how many were removed.
+
+    A hunt attempt creates a `downloading` card (`hunt_task_id` set, `file_path`
+    None) that the hunt's own `finally` reaps on exit. But a HARD restart (the
+    SIGKILL on a redeploy) kills the coroutine WITHOUT running `finally`, stranding
+    the card as an un-cancellable "Downloading 0%" row — and the in-memory hunt task
+    is gone too, so its Cancel button (which only signals that task) is a no-op.
+    This reaps those: called at startup (`task_id=None` → every orphan, since a
+    restart kills ALL hunt coroutines) and from the Cancel endpoint
+    (`task_id="hunt-{id}"`) when the owning coroutine is already gone.
+
+    A card still backed by a non-terminal `ExternalDownload` is left alone — that
+    torrent/usenet job survives restarts and the scheduler poll keeps driving its
+    card."""
+    from app.db.models import ExternalDownload
+    reaped = 0
+    try:
+        with Session(engine) as s:
+            live_ext_dl_ids = set(s.exec(
+                select(ExternalDownload.download_id).where(
+                    ExternalDownload.status.in_(_EXT_NON_TERMINAL)
+                )
+            ).all())
+            q = select(Download).where(
+                Download.hunt_task_id.isnot(None),
+                Download.status.in_([
+                    DownloadStatus.downloading,
+                    DownloadStatus.hashing,
+                    DownloadStatus.verifying,
+                ]),
+            )
+            if task_id is not None:
+                q = q.where(Download.hunt_task_id == task_id)
+            for d in s.exec(q).all():
+                if d.id in live_ext_dl_ids:
+                    continue
+                s.delete(d)
+                reaped += 1
+            if reaped:
+                s.commit()
+    except Exception:
+        pass
+    return reaped
+
+
 def _ra_base_id(x):
     """RA hub/multiset synthetic ids encode the base game id in the low 8 digits:
     `pseudo = type * 10^8 + base_game_id` (e.g. 1200034728 → 34728, 1100002271 → 2271;
@@ -640,38 +692,9 @@ async def auto_hunt(wanted_id: int) -> None:
         applog.error("hunt", f"Auto-hunt crashed: {exc}", {"wanted_id": wanted_id})
     finally:
         activity_store.finish(task_id)
-        # Safety net: drop any transient hunt Download row that never reached a
-        # terminal state (e.g. a crash mid-attempt or a user cancel), so the
-        # downloads page isn't left with a stuck "downloading" card. EXCLUDE rows
-        # owned by a live ExternalDownload — when the hunt hands off to the
-        # torrent/usenet client it deliberately creates a long-lived `downloading`
-        # card (same hunt_task_id) that the scheduler poll drives; deleting it here
-        # left the external job running with no card to track or cancel.
-        try:
-            from app.db.models import ExternalDownload
-            with Session(engine) as s:
-                ext_dl_ids = set(s.exec(
-                    select(ExternalDownload.download_id).where(
-                        ExternalDownload.status.in_(["submitted", "metadata", "downloading", "verifying"])
-                    )
-                ).all())
-                stale = s.exec(
-                    select(Download).where(
-                        Download.hunt_task_id == task_id,
-                        Download.status.in_([
-                            DownloadStatus.downloading,
-                            DownloadStatus.hashing,
-                            DownloadStatus.verifying,
-                        ]),
-                    )
-                ).all()
-                removed = False
-                for d in stale:
-                    if d.id in ext_dl_ids:
-                        continue
-                    s.delete(d)
-                    removed = True
-                if removed:
-                    s.commit()
-        except Exception:
-            pass
+        # Safety net: drop this hunt's transient `downloading` card if it never
+        # reached a terminal state (crash/cancel mid-attempt), so the Downloads page
+        # isn't left with a stuck card. Skips rows owned by a live ExternalDownload
+        # (the torrent/usenet hand-off keeps a long-lived card the scheduler poll
+        # drives). Shared with the startup + Cancel-endpoint reaper.
+        reap_orphaned_hunt_downloads(task_id)

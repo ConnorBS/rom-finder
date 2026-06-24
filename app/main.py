@@ -57,6 +57,15 @@ async def lifespan(app: FastAPI):
         print("[startup] WARNING: RAHasher not found — disc-based ROMs (Saturn, PS1/2, Dreamcast…) will hash incorrectly", flush=True)
         applog.warning("system", "RAHasher not found — disc-based ROMs (Saturn, PS1/2, Dreamcast, CHD) will hash incorrectly and never match RA")
     applog.info("system", "ROM Finder started")
+    # Reap orphaned hunt download cards left behind by a hard restart — a SIGKILL on
+    # redeploy kills the hunt coroutine without running its `finally` cleanup, so its
+    # transient "Downloading 0%" card is stranded AND un-cancellable (the in-memory
+    # hunt task is gone, so its Cancel button no-ops). Rows backed by a live external
+    # torrent/usenet job are preserved (the scheduler poll resumes them).
+    from app.services.hunter import reap_orphaned_hunt_downloads
+    reaped = reap_orphaned_hunt_downloads()
+    if reaped:
+        applog.info("system", f"Reaped {reaped} orphaned hunt download card(s) at startup")
     from app.services.scheduler import scheduler_loop
     sched_task = asyncio.create_task(scheduler_loop())
     yield
