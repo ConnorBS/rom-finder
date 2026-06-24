@@ -94,7 +94,10 @@ FastAPI `BackgroundTasks` runs after the HTTP response in the same event loop. C
 - `increment(task_id)` — advance batch counter (use when there are no per-card overlays)
 - `complete_entry(task_id, entry_id)` — advance AND drop that entry's per-card overlay. Use this (not `increment`) in `rehash`/`verify` batches so a finished card stops showing its spinner while the batch continues. Otherwise every entry stays lit until the whole batch ends.
 - `finish(task_id)` — mark done (auto-pruned after 5s)
+- `is_active(task_id)` — True while a not-yet-`done` task is tracked in memory; False once its coroutine is gone (e.g. killed by a restart). The Cancel endpoint uses it to tell a *live* hunt (cleans up itself) from a dead *orphan* (must be reaped directly).
 - `get_card_states()` → `{states: {"lib-N": "cover|rehash|verify", ...}, batch_types: []}`
+
+**The activity store is in-memory only — it does NOT survive a restart, but DB rows it spawned do.** A hunt's transient `Download` card outlives its in-memory task, so a hard restart (SIGKILL on redeploy) strands an un-cancellable "Downloading 0%" card. `main.py` lifespan calls `hunter.reap_orphaned_hunt_downloads()` at startup to clear them (and the Cancel endpoint reaps the specific one on demand). See `routers/CLAUDE.md` → *Orphaned-card reaper*.
 
 ### Tray polling
 `base.html` polls `/activity/tray` every 3s via HTMX. `collection.html` polls `/activity/card-states` every 2s via JS for per-card overlays. Separately, a `base.html` poller hits `/api/changes` every 4s and **morphs the page in place** (idiomorph) when its scope's fingerprint changes — see `templates/CLAUDE.md` → *Live in-place updates* and `routers/CLAUDE.md` → `/api/changes`.

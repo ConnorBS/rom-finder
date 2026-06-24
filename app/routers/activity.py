@@ -73,5 +73,13 @@ async def card_states():
 
 @router.post("/cancel/{task_id}", response_class=HTMLResponse)  # router prefix adds /activity
 async def cancel_task(task_id: str):
+    was_active = activity_store.is_active(task_id)
     activity_store.cancel(task_id)
+    # A live hunt stops at its next cancel-flag poll and its own `finally` drops the
+    # transient card. But if the owning coroutine is already gone (killed by a
+    # restart), nothing will ever clean up — so reap the orphaned hunt download card
+    # directly here, otherwise the Cancel button just no-ops forever.
+    if not was_active and task_id.startswith("hunt-"):
+        from app.services.hunter import reap_orphaned_hunt_downloads
+        reap_orphaned_hunt_downloads(task_id)
     return HTMLResponse("")

@@ -70,6 +70,41 @@ _MAX_DOWNLOAD_RETRIES = 3
 # ("search == hunt"). Kept under the old name for the existing import/test.
 _significant_terms = significant_terms
 
+# Max seconds to wait on a single download attempt, and how often to re-check the
+# cancel flag while it runs.
+_DOWNLOAD_TIMEOUT = 300
+_CANCEL_POLL = 2.0
+
+
+class _HuntCancelled(Exception):
+    """Raised when the user cancels the hunt while a download is in flight, so the
+    in-progress attempt aborts at once instead of running to the 5-min timeout."""
+
+
+async def _download_with_cancel(coro_factory, task_id: str) -> None:
+    """Run a source download but poll the cancel flag every `_CANCEL_POLL` seconds,
+    so a user Cancel stops the in-flight download promptly (was: only checked
+    between candidates, so Cancel did nothing until the current 5-min attempt
+    finished). Raises `_HuntCancelled` on cancel, RuntimeError on timeout, or
+    re-raises whatever the download itself raised."""
+    loop = asyncio.get_event_loop()
+    task = asyncio.ensure_future(coro_factory())
+    start = loop.time()
+    while True:
+        done, _ = await asyncio.wait({task}, timeout=_CANCEL_POLL)
+        if task in done:
+            task.result()  # re-raise any download error
+            return
+        if activity_store.is_cancelled(task_id) or loop.time() - start > _DOWNLOAD_TIMEOUT:
+            task.cancel()
+            try:
+                await task
+            except BaseException:
+                pass
+            if activity_store.is_cancelled(task_id):
+                raise _HuntCancelled()
+            raise RuntimeError("Download timed out after 5 minutes")
+
 
 def _file_score(file_name: str, ra_stems: set[str], title_terms: set[str]) -> int:
     """Score a candidate by likelihood of being the right dump.
@@ -129,6 +164,58 @@ def _mark_exhausted(wanted_id: int) -> None:
             g.last_hunt_at = datetime.utcnow()
             session.add(g)
             session.commit()
+
+
+# ExternalDownload states whose Download card the scheduler poller still drives —
+# those transient hunt rows are NOT orphans, so the reaper must leave them alone.
+_EXT_NON_TERMINAL = ("submitted", "metadata", "downloading", "verifying")
+
+
+def reap_orphaned_hunt_downloads(task_id: str | None = None) -> int:
+    """Delete transient hunt `Download` cards stuck in a non-terminal state with no
+    live hunt driving them; returns how many were removed.
+
+    A hunt attempt creates a `downloading` card (`hunt_task_id` set, `file_path`
+    None) that the hunt's own `finally` reaps on exit. But a HARD restart (the
+    SIGKILL on a redeploy) kills the coroutine WITHOUT running `finally`, stranding
+    the card as an un-cancellable "Downloading 0%" row — and the in-memory hunt task
+    is gone too, so its Cancel button (which only signals that task) is a no-op.
+    This reaps those: called at startup (`task_id=None` → every orphan, since a
+    restart kills ALL hunt coroutines) and from the Cancel endpoint
+    (`task_id="hunt-{id}"`) when the owning coroutine is already gone.
+
+    A card still backed by a non-terminal `ExternalDownload` is left alone — that
+    torrent/usenet job survives restarts and the scheduler poll keeps driving its
+    card."""
+    from app.db.models import ExternalDownload
+    reaped = 0
+    try:
+        with Session(engine) as s:
+            live_ext_dl_ids = set(s.exec(
+                select(ExternalDownload.download_id).where(
+                    ExternalDownload.status.in_(_EXT_NON_TERMINAL)
+                )
+            ).all())
+            q = select(Download).where(
+                Download.hunt_task_id.isnot(None),
+                Download.status.in_([
+                    DownloadStatus.downloading,
+                    DownloadStatus.hashing,
+                    DownloadStatus.verifying,
+                ]),
+            )
+            if task_id is not None:
+                q = q.where(Download.hunt_task_id == task_id)
+            for d in s.exec(q).all():
+                if d.id in live_ext_dl_ids:
+                    continue
+                s.delete(d)
+                reaped += 1
+            if reaped:
+                s.commit()
+    except Exception:
+        pass
+    return reaped
 
 
 def _ra_base_id(x):
@@ -437,14 +524,10 @@ async def auto_hunt(wanted_id: int) -> None:
                     "wanted_id": wanted_id, "source": src.source_id,
                     "identifier": identifier, "score": score, "url": source_url,
                 })
-                try:
-                    await asyncio.wait_for(
-                        src.download_file(source_url, dest, on_progress),
-                        timeout=300,  # 5 min max per attempt
-                    )
-                except asyncio.TimeoutError:
-                    applog.warning("hunt", f"Download timed out (5 min): {file_name}", {"wanted_id": wanted_id})
-                    raise RuntimeError("Download timed out after 5 minutes")
+                await _download_with_cancel(
+                    lambda: src.download_file(source_url, dest, on_progress),
+                    task_id,
+                )
 
                 _set_dl_status(DownloadStatus.hashing)
                 rom_path = dest
@@ -544,6 +627,21 @@ async def auto_hunt(wanted_id: int) -> None:
                                 {"wanted_id": wanted_id, "url": source_url})
                     _cleanup(dest, rom_path)
 
+            except _HuntCancelled:
+                # User hit Cancel mid-download: abort this attempt, drop its transient
+                # progress card (no HuntAttempt — it wasn't really tried), and stop the
+                # hunt. The post-loop cancel check marks the game exhausted; crucially
+                # we must NOT fall through to the torrent/usenet external fallback.
+                _cleanup(dest, rom_path)
+                with Session(engine) as session:
+                    d = session.get(Download, dl_id)
+                    if d is not None:
+                        session.delete(d)
+                        session.commit()
+                applog.info("hunt", f"Hunt cancelled mid-download by user: {game_title}",
+                            {"wanted_id": wanted_id})
+                break
+
             except Exception as exc:
                 result_code = "download_failed"
                 applog.warning("hunt", f"Attempt failed ({src.source_id}): {exc}", {
@@ -572,6 +670,15 @@ async def auto_hunt(wanted_id: int) -> None:
             if source_url:
                 past_urls.add(source_url)
 
+        # A user Cancel stops the hunt here — do NOT hand the game off to the
+        # torrent/usenet last-resort client (that would park it in awaiting_external
+        # and the scheduler poll would keep "searching" with no way to cancel from
+        # the queue — the reported bug).
+        if activity_store.is_cancelled(task_id):
+            applog.info("hunt", f"Auto-hunt cancelled by user — stopped: {game_title}",
+                        {"wanted_id": wanted_id, "tried": tried})
+            _mark_exhausted(wanted_id)
+            return
         if tried == 0:
             applog.info("hunt", f"All candidates already attempted: {game_title}", {"wanted_id": wanted_id})
         if await _try_external():
@@ -585,24 +692,9 @@ async def auto_hunt(wanted_id: int) -> None:
         applog.error("hunt", f"Auto-hunt crashed: {exc}", {"wanted_id": wanted_id})
     finally:
         activity_store.finish(task_id)
-        # Safety net: drop any transient hunt Download row that never reached a
-        # terminal state (e.g. a crash mid-attempt or a user cancel), so the
-        # downloads page isn't left with a stuck "downloading" card.
-        try:
-            with Session(engine) as s:
-                stale = s.exec(
-                    select(Download).where(
-                        Download.hunt_task_id == task_id,
-                        Download.status.in_([
-                            DownloadStatus.downloading,
-                            DownloadStatus.hashing,
-                            DownloadStatus.verifying,
-                        ]),
-                    )
-                ).all()
-                for d in stale:
-                    s.delete(d)
-                if stale:
-                    s.commit()
-        except Exception:
-            pass
+        # Safety net: drop this hunt's transient `downloading` card if it never
+        # reached a terminal state (crash/cancel mid-attempt), so the Downloads page
+        # isn't left with a stuck card. Skips rows owned by a live ExternalDownload
+        # (the torrent/usenet hand-off keeps a long-lived card the scheduler poll
+        # drives). Shared with the startup + Cancel-endpoint reaper.
+        reap_orphaned_hunt_downloads(task_id)
