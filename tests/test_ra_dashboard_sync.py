@@ -35,6 +35,10 @@ class FakeRA:
     def __init__(self, u, k):
         pass
 
+    @staticmethod
+    def badge_url(name):   # mirrors RAClient.badge_url (step 2b builds BadgeURL with it)
+        return f"https://media.retroachievements.org/Badge/{name}.png" if name else ""
+
     async def get_user_profile(self, user=None):
         return FakeRA.profile
 
@@ -109,6 +113,53 @@ def test_refresh_no_credentials(fresh_engine, monkeypatch):
     monkeypatch.setattr(ra_dashboard, "RAClient", FakeRA)
     res = asyncio.run(ra_dashboard.refresh())
     assert res["status"] == "no_credentials"
+
+
+def test_refresh_backfills_achievement_goal_source_game(fresh_engine, monkeypatch):
+    """The windowed earned-between pull under-reports individual unlocks (it dropped
+    a Jun-24 hardcore unlock on game 14811 that had an achievement goal). The refresh
+    backfills the source game of every achievement goal per-game, so the unlock lands
+    in the mirror and the goal auto-completes — the 'Welcome To The Next Level' case."""
+    from app.db.models import Goal, GoalObjective, GoalStatus, RAAchievement
+    _set_creds()
+    with Session(engine) as s:
+        s.add(Goal(game_title="Sonic & Sega All-Stars Racing", system="Nintendo DS",
+                   ra_game_id=14811, objective=GoalObjective.achievement,
+                   achievement_id=145704, status=GoalStatus.active))
+        s.commit()
+
+    class FakeRAGoalGame(FakeRA):
+        # Windowed pull + completion return nothing for this game (the under-report);
+        # only the per-game backfill knows the unlock.
+        async def get_achievements_earned_between(self, f, t, user=None):
+            return []
+
+        async def get_user_completion_progress(self, count=500, offset=0, user=None):
+            return {"Count": 0, "Total": 0, "Results": []}
+
+        async def get_game_user_progress(self, game_id, user=None):
+            assert game_id == 14811
+            return {
+                "Title": "Sonic & Sega All-Stars Racing", "ConsoleID": 24,
+                "ConsoleName": "Nintendo DS",
+                "Achievements": {
+                    "145704": {
+                        "ID": 145704, "Title": "Welcome To The Next Level!",
+                        "Description": "Win every race within a Grand Prix cup.",
+                        "Points": 5, "BadgeName": "12345",
+                        "DateEarnedHardcore": "2026-06-24 12:00:00",
+                    },
+                },
+            }
+
+    monkeypatch.setattr(ra_dashboard, "RAClient", FakeRAGoalGame)
+    asyncio.run(ra_dashboard.refresh())
+
+    with Session(engine) as s:
+        ach = s.exec(select(RAAchievement).where(RAAchievement.achievement_id == 145704)).all()
+        assert len(ach) == 1 and ach[0].hardcore, "backfill must add the under-reported unlock"
+        goal = s.exec(select(Goal).where(Goal.achievement_id == 145704)).one()
+        assert goal.status == GoalStatus.completed, "goal auto-completes off the backfilled unlock"
 
 
 def test_refresh_stamps_ok_status(fresh_engine, monkeypatch):

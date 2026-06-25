@@ -17,7 +17,7 @@ from math import ceil
 from sqlmodel import Session, select, text
 
 from app.db.database import engine
-from app.db.models import RAAchievement, RAGameProgress, RAProfile, LibraryEntry, GoalEvent
+from app.db.models import RAAchievement, RAGameProgress, RAProfile, LibraryEntry, GoalEvent, Goal, GoalObjective
 from app.services import settings as app_settings
 from app.services import logger as applog
 from app.services import activity as activity_store
@@ -102,20 +102,32 @@ async def refresh() -> dict:
                 earned.setdefault(key, a)
             cur = nxt
 
-        # 2b. Event-hub achievements (AotW / RA Roulette / …). The windowed
-        #     API_GetAchievementsEarnedBetween UNDER-REPORTS event "games" (it returned only
-        #     14 of the user's 28 earned AotW unlocks), so pull each tracked event hub's
+        # 2b. Per-game backfill for goal-relevant games. The windowed
+        #     API_GetAchievementsEarnedBetween UNDER-REPORTS individual unlocks (it returned
+        #     only 14 of the user's 28 earned AotW unlocks; it also dropped a Jun-24 hardcore
+        #     unlock on game 14811 that had an achievement goal), so pull each such game's
         #     per-achievement user progress directly and merge in any earned unlock the
-        #     windowed pass missed — otherwise event goals never auto-complete. setdefault
-        #     keeps the richer windowed entry where it already exists.
+        #     windowed pass missed — otherwise the goal never auto-completes. We backfill BOTH
+        #     tracked event hubs AND the source game of every achievement goal (a custom event
+        #     has no hub id, so its games would otherwise be skipped). setdefault keeps the
+        #     richer windowed entry where it already exists.
         with Session(engine) as s:
-            hub_ids = sorted({
+            backfill_ids = {
                 e.ra_game_id for e in s.exec(
                     select(GoalEvent).where(GoalEvent.ra_game_id != None)  # noqa: E711
                 ).all() if e.ra_game_id
-            })
+            }
+            backfill_ids |= {
+                g.ra_game_id for g in s.exec(
+                    select(Goal).where(
+                        Goal.objective == GoalObjective.achievement,
+                        Goal.ra_game_id != None,  # noqa: E711
+                    )
+                ).all() if g.ra_game_id
+            }
+            hub_ids = sorted(backfill_ids)
         for gid in hub_ids:
-            activity_store.update_label(_SYNC_ID, f"Syncing event hub {gid}…")
+            activity_store.update_label(_SYNC_ID, f"Syncing game progress {gid}…")
             try:
                 gp = await ra.get_game_user_progress(gid)
             except Exception as exc:
