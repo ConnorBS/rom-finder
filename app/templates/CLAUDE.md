@@ -44,7 +44,12 @@ static (Settings/Extensions). Wired: collection=`library wanted`, downloads=`dow
 wanted=`wanted library downloads`, goals=`goals`, logs=`logs`, scheduler=`scheduler`. **Dashboard** pages use
 `{% block live_mode %}reload{% endblock %}` (ApexCharts can't survive a morph) so they do an
 idle `location.reload()` when the mirror token changes — i.e. right after a manual RA Refresh
-completes. Escape hatch: `localStorage.liveUpdates = 'off'`. Interval is hardcoded (4s), like
+completes. The `dashboard` `/api/changes` token is `ach:games:last_sync:last_status`; `last_status`
+(stamped with a fresh timestamp on FAILURE too) means a **rate-limited/failed** refresh — which never
+advances `last_sync` — STILL moves the token, so the page auto-reloads and renders the overview's
+amber **"last sync was rate-limited / didn't finish"** banner (`sync_status` ∈ `rate_limited`/`error`,
+passed by `overview_page`). So the Refresh button no longer needs a manual reload (the old feedback
+text said "reload when it finishes" — now it auto-updates in ~30s). Escape hatch: `localStorage.liveUpdates = 'off'`. Interval is hardcoded (4s), like
 the 3s tray poll — no Settings toggle (no shared Jinja env to thread one in per route).
 
 The detail slide-over, sidebar tray, and mobile indicator live **outside** `#live-content`,

@@ -411,31 +411,50 @@ class RAClient:
             resp.raise_for_status()
             return resp.json()
 
+    async def _get_with_retry(self, client: httpx.AsyncClient, url: str, params: dict, timeout: int = 30):
+        """GET that honours the limiter and retries ONCE on 429 (after Retry-After),
+        then raises SourceRateLimitError. The dashboard refresh pulls ~50 windows in
+        sequence; without this a single transient 429 in any window raised straight
+        out of refresh(), aborting the whole sync and leaving the mirror stale (the
+        'refresh doesn't bring in new unlocks' symptom). Mirrors lookup_hash's 429
+        handling so the rest of the refresh isn't lost to one throttled call."""
+        await _limiter.wait()
+        resp = await client.get(url, params=params, timeout=timeout)
+        if resp.status_code == 429:
+            retry_after = int(resp.headers.get("Retry-After", 60))
+            logger.warning("RA rate limit (429) on %s; waiting %ds before retry", url, retry_after)
+            await asyncio.sleep(retry_after)
+            await _limiter.wait()
+            resp = await client.get(url, params=params, timeout=timeout)
+            if resp.status_code == 429:
+                raise SourceRateLimitError(
+                    "RA rate limit persists after retry",
+                    retry_after=float(resp.headers.get("Retry-After", retry_after)),
+                )
+        resp.raise_for_status()
+        return resp
+
     async def get_achievements_earned_between(self, from_ts: int, to_ts: int, user: str | None = None) -> list[dict]:
         """API_GetAchievementsEarnedBetween.php — every unlock between two Unix
         timestamps (seconds, UTC). The backbone of the dashboard's local mirror."""
-        await _limiter.wait()
         async with httpx.AsyncClient() as client:
-            resp = await client.get(
+            resp = await self._get_with_retry(
+                client,
                 f"{RA_BASE_URL}/API_GetAchievementsEarnedBetween.php",
-                params=self._params({"u": user or self.username, "f": int(from_ts), "t": int(to_ts)}),
-                timeout=30,
+                self._params({"u": user or self.username, "f": int(from_ts), "t": int(to_ts)}),
             )
-            resp.raise_for_status()
             data = resp.json()
             return data if isinstance(data, list) else []
 
     async def get_user_completion_progress(self, count: int = 500, offset: int = 0, user: str | None = None) -> dict:
         """API_GetUserCompletionProgress.php — paginated per-game completion.
         Returns {Count, Total, Results:[...]}."""
-        await _limiter.wait()
         async with httpx.AsyncClient() as client:
-            resp = await client.get(
+            resp = await self._get_with_retry(
+                client,
                 f"{RA_BASE_URL}/API_GetUserCompletionProgress.php",
-                params=self._params({"u": user or self.username, "c": count, "o": offset}),
-                timeout=30,
+                self._params({"u": user or self.username, "c": count, "o": offset}),
             )
-            resp.raise_for_status()
             return resp.json()
 
     async def get_user_awards(self, user: str | None = None) -> dict:

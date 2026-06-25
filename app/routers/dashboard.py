@@ -40,6 +40,8 @@ async def overview_page(request: Request, session: Session = Depends(get_session
     return templates.TemplateResponse(request, "dashboard/overview.html", {
         **data,
         "ra_configured": _ra_configured(session),
+        "sync_status": app_settings.get(session, "ra_dashboard_last_status", ""),
+        "sync_error": app_settings.get(session, "ra_dashboard_last_error", ""),
     })
 
 
@@ -52,7 +54,7 @@ async def refresh(background_tasks: BackgroundTasks, session: Session = Depends(
     background_tasks.add_task(ra_dashboard.refresh)
     return HTMLResponse(
         '<span class="text-blue-400 text-xs">&#8635; Syncing from RetroAchievements… '
-        'watch the activity tray, then reload when it finishes.</span>'
+        'this page updates automatically when it finishes (about 30s).</span>'
     )
 
 

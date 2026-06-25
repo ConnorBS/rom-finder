@@ -109,3 +109,41 @@ def test_refresh_no_credentials(fresh_engine, monkeypatch):
     monkeypatch.setattr(ra_dashboard, "RAClient", FakeRA)
     res = asyncio.run(ra_dashboard.refresh())
     assert res["status"] == "no_credentials"
+
+
+def test_refresh_stamps_ok_status(fresh_engine, monkeypatch):
+    FakeRA.achievements = [dict(_ACH)]
+    _set_creds()
+    monkeypatch.setattr(ra_dashboard, "RAClient", FakeRA)
+    asyncio.run(ra_dashboard.refresh())
+    with Session(engine) as s:
+        assert app_settings.get(s, "ra_dashboard_last_status") == "ok"
+        assert app_settings.get(s, "ra_dashboard_last_error") == ""
+
+
+def test_refresh_rate_limited_preserves_mirror_and_flags_status(fresh_engine, monkeypatch):
+    """A 429 mid-pull must NOT wipe the existing mirror (it never reaches the
+    replace step) and must surface a 'rate_limited' status — otherwise the page
+    shows stale data with no explanation ('Refresh did nothing')."""
+    from app.services.sources.errors import SourceRateLimitError
+
+    FakeRA.achievements = [dict(_ACH)]
+    _set_creds()
+    monkeypatch.setattr(ra_dashboard, "RAClient", FakeRA)
+    asyncio.run(ra_dashboard.refresh())                 # seed a good mirror
+    with Session(engine) as s:
+        assert len(s.exec(select(RAAchievement)).all()) == 1
+
+    class FakeRARateLimited(FakeRA):
+        async def get_achievements_earned_between(self, f, t, user=None):
+            raise SourceRateLimitError("throttled", retry_after=1.0)
+
+    monkeypatch.setattr(ra_dashboard, "RAClient", FakeRARateLimited)
+    res = asyncio.run(ra_dashboard.refresh())
+
+    assert res["status"] == "rate_limited"
+    with Session(engine) as s:
+        # mirror preserved (not wiped by a failed run), status surfaced
+        assert len(s.exec(select(RAAchievement)).all()) == 1
+        assert app_settings.get(s, "ra_dashboard_last_status") == "rate_limited"
+        assert app_settings.get(s, "ra_dashboard_last_error") != ""

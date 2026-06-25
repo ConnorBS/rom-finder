@@ -22,6 +22,19 @@
   </div>
   <div id="refresh-feedback" class="mb-4 min-h-[1rem]"></div>
 
+  {% if sync_status in ("rate_limited", "error") %}
+  <div class="mb-4 bg-amber-950/40 border border-amber-800 rounded-lg px-4 py-3 text-sm">
+    <p class="text-amber-300">
+      {% if sync_status == "rate_limited" %}
+        &#9888; The last sync was <strong>rate-limited by RetroAchievements</strong> and stopped early, so the data below may be stale. Wait a minute and click <strong>Refresh</strong> again.
+      {% else %}
+        &#9888; The last sync <strong>didn't finish</strong>, so the data below may be stale. Try <strong>Refresh</strong> again.
+      {% endif %}
+    </p>
+    {% if sync_error %}<p class="text-amber-500/70 text-xs mt-1 font-mono truncate">{{ sync_error }}</p>{% endif %}
+  </div>
+  {% endif %}
+
   {% if not profile %}
   <!-- Empty state -->
   <div class="bg-gray-900 border border-gray-800 rounded-lg p-10 text-center">

@@ -22,6 +22,7 @@ from app.services import settings as app_settings
 from app.services import logger as applog
 from app.services import activity as activity_store
 from app.services.ra_client import RAClient
+from app.services.sources.errors import SourceRateLimitError
 
 _SYNC_ID = "ra-sync"
 
@@ -227,6 +228,8 @@ async def refresh() -> dict:
         ach_count, game_count = len(earned), len(progress_rows)
         with Session(engine) as s:
             app_settings.set(s, "ra_dashboard_last_sync", now.isoformat())
+            app_settings.set(s, "ra_dashboard_last_status", "ok")
+            app_settings.set(s, "ra_dashboard_last_error", "")
         applog.info("system", "RA dashboard synced", {"achievements": ach_count, "games": game_count})
         # Re-derive owned-library award tiers from the freshly-rebuilt mirror, and
         # refresh per-ROM subset flags from the cached subset hashes — both LOCAL
@@ -247,8 +250,17 @@ async def refresh() -> dict:
             applog.warning("system", f"Award/subset recompute after dashboard sync failed: {exc}")
         return {"status": "ok", "achievements": ach_count, "games": game_count}
     except Exception as exc:
+        # Surface the failure instead of silently keeping the stale mirror — a
+        # rate-limited refresh otherwise looks like "Refresh did nothing / no new
+        # unlocks". Stamping a status (with a fresh `_now_iso`) also moves the
+        # dashboard /api/changes fingerprint, so the page auto-reloads and shows the
+        # banner even though last_sync didn't advance.
+        rate_limited = isinstance(exc, SourceRateLimitError)
         applog.warning("system", f"RA dashboard sync failed: {exc}")
-        return {"status": "error", "error": str(exc)}
+        with Session(engine) as s:
+            app_settings.set(s, "ra_dashboard_last_status", "rate_limited" if rate_limited else "error")
+            app_settings.set(s, "ra_dashboard_last_error", f"{str(exc)[:200]} @ {datetime.utcnow().isoformat()}")
+        return {"status": "rate_limited" if rate_limited else "error", "error": str(exc)}
     finally:
         activity_store.finish(_SYNC_ID)
 

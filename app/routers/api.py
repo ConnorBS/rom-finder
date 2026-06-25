@@ -983,7 +983,11 @@ async def api_changes(session: Session = Depends(get_session)):
         ach = _count(session, RAAchievement)
         games = _count(session, RAGameProgress)
         last_sync = _get_setting(session, "ra_dashboard_last_sync", "")
-        changes["dashboard"] = f"{ach}:{games}:{last_sync}"
+        # last_status carries a fresh timestamp on FAILURE too, so a rate-limited
+        # refresh (which never advances last_sync) still moves this fingerprint and
+        # the dashboard auto-reloads to show the failure banner.
+        last_status = _get_setting(session, "ra_dashboard_last_error", "") or _get_setting(session, "ra_dashboard_last_status", "")
+        changes["dashboard"] = f"{ach}:{games}:{last_sync}:{last_status}"
     except Exception as e:
         changes["dashboard"] = f"err:{e}"
 
