@@ -3,6 +3,7 @@ owned-library cross-ref, and (critically) REPLACES the mirror each run so
 retroactive RA changes (repointed/removed achievements) reconcile rather than drift."""
 
 import asyncio
+from datetime import datetime
 
 from sqlmodel import Session, select
 
@@ -20,8 +21,11 @@ _ACH = {
 _GAME = {
     "GameID": 111, "Title": "Contra", "ConsoleID": 7, "ConsoleName": "NES",
     "ImageIcon": "i", "MaxPossible": 50, "NumAwarded": 50, "NumAwardedHardcore": 50,
-    "HighestAwardKind": "mastered", "HighestAwardDate": "2025-02-02 00:00:00",
-    "MostRecentAwardedDate": "2025-02-01 12:00:00",
+    # API_GetUserCompletionProgress sends ISO-8601 with a 'T' + timezone offset (NOT the
+    # space-separated form the other endpoints use) — _parse_dt must handle it or every
+    # award date becomes None and master/beaten goals auto-complete with the sync date.
+    "HighestAwardKind": "mastered", "HighestAwardDate": "2025-02-02T00:00:00+00:00",
+    "MostRecentAwardedDate": "2025-02-01T12:00:00+00:00",
 }
 
 
@@ -81,6 +85,10 @@ def test_refresh_populates_dedupes_and_links_owned(fresh_engine, monkeypatch):
     assert achs[0].title == "First Blood" and achs[0].points == 10 and achs[0].hardcore
     assert len(games) == 1 and games[0].owned and games[0].pct_complete == 100.0
     assert games[0].highest_award_kind == "mastered"
+    # ISO-8601 award dates must parse to naive-UTC datetimes (not None) — this is what
+    # lets a master/beaten goal complete with the real mastery date, not the sync date.
+    assert games[0].highest_award_date == datetime(2025, 2, 2, 0, 0, 0)
+    assert games[0].most_recent_date == datetime(2025, 2, 1, 12, 0, 0)
     assert prof.points == 1000 and prof.total_masteries == 2 and prof.last_synced_at is not None
     with Session(engine) as s:
         assert app_settings.get(s, "ra_dashboard_last_sync") != ""
