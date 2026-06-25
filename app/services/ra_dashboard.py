@@ -35,7 +35,19 @@ def _parse_dt(s) -> datetime | None:
             return datetime.strptime(s, fmt)
         except (ValueError, TypeError):
             continue
-    return None
+    # ISO-8601 with a 'T' separator + timezone offset — the form
+    # API_GetUserCompletionProgress uses for HighestAwardDate / MostRecentAwardedDate
+    # (e.g. "2025-02-02T00:00:00+00:00"). The legacy strptime formats above can't parse
+    # it, so without this every award date is None → master/beaten goals auto-complete
+    # with `now` instead of the real mastery date. Normalize to naive-UTC to stay
+    # comparable with the rest of the mirror (everything else is datetime.utcnow()).
+    try:
+        dt = datetime.fromisoformat(s)
+    except (ValueError, TypeError):
+        return None
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
 
 
 def _epoch(dt: datetime) -> int:
