@@ -165,12 +165,12 @@ def _normalize_doubled_system(name: str) -> str:
 
 def canonical_system(name: str, system_id=None) -> str:
     """Resolve a clean, canonical RA system name. The RA console id is
-    authoritative — when present and known, use SYSTEMS[id] regardless of the
+    authoritative — when present and known, use its catalog name regardless of the
     (possibly corrupted) scraped `name`. Otherwise normalize the name."""
     if system_id not in (None, ""):
-        from app.services.ra_client import SYSTEMS
+        from app.services.consoles import RA_ID_TO_NAME
         try:
-            canon = SYSTEMS.get(int(system_id))
+            canon = RA_ID_TO_NAME.get(int(system_id))
         except (TypeError, ValueError):
             canon = None
         if canon:

@@ -1,4 +1,5 @@
 import json
+from html import escape
 import os
 import re
 import signal
@@ -14,7 +15,8 @@ from app.db.database import get_session
 from app.db.models import AppSetting, InstalledExtension, LibraryEntry, LibraryRoot
 from app.services import sources as source_registry
 from app.services import cover_sources as cover_source_registry
-from app.services.ra_client import SYSTEMS, DEFAULT_FOLDER_MAP
+from app.services import consoles
+from app.services.ra_client import DEFAULT_FOLDER_MAP
 from app.services import logger as applog
 from app.services import extension_loader
 from app.services import settings as app_settings
@@ -23,15 +25,8 @@ from app.services.rahasher import rahasher_status
 router = APIRouter(prefix="/settings")
 templates = Jinja2Templates(directory="app/templates")
 
-# All known system names from RA, sorted for dropdowns
-KNOWN_SYSTEMS = sorted(SYSTEMS.values())
-
-# Build a reverse lookup: folder name (lowercase) -> system name for auto-mapping
-_FOLDER_LOWER_TO_SYSTEM: dict[str, str] = {}
-for _sys, _folder in DEFAULT_FOLDER_MAP.items():
-    _FOLDER_LOWER_TO_SYSTEM[_folder.lower()] = _sys
-for _sys_name in SYSTEMS.values():
-    _FOLDER_LOWER_TO_SYSTEM[_sys_name.lower()] = _sys_name
+# Legacy typical-folder-name table, reversed (folder -> system) for auto-mapping.
+_DEFAULT_FOLDER_TO_SYSTEM: dict[str, str] = {f: s for s, f in DEFAULT_FOLDER_MAP.items()}
 
 
 def get_setting(session: Session, key: str, default: str = "") -> str:
@@ -65,25 +60,9 @@ def _scan_folders(path_str: str) -> list[str]:
         return []
 
 
-def _automap_folder(folder_name: str) -> str:
-    """Return best-match RA system name for a folder name, or '' if no match."""
-    normalized = folder_name.lower().strip()
-
-    # Exact match
-    if normalized in _FOLDER_LOWER_TO_SYSTEM:
-        return _FOLDER_LOWER_TO_SYSTEM[normalized]
-
-    # Strip common noise words and retry
-    stripped = re.sub(r"[_\-\.]", " ", normalized).strip()
-    if stripped in _FOLDER_LOWER_TO_SYSTEM:
-        return _FOLDER_LOWER_TO_SYSTEM[stripped]
-
-    # Substring match — folder contains or is contained by a known name
-    for key, sys_name in _FOLDER_LOWER_TO_SYSTEM.items():
-        if key in normalized or normalized in key:
-            return sys_name
-
-    return ""
+def _automap_folder(folder_name: str, allowed: set[str]) -> str:
+    """Best-match console (among the enabled ones) for a folder name, or '' if no match."""
+    return consoles.automap_folder(folder_name, allowed, _DEFAULT_FOLDER_TO_SYSTEM)
 
 
 @router.get("", response_class=HTMLResponse)
@@ -148,14 +127,17 @@ async def settings_page(request: Request, session: Session = Depends(get_session
     primary = next((r for r in roots if r.is_primary), roots[0] if roots else None)
     if primary:
         current["download_dir"] = primary.path
+    enabled = consoles.enabled_names(session)
     roots_ctx = []
     for r in roots:
         try:
             fmap = json.loads(r.folder_map or "{}")
         except (ValueError, TypeError):
             fmap = {}
-        rows = [{"folder": f, "system": fmap.get(f) or _automap_folder(f)} for f in _scan_folders(r.path)]
+        rows = [{"folder": f, "system": fmap.get(f) or _automap_folder(f, enabled)} for f in _scan_folders(r.path)]
         roots_ctx.append({"root": r, "rows": rows})
+    # Folder dropdowns offer the enabled consoles plus any value a folder is already mapped to.
+    known_systems = consoles.picker_names(session, {row["system"] for rc in roots_ctx for row in rc["rows"]})
 
     # Extension settings — only extensions with at least one setting
     raw_ext_schemas = extension_loader.get_settings_schemas()
@@ -184,7 +166,9 @@ async def settings_page(request: Request, session: Session = Depends(get_session
             "roms_folders": roms_folders,
             "folder_map": folder_map,
             "roots_ctx": roots_ctx,
-            "known_systems": KNOWN_SYSTEMS,
+            "known_systems": known_systems,
+            "console_groups": consoles.grouped(session),
+            "console_enabled_count": len(enabled),
             "ext_schemas": ext_schemas,
             "ext_names": ext_names,
             "ext_values": ext_values,
@@ -405,6 +389,56 @@ async def save_root_mapping(
     return HTMLResponse(f'<span class="text-green-400 text-xs">&#10003; Mapping saved for {r.label or r.path} ({len(fmap)} folder(s) mapped).</span>')
 
 
+@router.post("/consoles", response_class=HTMLResponse)
+async def save_consoles(request: Request, session: Session = Depends(get_session)):
+    """Save which consoles the app offers in its console pickers."""
+    form = await request.form()
+    known = set(consoles.CONSOLE_BY_NAME) | set(consoles.custom_consoles(session))
+    chosen = [n for n in form.getlist("consoles") if n in known]
+    app_settings.set(session, "enabled_consoles", json.dumps(chosen))
+    session.commit()
+    applog.log_settings("Enabled consoles saved", {"count": len(chosen)})
+    return HTMLResponse(f'<span class="text-green-400 text-xs">&#10003; {len(chosen)} console(s) enabled.</span>')
+
+
+@router.post("/consoles/custom", response_class=HTMLResponse)
+async def add_custom_console(name: str = Form(default=""), session: Session = Depends(get_session)):
+    """Add a console the catalog doesn't have; it's enabled immediately."""
+    name = " ".join(name.split())
+    if not name:
+        return HTMLResponse('<span class="text-yellow-400 text-xs">Enter a console name.</span>')
+    if len(name) > 80:
+        return HTMLResponse('<span class="text-red-400 text-xs">Name is too long (80 characters max).</span>')
+    existing = next((c for c in consoles.CONSOLE_BY_NAME if c.lower() == name.lower()), None)
+    existing = existing or next((c for c in consoles.custom_consoles(session) if c.lower() == name.lower()), None)
+    enabled = consoles.enabled_names(session)
+    if existing:
+        if existing in enabled:
+            return HTMLResponse(f'<span class="text-yellow-400 text-xs">{escape(existing)} is already in the list and enabled.</span>')
+        enabled.add(existing)
+    else:
+        app_settings.set(session, "custom_consoles", json.dumps(consoles.custom_consoles(session) + [name]))
+        enabled.add(name)
+    app_settings.set(session, "enabled_consoles", json.dumps(sorted(enabled)))
+    session.commit()
+    applog.log_settings("Custom console added", {"name": existing or name})
+    return HTMLResponse("", headers={"HX-Refresh": "true"})
+
+
+@router.post("/consoles/custom/remove", response_class=HTMLResponse)
+async def remove_custom_console(name: str = Form(default=""), session: Session = Depends(get_session)):
+    """Remove a custom console from the list. ROMs already filed under it are untouched."""
+    customs = consoles.custom_consoles(session)
+    if name not in customs:
+        return HTMLResponse('<span class="text-red-400 text-xs">Custom console not found.</span>')
+    enabled = consoles.enabled_names(session) - {name}
+    app_settings.set(session, "custom_consoles", json.dumps([c for c in customs if c != name]))
+    app_settings.set(session, "enabled_consoles", json.dumps(sorted(enabled)))
+    session.commit()
+    applog.log_settings("Custom console removed", {"name": name})
+    return HTMLResponse("", headers={"HX-Refresh": "true"})
+
+
 @router.post("/ra-test", response_class=HTMLResponse)
 async def test_ra_credentials(
     ra_username: str = Form(default=""),
@@ -432,7 +466,8 @@ async def folder_scan(
     scan_path = path or get_setting(session, "download_dir", "")
     folder_map = app_settings.get_json(session, "folder_map", {})
     folders = _scan_folders(scan_path)
-    rows = _build_folder_rows(folders, folder_map)
+    known = consoles.picker_names(session, set(folder_map))
+    rows = _build_folder_rows(folders, folder_map, known)
     return HTMLResponse(rows)
 
 
@@ -447,12 +482,14 @@ async def folder_automap(
     folders = _scan_folders(scan_path)
 
     # Apply auto-mapping: prefer existing user map, then auto-detect
+    enabled = consoles.enabled_names(session)
     suggested: dict[str, str] = {}
     for folder in folders:
         existing = next((sys for sys, f in folder_map.items() if f == folder), "")
-        suggested[folder] = existing or _automap_folder(folder)
+        suggested[folder] = existing or _automap_folder(folder, enabled)
 
-    rows = _build_folder_rows(folders, {sys: f for f, sys in suggested.items() if sys}, suggested)
+    known = consoles.picker_names(session, set(suggested.values()))
+    rows = _build_folder_rows(folders, {sys: f for f, sys in suggested.items() if sys}, known, suggested)
     return HTMLResponse(rows)
 
 
@@ -529,6 +566,7 @@ async def pull_update():
 def _build_folder_rows(
     folders: list[str],
     folder_map: dict[str, str],
+    known_systems: list[str],
     suggested: dict[str, str] | None = None,
 ) -> str:
     """Build HTML table rows for the folder mapping table."""
@@ -538,9 +576,9 @@ def _build_folder_rows(
         if suggested is not None:
             assigned = suggested.get(folder, assigned)
         options = '<option value="">— Not mapped —</option>'
-        for sys in KNOWN_SYSTEMS:
+        for sys in known_systems:
             sel = "selected" if sys == assigned else ""
-            options += f'<option value="{sys}" {sel}>{sys}</option>'
+            options += f'<option value="{escape(sys)}" {sel}>{escape(sys)}</option>'
         rows += (
             f'<tr class="border-t border-gray-800">'
             f'<td class="py-2 pr-4 text-sm text-gray-300 font-mono">{folder}</td>'

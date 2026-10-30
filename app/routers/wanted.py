@@ -9,7 +9,8 @@ from app.db.database import get_session, engine
 from app.db.models import AppSetting, WantedGame, HuntStatus, HuntAttempt, LibraryEntry, RAGameProgress
 from app.services import sources as source_registry
 from app.services import activity as activity_store
-from app.services.ra_client import SYSTEMS, RAClient
+from app.services import consoles
+from app.services.ra_client import RAClient
 from app.services.title_utils import (
     search_title, search_variations, stem_from_rom_name, significant_terms, title_is_relevant,
 )
@@ -70,7 +71,7 @@ async def wanted_page(request: Request, session: Session = Depends(get_session))
         request, "wanted.html",
         {
             "games": games,
-            "systems": sorted(SYSTEMS.items(), key=lambda x: x[1]),
+            "systems": consoles.ra_picker(session),
             "ra_configured": ra_configured,
             "system_list": system_list,
             "hunting_ids": hunting_ids,

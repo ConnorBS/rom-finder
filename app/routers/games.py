@@ -7,6 +7,7 @@ from sqlmodel import Session
 from app.db.database import get_session, engine
 from app.db.models import AppSetting
 from app.services import sources as source_registry
+from app.services import consoles
 from app.services.ra_client import SYSTEMS, RAClient
 from app.services.title_utils import (
     search_variations, stem_from_rom_name, significant_terms, title_is_relevant,
@@ -63,7 +64,7 @@ async def search_page(request: Request, session: Session = Depends(get_session))
     return templates.TemplateResponse(
         request, "index.html",
         {
-            "systems": sorted(SYSTEMS.items(), key=lambda x: x[1]),
+            "systems": consoles.ra_picker(session),
             "sources": all_srcs,
             "enabled_source_ids": enabled_ids,
         },

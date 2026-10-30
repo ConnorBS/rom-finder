@@ -22,6 +22,8 @@ ROM_EXTENSIONS = {
     ".n64", ".z64", ".v64",                  # Nintendo 64
     ".nds",                                  # Nintendo DS
     ".3ds", ".cia",                          # 3DS
+    ".nsp", ".xci", ".nsz", ".xcz",          # Switch
+    ".vpk",                                  # PS Vita
     ".md", ".gen",                           # Sega Genesis / Mega Drive
     ".sms",                                  # Sega Master System
     ".gg",                                   # Game Gear

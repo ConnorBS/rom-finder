@@ -69,8 +69,8 @@ SYSTEM_NAME_TO_RA_ID: dict[str, int] = {
     "PC-FX": 49,
     "Atari 7800": 51,
     "WonderSwan": 53,
-    "Fairchild Channel F": 56,
-    "Philips CD-i": 57,
+    "Fairchild Channel F": 57,
+    "Philips CD-i": 42,
     "PC Engine CD": 76,
     "Nintendo DSi": 78,
     "GameCube": 16,
@@ -105,6 +105,12 @@ _ALIASES: dict[str, int] = {
     "Master System / Mark III": 11,
     "Jaguar": 17,
 }
+
+# Every other RA-verifiable console from the catalog (exact names; appended AFTER the
+# hand-written entries so the substring fallback's match order is unchanged for them).
+from app.services.consoles import RA_VERIFIABLE as _CATALOG_RA  # noqa: E402
+for _rid, _rname in _CATALOG_RA.items():
+    SYSTEM_NAME_TO_RA_ID.setdefault(_rname, _rid)
 
 _FULL_MAP = {**SYSTEM_NAME_TO_RA_ID, **_ALIASES}
 
