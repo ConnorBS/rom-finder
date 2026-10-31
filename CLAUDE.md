@@ -102,3 +102,5 @@ Confirm a change works by pulling machine-readable feedback from the app — nev
 ## CI
 
 `.github/workflows/docker-publish.yml` runs `pytest` as a **gate** (`build-and-push` `needs: test`) — broken code never builds or deploys. Run the suite locally with `venv\Scripts\python -m pytest tests/ -q`.
+
+**Dependency upper bounds are load-bearing.** CI and the Docker build install `requirements.txt` fresh, so an unbounded dep silently upgrades. `sqlmodel` 0.0.48 / SQLAlchemy 2.1 reject naive datetimes ("Datetime values must have timezone information"), and the app stores naive UTC everywhere — that broke the post-#39 build (59 failed / 131 errors, no image). Pinned `sqlmodel<0.0.25`, `sqlalchemy<2.1`, `fastapi<0.120`. Lift them only together with a move to timezone-aware datetimes.
