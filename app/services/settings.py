@@ -27,6 +27,11 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "check_dir": os.environ.get("CHECK_DIR", str(Path.home() / "ROMs-check")),
     "covers_dir": os.environ.get("COVERS_DIR", "static/covers"),
     "folder_map": "{}",
+    # Consoles offered in the console pickers (JSON list of names; "" = default set:
+    # every RA-verifiable console + any already in the library). See services/consoles.py.
+    "enabled_consoles": "",
+    # User-added consoles the built-in catalog doesn't have (JSON list of names).
+    "custom_consoles": "[]",
     "ra_enabled": "false",
     "ra_username": "",
     "ra_api_key": "",

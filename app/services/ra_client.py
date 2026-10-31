@@ -12,6 +12,7 @@ import time
 import httpx
 from typing import Optional
 
+from app.services.consoles import NON_RA_NAMES, RA_VERIFIABLE
 from app.services.sources.errors import SourceRateLimitError
 
 logger = logging.getLogger(__name__)
@@ -83,69 +84,17 @@ DEFAULT_FOLDER_MAP: dict[str, str] = {
     "3DO Interactive Multiplayer": "3DO",
 }
 
-# System ID -> display name mapping
-# IDs match RetroAchievements console IDs from API_GetConsoleIDs.php
-SYSTEMS: dict[int, str] = {
-    1: "Sega Genesis / Mega Drive",
-    2: "Nintendo 64",
-    3: "SNES",
-    4: "Game Boy",
-    5: "Game Boy Advance",
-    6: "Game Boy Color",
-    7: "NES",
-    8: "PC Engine / TurboGrafx-16",
-    9: "Sega CD",
-    10: "Sega 32X",
-    11: "Master System",
-    12: "PlayStation",
-    13: "Atari Lynx",
-    14: "Neo Geo Pocket",
-    15: "Game Gear",
-    17: "Atari Jaguar",
-    18: "Nintendo DS",
-    19: "Wii",
-    20: "Wii U",
-    21: "PlayStation 2",
-    23: "Magnavox Odyssey 2",
-    24: "Pokemon Mini",
-    25: "Atari 2600",
-    27: "Arcade",
-    28: "Virtual Boy",
-    29: "MSX",
-    33: "SG-1000",
-    37: "Amstrad CPC",
-    38: "Apple II",
-    39: "Saturn",
-    40: "Dreamcast",
-    41: "PlayStation Portable",
-    43: "3DO Interactive Multiplayer",
-    44: "ColecoVision",
-    45: "Intellivision",
-    46: "Vectrex",
-    47: "PC-8000/8800",
-    49: "PC-FX",
-    51: "Atari 7800",
-    53: "WonderSwan",
-    56: "Fairchild Channel F",
-    57: "Philips CD-i",
-    63: "Watara Supervision",
-    69: "Mega Duck",
-    71: "Arduboy",
-    72: "WASM-4",
-    76: "PC Engine CD",
-    78: "Nintendo DSi",
-    16: "GameCube",
-    89: "Uzebox",
-}
+# RA console id -> display name for every console RA can verify. Derived from the
+# console catalog (`app/services/consoles.py`), whose ids follow rcheevos rc_consoles.h.
+SYSTEMS: dict[int, str] = dict(RA_VERIFIABLE)
 
 # Platforms RetroAchievements has no console/hashing support for — ROMs here can
 # NEVER hash-match, so the UI shows them as "platform not supported" rather than
 # "no RA match" failures, and the resumable verify skips them (no wasted RA calls).
-# Curated, NOT derived from `SYSTEMS`: misnamed-but-supported folders (e.g. "tg16",
-# "mega-duck-slash-cougar-boy") do verify, so excluding everything absent from
-# SYSTEMS would wrongly hide real matches. Add entries here as such platforms appear.
-RA_UNSUPPORTED_SYSTEMS: set[str] = {
-    "Nintendo 3DS",
+# The catalog's explicit `ra=False` consoles (3DS, Switch, PS3+, Vita, Xbox…) plus a few
+# curated non-console names. NOT "everything absent from SYSTEMS": misnamed-but-supported
+# folders (e.g. "tg16", "mega-duck-slash-cougar-boy") do verify.
+RA_UNSUPPORTED_SYSTEMS: set[str] = set(NON_RA_NAMES) | {
     "Archipelago",
 }
 

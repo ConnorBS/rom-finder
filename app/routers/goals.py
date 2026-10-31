@@ -14,7 +14,8 @@ from app.services import settings as app_settings
 from app.services import logger as applog
 from app.services import events as events_service
 from app.services.goals import evaluate_goals, resolve_event_source_games
-from app.services.ra_client import SYSTEMS, RAClient
+from app.services import consoles
+from app.services.ra_client import RAClient
 
 router = APIRouter(prefix="/goals")
 templates = Jinja2Templates(directory="app/templates")
@@ -210,7 +211,7 @@ async def goals_page(
             "sort": sort,
             "event_names": event_names,
             "goal_icons": GOAL_ICONS,
-            "systems": sorted(SYSTEMS.items(), key=lambda x: x[1]),
+            "systems": consoles.ra_picker(session),
             "ra_configured": _ra_configured(session),
             "now": now,
         },
